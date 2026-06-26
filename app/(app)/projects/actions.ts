@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { redirect } from "next/navigation";
 import { createProject } from "@/lib/db/projects";
 
 export async function createProjectAction(formData: FormData) {
@@ -10,12 +10,13 @@ export async function createProjectAction(formData: FormData) {
     return { error: "Project name is required." };
   }
 
+  let project;
   try {
-    await getActiveUserId();
-    await createProject(name);
-    revalidatePath("/projects");
-    return { success: true };
+    project = await createProject(name);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to create project." };
   }
+
+  revalidatePath("/projects");
+  redirect(`/projects/${project.id}`);
 }

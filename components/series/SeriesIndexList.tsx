@@ -35,10 +35,10 @@ export function SeriesIndexList({ series }: SeriesIndexListProps) {
           Create a project, then add a series to get started.
         </p>
         <Link
-          href="/projects"
+          href="/projects/new"
           className="mt-6 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
-          Go to Projects
+          New project
         </Link>
       </div>
     );

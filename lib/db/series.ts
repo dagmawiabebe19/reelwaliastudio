@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getActiveUserId } from "@/lib/auth/active-user";
 import { getDbClient } from "@/lib/db/client";
 import type {
   Orientation,
@@ -137,9 +138,11 @@ export type SeriesWithProject = Series & {
 
 export async function listAllSeries(): Promise<SeriesWithProject[]> {
   const supabase = await getDbClient();
+  const ownerId = await getActiveUserId();
   const { data, error } = await supabase
     .from("series")
-    .select("*, projects(name)")
+    .select("*, projects!inner(name, owner_id)")
+    .eq("projects.owner_id", ownerId)
     .order("updated_at", { ascending: false });
 
   if (error) throw new Error(error.message);

@@ -41,7 +41,10 @@ export function Sidebar({ userEmail }: SidebarProps) {
           const isActive =
             item.href === "/"
               ? pathname === "/"
-              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+              : item.href === "/projects"
+                ? pathname === "/projects" ||
+                  (pathname.startsWith("/projects/") && pathname !== "/projects/new")
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
           return (
             <Link
@@ -62,7 +65,11 @@ export function Sidebar({ userEmail }: SidebarProps) {
       <div className="space-y-2 border-t border-border px-3 py-4">
         <Link
           href="/projects/new"
-          className="block rounded-md bg-primary px-3 py-2 text-center text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          className={`block rounded-md px-3 py-2 text-center text-sm font-medium transition-colors ${
+            pathname === "/projects/new"
+              ? "bg-primary text-primary-foreground"
+              : "bg-primary text-primary-foreground hover:bg-primary/90"
+          }`}
         >
           New Project
         </Link>
