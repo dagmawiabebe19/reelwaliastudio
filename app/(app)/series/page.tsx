@@ -1,10 +1,17 @@
-import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SeriesIndexList } from "@/components/series/SeriesIndexList";
+import { listAllSeries } from "@/lib/db/series";
 
-export default function SeriesIndexPage() {
+export default async function SeriesIndexPage() {
+  const series = await listAllSeries();
+
   return (
-    <PlaceholderPage
-      title="Shorts"
-      description="Your serialized series — vertical 9:16 and landscape 16:9."
-    />
+    <section>
+      <PageHeader
+        title="Shorts"
+        description="All serialized series — vertical 9:16 and landscape 16:9."
+      />
+      <SeriesIndexList series={series} />
+    </section>
   );
 }

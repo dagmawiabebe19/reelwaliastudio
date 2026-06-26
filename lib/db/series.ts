@@ -130,3 +130,18 @@ export function slugifyTitle(title: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
 }
+
+export type SeriesWithProject = Series & {
+  projects: { name: string } | null;
+};
+
+export async function listAllSeries(): Promise<SeriesWithProject[]> {
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from("series")
+    .select("*, projects(name)")
+    .order("updated_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SeriesWithProject[];
+}

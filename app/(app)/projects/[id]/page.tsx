@@ -1,0 +1,43 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { CreateSeriesForm } from "@/components/series/CreateSeriesForm";
+import { SeriesList } from "@/components/series/SeriesList";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { getProject } from "@/lib/db/projects";
+import { listSeriesByProject } from "@/lib/db/series";
+
+interface ProjectDetailPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default async function ProjectDetailPage({ params }: ProjectDetailPageProps) {
+  const { id } = await params;
+  const [project, series] = await Promise.all([getProject(id), listSeriesByProject(id)]);
+
+  if (!project) notFound();
+
+  return (
+    <section>
+      <PageHeader
+        title={project.name}
+        description="Series in this project — portrait 9:16 and landscape 16:9."
+        actions={
+          <Link
+            href="/projects"
+            className="text-sm text-muted transition-colors hover:text-foreground"
+          >
+            ← All projects
+          </Link>
+        }
+      />
+      <div className="mb-10 grid grid-cols-2 gap-8">
+        <CreateSeriesForm projectId={project.id} />
+        <div className="rounded-lg border border-border bg-surface px-6 py-5">
+          <p className="text-xs uppercase tracking-widest text-muted">Series count</p>
+          <p className="mt-2 font-display text-4xl text-foreground">{series.length}</p>
+        </div>
+      </div>
+      <SeriesList series={series} />
+    </section>
+  );
+}
