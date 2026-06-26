@@ -30,7 +30,7 @@ export function CreateSeriesForm({ projectId }: CreateSeriesFormProps) {
           type="text"
           required
           placeholder="Untitled series"
-          className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none ring-primary focus:ring-2"
+          className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground focus-ring focus:ring-2 focus:ring-ring"
         />
       </div>
       <div>
@@ -42,7 +42,7 @@ export function CreateSeriesForm({ projectId }: CreateSeriesFormProps) {
           name="slug"
           type="text"
           placeholder="my-series"
-          className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 font-mono text-sm text-foreground outline-none ring-primary focus:ring-2"
+          className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 font-mono text-sm text-foreground focus-ring focus:ring-2 focus:ring-ring"
         />
       </div>
       <Button type="submit" disabled={pending}>

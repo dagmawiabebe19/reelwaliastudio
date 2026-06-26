@@ -45,7 +45,7 @@ export function LoginForm() {
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           placeholder="you@studio.com"
-          className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none ring-primary focus:ring-2"
+          className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground focus-ring focus:ring-2 focus:ring-ring"
         />
       </div>
       <Button type="submit" className="w-full" disabled={status === "loading"}>

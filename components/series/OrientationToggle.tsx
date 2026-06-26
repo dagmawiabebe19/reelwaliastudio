@@ -37,7 +37,7 @@ export function OrientationToggle({ seriesId, value }: OrientationToggleProps) {
             className={`rounded px-3 py-1.5 text-sm transition-colors ${
               active
                 ? "bg-primary text-primary-foreground"
-                : "text-muted hover:text-foreground"
+                : "text-muted hover:text-accent"
             }`}
           >
             {option.label}

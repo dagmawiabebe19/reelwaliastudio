@@ -33,7 +33,7 @@ export function CreateProjectForm({ submitLabel = "Create project" }: CreateProj
           required
           autoFocus
           placeholder="Untitled project"
-          className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground outline-none ring-primary focus:ring-2"
+          className="w-full rounded-md border border-border bg-surface-elevated px-3 py-2 text-sm text-foreground focus-ring focus:ring-2 focus:ring-ring"
         />
       </div>
       <Button type="submit" disabled={pending}>

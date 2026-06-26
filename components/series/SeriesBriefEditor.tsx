@@ -60,7 +60,7 @@ export function SeriesBriefEditor({ seriesId, initialMarkdown }: SeriesBriefEdit
             value={markdown}
             onChange={(event) => setMarkdown(event.target.value)}
             rows={18}
-            className="w-full resize-y rounded-lg border border-border bg-surface-elevated px-4 py-3 font-mono text-sm leading-relaxed text-foreground outline-none ring-primary focus:ring-2"
+            className="w-full resize-y rounded-lg border border-border bg-surface-elevated px-4 py-3 font-mono text-sm leading-relaxed text-foreground focus-ring focus:ring-2 focus:ring-ring"
             placeholder="Describe the series premise, tone, visual language…"
           />
         </div>

@@ -32,8 +32,13 @@ export function Sidebar({ userEmail }: SidebarProps) {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border bg-surface">
       <div className="border-b border-border px-6 py-8">
-        <p className="font-display text-2xl tracking-tight text-foreground">ReelWalia</p>
-        <p className="mt-1 text-xs uppercase tracking-widest text-muted">Studio</p>
+        <p className="brand-wordmark font-display text-2xl font-bold tracking-tight">
+          <span className="text-foreground">Reel</span>
+          <span className="text-accent">Walia</span>
+        </p>
+        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+          Studio
+        </p>
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-6">
@@ -52,8 +57,8 @@ export function Sidebar({ userEmail }: SidebarProps) {
               href={item.href}
               className={`block rounded-md px-3 py-2 text-sm transition-colors ${
                 isActive
-                  ? "bg-surface-elevated font-medium text-foreground"
-                  : "text-muted hover:bg-surface-elevated hover:text-foreground"
+                  ? "bg-accent-muted font-medium text-accent"
+                  : "text-muted hover:bg-surface-elevated hover:text-accent"
               }`}
             >
               {item.label}
@@ -67,7 +72,7 @@ export function Sidebar({ userEmail }: SidebarProps) {
           href="/projects/new"
           className={`block rounded-md px-3 py-2 text-center text-sm font-medium transition-colors ${
             pathname === "/projects/new"
-              ? "bg-primary text-primary-foreground"
+              ? "bg-primary text-primary-foreground shadow-sm"
               : "bg-primary text-primary-foreground hover:bg-primary/90"
           }`}
         >
@@ -82,7 +87,7 @@ export function Sidebar({ userEmail }: SidebarProps) {
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full rounded-md border border-border px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-surface-elevated hover:text-foreground"
+          className="w-full rounded-md border border-border px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-surface-elevated hover:text-accent"
         >
           Logout
         </button>

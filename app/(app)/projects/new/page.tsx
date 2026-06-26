@@ -11,7 +11,7 @@ export default function NewProjectPage() {
         actions={
           <Link
             href="/projects"
-            className="text-sm text-muted transition-colors hover:text-foreground"
+            className="link-muted text-sm"
           >
             ← All projects
           </Link>
