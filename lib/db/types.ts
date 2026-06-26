@@ -1,7 +1,19 @@
-export interface Profile {
-  id: string;
-  email: string | null;
-  display_name: string | null;
-  created_at: string;
-  updated_at: string;
-}
+export type {
+  Asset,
+  AudioLine,
+  Database,
+  Episode,
+  Enums,
+  Ingredient,
+  Orientation,
+  Profile,
+  Project,
+  Scene,
+  Series,
+  SeriesStats,
+  SeriesStatus,
+  Tables,
+  TablesInsert,
+  TablesUpdate,
+  Take,
+} from "@/lib/db/database.types";

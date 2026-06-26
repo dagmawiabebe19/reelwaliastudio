@@ -1,0 +1,590 @@
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
+export type Database = {
+  public: {
+    Tables: {
+      assets: {
+        Row: {
+          id: string;
+          owner_id: string;
+          bucket: string;
+          storage_path: string;
+          media_type: Database["public"]["Enums"]["asset_media_type"];
+          width: number | null;
+          height: number | null;
+          duration_ms: number | null;
+          model: string | null;
+          prompt: string | null;
+          source: Database["public"]["Enums"]["asset_source"];
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          bucket: string;
+          storage_path: string;
+          media_type: Database["public"]["Enums"]["asset_media_type"];
+          width?: number | null;
+          height?: number | null;
+          duration_ms?: number | null;
+          model?: string | null;
+          prompt?: string | null;
+          source?: Database["public"]["Enums"]["asset_source"];
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner_id?: string;
+          bucket?: string;
+          storage_path?: string;
+          media_type?: Database["public"]["Enums"]["asset_media_type"];
+          width?: number | null;
+          height?: number | null;
+          duration_ms?: number | null;
+          model?: string | null;
+          prompt?: string | null;
+          source?: Database["public"]["Enums"]["asset_source"];
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "assets_owner_id_fkey";
+            columns: ["owner_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      audio_lines: {
+        Row: {
+          id: string;
+          episode_id: string;
+          title: string;
+          description: string | null;
+          asset_id: string | null;
+          ref_tag: string;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          episode_id: string;
+          title: string;
+          description?: string | null;
+          asset_id?: string | null;
+          ref_tag: string;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          episode_id?: string;
+          title?: string;
+          description?: string | null;
+          asset_id?: string | null;
+          ref_tag?: string;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "audio_lines_episode_id_fkey";
+            columns: ["episode_id"];
+            isOneToOne: false;
+            referencedRelation: "episodes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "audio_lines_asset_id_fkey";
+            columns: ["asset_id"];
+            isOneToOne: false;
+            referencedRelation: "assets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      chat_messages: {
+        Row: {
+          id: string;
+          session_id: string;
+          role: Database["public"]["Enums"]["chat_message_role"];
+          content: string;
+          tool_name: string | null;
+          tool_args: Json | null;
+          tool_result: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          session_id: string;
+          role: Database["public"]["Enums"]["chat_message_role"];
+          content?: string;
+          tool_name?: string | null;
+          tool_args?: Json | null;
+          tool_result?: Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          session_id?: string;
+          role?: Database["public"]["Enums"]["chat_message_role"];
+          content?: string;
+          tool_name?: string | null;
+          tool_args?: Json | null;
+          tool_result?: Json | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_session_id_fkey";
+            columns: ["session_id"];
+            isOneToOne: false;
+            referencedRelation: "chat_sessions";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      chat_sessions: {
+        Row: {
+          id: string;
+          scope_type: Database["public"]["Enums"]["chat_scope_type"];
+          scope_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          scope_type: Database["public"]["Enums"]["chat_scope_type"];
+          scope_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          scope_type?: Database["public"]["Enums"]["chat_scope_type"];
+          scope_id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      episodes: {
+        Row: {
+          id: string;
+          series_id: string;
+          title: string;
+          logline: string | null;
+          sort_order: number;
+          status: Database["public"]["Enums"]["episode_status"];
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          series_id: string;
+          title: string;
+          logline?: string | null;
+          sort_order?: number;
+          status?: Database["public"]["Enums"]["episode_status"];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          series_id?: string;
+          title?: string;
+          logline?: string | null;
+          sort_order?: number;
+          status?: Database["public"]["Enums"]["episode_status"];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "episodes_series_id_fkey";
+            columns: ["series_id"];
+            isOneToOne: false;
+            referencedRelation: "series";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      ingredients: {
+        Row: {
+          id: string;
+          series_id: string;
+          kind: Database["public"]["Enums"]["ingredient_kind"];
+          name: string;
+          description: string | null;
+          primary_asset_id: string | null;
+          ref_tag: string;
+          metadata: Json;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          series_id: string;
+          kind: Database["public"]["Enums"]["ingredient_kind"];
+          name: string;
+          description?: string | null;
+          primary_asset_id?: string | null;
+          ref_tag: string;
+          metadata?: Json;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          series_id?: string;
+          kind?: Database["public"]["Enums"]["ingredient_kind"];
+          name?: string;
+          description?: string | null;
+          primary_asset_id?: string | null;
+          ref_tag?: string;
+          metadata?: Json;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ingredients_series_id_fkey";
+            columns: ["series_id"];
+            isOneToOne: false;
+            referencedRelation: "series";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "ingredients_primary_asset_id_fkey";
+            columns: ["primary_asset_id"];
+            isOneToOne: false;
+            referencedRelation: "assets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      profiles: {
+        Row: {
+          id: string;
+          email: string | null;
+          display_name: string | null;
+          avatar_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          email?: string | null;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string | null;
+          display_name?: string | null;
+          avatar_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      projects: {
+        Row: {
+          id: string;
+          owner_id: string;
+          name: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          name: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner_id?: string;
+          name?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "projects_owner_id_fkey";
+            columns: ["owner_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      scene_ingredients: {
+        Row: {
+          scene_id: string;
+          ingredient_id: string;
+          role: Database["public"]["Enums"]["scene_ingredient_role"];
+          created_at: string;
+        };
+        Insert: {
+          scene_id: string;
+          ingredient_id: string;
+          role?: Database["public"]["Enums"]["scene_ingredient_role"];
+          created_at?: string;
+        };
+        Update: {
+          scene_id?: string;
+          ingredient_id?: string;
+          role?: Database["public"]["Enums"]["scene_ingredient_role"];
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "scene_ingredients_scene_id_fkey";
+            columns: ["scene_id"];
+            isOneToOne: false;
+            referencedRelation: "scenes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "scene_ingredients_ingredient_id_fkey";
+            columns: ["ingredient_id"];
+            isOneToOne: false;
+            referencedRelation: "ingredients";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      scenes: {
+        Row: {
+          id: string;
+          episode_id: string;
+          title: string;
+          prompt: string | null;
+          orientation: Database["public"]["Enums"]["orientation"] | null;
+          duration_seconds: number | null;
+          act_label: string | null;
+          position: number | null;
+          status: Database["public"]["Enums"]["scene_status"];
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          episode_id: string;
+          title: string;
+          prompt?: string | null;
+          orientation?: Database["public"]["Enums"]["orientation"] | null;
+          duration_seconds?: number | null;
+          act_label?: string | null;
+          position?: number | null;
+          status?: Database["public"]["Enums"]["scene_status"];
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          episode_id?: string;
+          title?: string;
+          prompt?: string | null;
+          orientation?: Database["public"]["Enums"]["orientation"] | null;
+          duration_seconds?: number | null;
+          act_label?: string | null;
+          position?: number | null;
+          status?: Database["public"]["Enums"]["scene_status"];
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "scenes_episode_id_fkey";
+            columns: ["episode_id"];
+            isOneToOne: false;
+            referencedRelation: "episodes";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      series: {
+        Row: {
+          id: string;
+          project_id: string;
+          title: string;
+          slug: string;
+          brief_markdown: string;
+          default_orientation: Database["public"]["Enums"]["orientation"];
+          status: Database["public"]["Enums"]["series_status"];
+          thumbnail_asset_id: string | null;
+          runtime_seconds: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          project_id: string;
+          title: string;
+          slug: string;
+          brief_markdown?: string;
+          default_orientation?: Database["public"]["Enums"]["orientation"];
+          status?: Database["public"]["Enums"]["series_status"];
+          thumbnail_asset_id?: string | null;
+          runtime_seconds?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          project_id?: string;
+          title?: string;
+          slug?: string;
+          brief_markdown?: string;
+          default_orientation?: Database["public"]["Enums"]["orientation"];
+          status?: Database["public"]["Enums"]["series_status"];
+          thumbnail_asset_id?: string | null;
+          runtime_seconds?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "series_project_id_fkey";
+            columns: ["project_id"];
+            isOneToOne: false;
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "series_thumbnail_asset_id_fkey";
+            columns: ["thumbnail_asset_id"];
+            isOneToOne: false;
+            referencedRelation: "assets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      takes: {
+        Row: {
+          id: string;
+          scene_id: string;
+          take_number: number;
+          asset_id: string | null;
+          media_type: Database["public"]["Enums"]["take_media_type"];
+          model: string | null;
+          resolution: string | null;
+          duration_seconds: number | null;
+          starred: boolean;
+          status: Database["public"]["Enums"]["take_status"];
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          scene_id: string;
+          take_number?: number;
+          asset_id?: string | null;
+          media_type: Database["public"]["Enums"]["take_media_type"];
+          model?: string | null;
+          resolution?: string | null;
+          duration_seconds?: number | null;
+          starred?: boolean;
+          status?: Database["public"]["Enums"]["take_status"];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          scene_id?: string;
+          take_number?: number;
+          asset_id?: string | null;
+          media_type?: Database["public"]["Enums"]["take_media_type"];
+          model?: string | null;
+          resolution?: string | null;
+          duration_seconds?: number | null;
+          starred?: boolean;
+          status?: Database["public"]["Enums"]["take_status"];
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "takes_scene_id_fkey";
+            columns: ["scene_id"];
+            isOneToOne: false;
+            referencedRelation: "scenes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "takes_asset_id_fkey";
+            columns: ["asset_id"];
+            isOneToOne: false;
+            referencedRelation: "assets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+    };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: {
+      asset_media_type: "image" | "video" | "audio";
+      asset_source: "generated" | "uploaded";
+      chat_message_role: "user" | "assistant" | "tool";
+      chat_scope_type: "series" | "episode" | "scene";
+      episode_status: "active" | "archived";
+      ingredient_kind: "character" | "voice" | "outfit" | "location" | "reference" | "prop";
+      orientation: "portrait" | "landscape";
+      scene_ingredient_role: "identity_lock" | "reference";
+      scene_status: "storyboard" | "active" | "archived";
+      series_status: "in_progress" | "validated" | "released";
+      take_media_type: "image" | "video";
+      take_status: "draft" | "ready" | "archived";
+    };
+    CompositeTypes: Record<string, never>;
+  };
+};
+
+export type Tables<T extends keyof Database["public"]["Tables"]> =
+  Database["public"]["Tables"][T]["Row"];
+export type TablesInsert<T extends keyof Database["public"]["Tables"]> =
+  Database["public"]["Tables"][T]["Insert"];
+export type TablesUpdate<T extends keyof Database["public"]["Tables"]> =
+  Database["public"]["Tables"][T]["Update"];
+export type Enums<T extends keyof Database["public"]["Enums"]> =
+  Database["public"]["Enums"][T];
+
+export type Profile = Tables<"profiles">;
+export type Project = Tables<"projects">;
+export type Series = Tables<"series">;
+export type Episode = Tables<"episodes">;
+export type Scene = Tables<"scenes">;
+export type Take = Tables<"takes">;
+export type Ingredient = Tables<"ingredients">;
+export type AudioLine = Tables<"audio_lines">;
+export type Asset = Tables<"assets">;
+export type Orientation = Enums<"orientation">;
+export type SeriesStatus = Enums<"series_status">;
+
+export interface SeriesStats {
+  episodeCount: number;
+  ingredientCount: number;
+  runtimeSeconds: number | null;
+}

@@ -1,10 +1,21 @@
-import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { CreateProjectForm } from "@/components/projects/CreateProjectForm";
+import { ProjectList } from "@/components/projects/ProjectList";
+import { listProjects } from "@/lib/db/projects";
 
-export default function ProjectsPage() {
+export default async function ProjectsPage() {
+  const projects = await listProjects();
+
   return (
-    <PlaceholderPage
-      title="Projects"
-      description="Organize your shows and production pipelines."
-    />
+    <section>
+      <PageHeader
+        title="Projects"
+        description="Organize your shows and production pipelines."
+      />
+      <div className="mb-10">
+        <CreateProjectForm />
+      </div>
+      <ProjectList projects={projects} />
+    </section>
   );
 }
