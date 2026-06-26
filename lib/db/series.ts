@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createClient } from "@/lib/supabase/server";
+import { getDbClient } from "@/lib/db/client";
 import type {
   Orientation,
   Series,
@@ -10,7 +10,7 @@ import type {
 } from "@/lib/db/database.types";
 
 export async function listSeriesByProject(projectId: string): Promise<Series[]> {
-  const supabase = await createClient();
+  const supabase = await getDbClient();
   const { data, error } = await supabase
     .from("series")
     .select("*")
@@ -22,7 +22,7 @@ export async function listSeriesByProject(projectId: string): Promise<Series[]> 
 }
 
 export async function getSeries(id: string): Promise<Series | null> {
-  const supabase = await createClient();
+  const supabase = await getDbClient();
   const { data, error } = await supabase.from("series").select("*").eq("id", id).maybeSingle();
 
   if (error) throw new Error(error.message);
@@ -33,7 +33,7 @@ export async function createSeries(
   projectId: string,
   input: { title: string; slug: string; brief_markdown?: string },
 ): Promise<Series> {
-  const supabase = await createClient();
+  const supabase = await getDbClient();
   const payload: TablesInsert<"series"> = {
     project_id: projectId,
     title: input.title,
@@ -62,7 +62,7 @@ export async function updateSeries(
     >
   >,
 ): Promise<Series> {
-  const supabase = await createClient();
+  const supabase = await getDbClient();
   const { data, error } = await supabase
     .from("series")
     .update(patch)
@@ -90,14 +90,14 @@ export async function updateSeriesStatus(id: string, status: SeriesStatus): Prom
 }
 
 export async function deleteSeries(id: string): Promise<void> {
-  const supabase = await createClient();
+  const supabase = await getDbClient();
   const { error } = await supabase.from("series").delete().eq("id", id);
 
   if (error) throw new Error(error.message);
 }
 
 export async function getSeriesStats(seriesId: string): Promise<SeriesStats> {
-  const supabase = await createClient();
+  const supabase = await getDbClient();
 
   const [seriesResult, episodesResult, ingredientsResult] = await Promise.all([
     supabase.from("series").select("runtime_seconds").eq("id", seriesId).maybeSingle(),
