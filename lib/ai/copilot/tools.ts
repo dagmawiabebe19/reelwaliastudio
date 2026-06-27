@@ -1,6 +1,7 @@
 import "server-only";
 
 import type Anthropic from "@anthropic-ai/sdk";
+import { getPublicModelCatalog } from "@/lib/ai/registry";
 
 export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
@@ -91,17 +92,21 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "generate_take",
     description:
-      "Trigger image or video generation for a scene. Auto-resolves and binds character sheets + location references before generating.",
+      "Trigger image or video generation for a scene. Use a registry model id (e.g. openai-image). Omit model to use the composer default image model.",
     input_schema: {
       type: "object",
       properties: {
         scene_id: { type: "string" },
-        model: { type: "string" },
+        model: {
+          type: "string",
+          description:
+            "Registry model id such as openai-image or seedance. Omit to use composer default. Do NOT pass generic words like image or video.",
+        },
         count: { type: "number" },
         resolution: { type: "string", enum: ["480p", "720p"] },
         duration: { type: "number", enum: [6, 7, 8] },
       },
-      required: ["scene_id", "model"],
+      required: ["scene_id"],
     },
   },
 ];
@@ -131,6 +136,8 @@ export type CopilotContext = {
     status: string;
     episode_ids: string[];
   }>;
+  preferredImageModel?: string | null;
+  preferredVideoModel?: string | null;
 };
 
 export function buildSystemPrompt(context: CopilotContext): string {
@@ -138,6 +145,17 @@ export function buildSystemPrompt(context: CopilotContext): string {
   const costumes = (context.ingredients ?? []).filter((i) => i.kind === "outfit");
   const locations = (context.ingredients ?? []).filter((i) => i.kind === "location");
   const voices = (context.ingredients ?? []).filter((i) => i.kind === "voice");
+
+  const generationModels = getPublicModelCatalog().filter(
+    (m) => (m.kind === "image" || m.kind === "video") && m.configured,
+  );
+  const modelsSection = `
+## Generation models (generate_take)
+Use these exact registry ids — never pass generic words like "image" or "video":
+${generationModels.map((m) => `- ${m.id} (${m.label}, ${m.kind})`).join("\n") || "(none configured — set API keys)"}
+Composer default image model: ${context.preferredImageModel ?? "(first configured image model)"}
+If model is omitted in generate_take, the composer default image model is used.
+`;
 
   const pipelineNotes = `
 ## Production pipeline (follow this order)
@@ -157,6 +175,7 @@ Series: ${context.seriesTitle} (${context.seriesId})
 Default orientation: ${context.defaultOrientation} (portrait = 9:16, landscape = 16:9)
 ${context.episodeId ? `Episode: ${context.episodeId}` : ""}
 ${context.sceneId ? `Scene: ${context.sceneId}` : ""}
+${modelsSection}
 ${pipelineNotes}
 
 When drafting storyboard scenes:

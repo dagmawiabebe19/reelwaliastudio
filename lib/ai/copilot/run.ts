@@ -6,7 +6,6 @@ import {
   executeIngredientImageGeneration,
   getIngredientRefUrl,
 } from "@/lib/ai/generation/ingredient-generation";
-import { getModelById, isModelConfigured } from "@/lib/ai/registry";
 import {
   CHARACTER_HEADSHOT_PREFIX,
   LOCATION_ESTABLISHING_PREFIX,
@@ -20,6 +19,7 @@ import { createIngredient, getIngredient } from "@/lib/db/ingredients";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
 import { bindSheetToScene } from "@/lib/db/scene-sheets";
 import { createScene, getScene, updateScene } from "@/lib/db/scenes";
+import { resolveGenerationModelId } from "@/lib/ai/copilot/resolve-generation-model";
 import { resolveCopilotModel } from "@/lib/ai/copilot/resolve-model";
 import { formatToolDoneSummary, formatToolRunningLabel } from "@/lib/ai/copilot/progress";
 import {
@@ -305,15 +305,21 @@ async function executeTool(
 
     case "generate_take": {
       const sceneId = String(args.scene_id);
-      const modelId = String(args.model);
       const count = typeof args.count === "number" ? args.count : 1;
       const resolution = String(args.resolution ?? "720p");
       const durationSeconds = typeof args.duration === "number" ? args.duration : 6;
 
-      const model = getModelById(modelId);
-      if (!model || !isModelConfigured(model)) {
-        return { error: `Model ${modelId} is not configured.` };
+      const resolved = resolveGenerationModelId({
+        requested: args.model != null ? String(args.model) : null,
+        preferredImageModel: context.preferredImageModel,
+        preferredVideoModel: context.preferredVideoModel,
+      });
+      if (!resolved.ok) {
+        return { error: resolved.error };
       }
+
+      const modelId = resolved.modelId;
+      const model = resolved.model;
 
       const scene = await getScene(sceneId);
       if (!scene) return { error: "Scene not found." };

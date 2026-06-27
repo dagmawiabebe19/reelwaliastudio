@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BrandWordmark } from "@/components/brand/BrandWordmark";
 import { EpisodeFilmExportButton } from "@/components/series/export/EpisodeFilmExportButton";
 import { useStudioNav } from "@/components/sidebar/studio-nav-context";
 
@@ -30,8 +31,10 @@ export function EpisodeStudioChrome({
   const { openNav } = useStudioNav();
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
-      <div className="flex shrink-0 items-center gap-1">
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
+      <BrandWordmark size="compact" className="mr-1" />
+
+      <div className="flex shrink-0 items-center gap-1 border-l border-border pl-3">
         <button
           type="button"
           onClick={openNav}
@@ -39,12 +42,6 @@ export function EpisodeStudioChrome({
         >
           Menu
         </button>
-        <Link
-          href="/"
-          className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:text-accent"
-        >
-          Home
-        </Link>
         <Link
           href={`/series/${seriesId}`}
           className="max-w-[8rem] truncate rounded-md px-2 py-1 text-xs text-muted transition-colors hover:text-accent"

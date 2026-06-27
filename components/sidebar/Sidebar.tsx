@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { BrandWordmark } from "@/components/brand/BrandWordmark";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
@@ -33,13 +34,7 @@ export function Sidebar({ userEmail, onNavigate }: SidebarProps) {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border bg-surface">
       <div className="border-b border-border px-6 py-8">
-        <p className="brand-wordmark font-display text-2xl font-bold tracking-tight">
-          <span className="text-foreground">Reel</span>
-          <span className="text-accent">Walia</span>
-        </p>
-        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-          Studio
-        </p>
+        <BrandWordmark onNavigate={onNavigate} />
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-6">
