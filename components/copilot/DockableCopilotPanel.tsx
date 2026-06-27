@@ -72,7 +72,6 @@ export function DockableCopilotPanel() {
     scopeId,
     context,
     ingredients,
-    imageModels,
     suggestions,
     prefs,
     setCollapsed,
@@ -165,7 +164,6 @@ export function DockableCopilotPanel() {
         scopeType={scopeType}
         scopeId={scopeId}
         context={context}
-        imageModels={imageModels}
         ingredients={ingredients}
         initialMessages={messages}
         controlledMessages={messages}

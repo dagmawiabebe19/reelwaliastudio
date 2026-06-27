@@ -113,7 +113,6 @@ export function StudioShell({
         },
       },
       ingredients,
-      imageModels: models.filter((m) => m.kind === "image"),
       initialMessages: chatMessages,
     }),
     [
@@ -127,7 +126,6 @@ export function StudioShell({
       scenes,
       ingredients,
       characterSheets,
-      models,
       chatMessages,
       selectedSceneId,
       selectedScene?.title,

@@ -1,8 +1,6 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
-import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
-import { validateVideoGeneration } from "@/lib/ai/generation/video-source";
 import {
   executeIngredientImageGeneration,
   getIngredientRefUrl,
@@ -20,7 +18,6 @@ import { createIngredient, getIngredient } from "@/lib/db/ingredients";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
 import { bindSheetToScene } from "@/lib/db/scene-sheets";
 import { createScene, getScene, updateScene } from "@/lib/db/scenes";
-import { resolveGenerationModelId } from "@/lib/ai/copilot/resolve-generation-model";
 import { resolveCopilotModel } from "@/lib/ai/copilot/resolve-model";
 import { formatToolDoneSummary, formatToolRunningLabel } from "@/lib/ai/copilot/progress";
 import {
@@ -31,7 +28,6 @@ import {
 import { appendChatMessage, listChatMessages } from "@/lib/db/chat";
 import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
 import { getSeries } from "@/lib/db/series";
-import type { GenerationProgressCallback } from "@/lib/generation/progress";
 
 export type CopilotStreamEvent =
   | { type: "text"; content: string }
@@ -303,110 +299,6 @@ async function executeTool(
         costume_name: costume?.name ?? null,
         status: genResult.status,
         error: genResult.error,
-      };
-    }
-
-    case "generate_take": {
-      const sceneId = String(args.scene_id);
-      let count = typeof args.count === "number" ? args.count : 1;
-      const resolution = String(args.resolution ?? "720p");
-      const durationSeconds = typeof args.duration === "number" ? args.duration : 6;
-      const dopModel = args.dop_model != null ? String(args.dop_model) : undefined;
-      const motionId = args.motion_id != null ? String(args.motion_id) : undefined;
-
-      const resolved = resolveGenerationModelId({
-        requested: args.model != null ? String(args.model) : null,
-        preferredImageModel: context.preferredImageModel,
-        preferredVideoModel: context.preferredVideoModel,
-      });
-      if (!resolved.ok) {
-        return { error: resolved.error };
-      }
-
-      const modelId = resolved.modelId;
-      const model = resolved.model;
-
-      const scene = await getScene(sceneId);
-      if (!scene) return { error: "Scene not found." };
-
-      if (model.kind === "video") {
-        if (count > 1) count = 1;
-        const videoCheck = await validateVideoGeneration(sceneId);
-        if (!videoCheck.ok) {
-          return { error: videoCheck.error };
-        }
-      }
-
-      const seriesId = context.seriesId;
-      const episodeId = context.episodeId ?? scene.episode_id;
-
-      emitProgress("creating pending takes…", 0, count);
-
-      const takeIds = await createPendingTakes({
-        sceneId,
-        seriesId,
-        episodeId,
-        modelId,
-        count,
-        resolution,
-        durationSeconds: modelId === "higgsfield" ? undefined : durationSeconds,
-        dopModel,
-        motionId,
-      });
-
-      const onProgress: GenerationProgressCallback = (message, step, total) => {
-        const label = model.kind === "video" ? "video" : "image";
-        const detail =
-          step && total
-            ? `generating ${label} (${step}/${total}) — ${message}`
-            : `generating ${label} — ${message}`;
-        emitProgress(detail, step, total);
-      };
-
-      const outcome = await executeGenerationJob(
-        {
-          sceneId,
-          seriesId,
-          episodeId,
-          modelId,
-          count,
-          resolution,
-          durationSeconds: modelId === "higgsfield" ? undefined : durationSeconds,
-          dopModel,
-          motionId,
-        },
-        takeIds,
-        onProgress,
-      );
-
-      const failedTakes = outcome.takes.filter((t) => t.status === "failed");
-      const readyTakes = outcome.takes.filter((t) => t.status === "ready");
-      const pendingTakes = outcome.takes.filter((t) => t.status === "pending");
-      const primaryError = failedTakes.find((t) => t.error_message)?.error_message;
-
-      return {
-        take_ids: takeIds,
-        takes: outcome.takes,
-        status:
-          pendingTakes.length > 0
-            ? "pending"
-            : failedTakes.length === 0
-              ? "ready"
-              : readyTakes.length > 0
-                ? "partial"
-                : "failed",
-        ready_count: readyTakes.length,
-        failed_count: failedTakes.length,
-        pending_count: pendingTakes.length,
-        ...(failedTakes.length > 0
-          ? {
-              errors: failedTakes.map((t) => ({
-                take_id: t.id,
-                error: t.error_message ?? "Generation failed.",
-              })),
-            }
-          : {}),
-        ...(failedTakes.length === takeIds.length && primaryError ? { error: primaryError } : {}),
       };
     }
 

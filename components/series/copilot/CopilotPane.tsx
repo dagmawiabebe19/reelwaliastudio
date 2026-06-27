@@ -5,7 +5,6 @@ import {
   ANTHROPIC_MODELS,
   DEFAULT_ANTHROPIC_MODEL,
 } from "@/lib/ai/anthropic-models";
-import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
 
@@ -70,7 +69,6 @@ interface CopilotPaneProps {
   scopeType: "series" | "episode" | "scene";
   scopeId: string;
   context: CopilotContextPayload;
-  imageModels: ModelCatalogEntry[];
   ingredients: MentionIngredient[];
   initialMessages?: ChatMessageData[];
   controlledMessages?: ChatMessageData[];
@@ -92,7 +90,6 @@ export function CopilotPane({
   scopeType,
   scopeId,
   context,
-  imageModels,
   ingredients,
   initialMessages = [],
   controlledMessages,
@@ -118,7 +115,6 @@ export function CopilotPane({
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [copilotModel, setCopilotModel] = useState<string>(DEFAULT_ANTHROPIC_MODEL);
-  const [imageModel, setImageModel] = useState(imageModels.find((m) => m.configured)?.id ?? "");
   const [mentionOpen, setMentionOpen] = useState(false);
   const messageLogRef = useRef<HTMLDivElement>(null);
 
@@ -144,7 +140,7 @@ export function CopilotPane({
 
     try {
       const live = getLiveContext?.() ?? context;
-      let resolvedContext = { ...live, preferredImageModel: imageModel };
+      let resolvedContext = { ...live };
 
       try {
         const params = new URLSearchParams({ seriesId: live.seriesId });
@@ -157,7 +153,6 @@ export function CopilotPane({
           resolvedContext = {
             ...data.context,
             workspace: live.workspace ?? data.context.workspace,
-            preferredImageModel: imageModel,
           };
         }
       } catch {
@@ -362,30 +357,17 @@ export function CopilotPane({
       </div>
 
       <div className="shrink-0 space-y-3 border-t border-border bg-surface pt-3">
-        <div className="grid grid-cols-2 gap-2">
-          <select
-            value={copilotModel}
-            onChange={(e) => setCopilotModel(e.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-xs"
-          >
-            {ANTHROPIC_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={imageModel}
-            onChange={(e) => setImageModel(e.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-xs"
-          >
-            {imageModels.map((m) => (
-              <option key={m.id} value={m.id} disabled={!m.configured}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <select
+          value={copilotModel}
+          onChange={(e) => setCopilotModel(e.target.value)}
+          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+        >
+          {ANTHROPIC_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
 
         <div className="relative">
           {mentionOpen ? (
@@ -416,7 +398,7 @@ export function CopilotPane({
               }
             }}
             rows={3}
-            placeholder="What do you think? Rewrite this. Generate it. Help me…"
+            placeholder="Plan the episode, rewrite a prompt, bind sheets…"
             className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm"
           />
         </div>

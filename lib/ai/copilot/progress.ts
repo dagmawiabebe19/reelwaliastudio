@@ -15,7 +15,7 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
       const created = Array.isArray(result.created) ? result.created.length : 0;
       const updated = Array.isArray(result.updated) ? result.updated.length : 0;
       const parts: string[] = [];
-      if (created) parts.push(`Created ${created} scene${created === 1 ? "" : "s"}`);
+      if (created) parts.push(`Created ${created} scene${created === 1 ? "" : "s"} (ready to generate)`);
       if (updated) parts.push(`Updated ${updated} scene${updated === 1 ? "" : "s"}`);
       return parts.length
         ? `${toolDisplayName(name)} — ${parts.join(", ")}`
@@ -41,39 +41,6 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
       return parts.length
         ? `Bound ${parts.join(" + ")}`
         : "No bindings applied";
-    }
-    case "generate_take": {
-      const ready = Number(result.ready_count ?? 0);
-      const failed = Number(result.failed_count ?? 0);
-      const pending = Number(result.pending_count ?? 0);
-      const errors = Array.isArray(result.errors)
-        ? (result.errors as { error?: string }[])
-        : [];
-      const firstErr = errors.find((entry) => entry.error?.trim())?.error?.trim();
-      const topError = typeof result.error === "string" ? result.error.trim() : firstErr;
-
-      if (failed > 0 && ready === 0 && pending === 0 && topError) {
-        return `generate_take — failed: ${topError}`;
-      }
-      if (ready > 0 && failed === 0 && pending === 0) {
-        return `Generated ${ready} take${ready === 1 ? "" : "s"} — ready`;
-      }
-      if (failed > 0) {
-        const errSuffix = topError ? ` — ${topError}` : "";
-        return ready > 0
-          ? `Takes: ${ready} ready, ${failed} failed${errSuffix}`
-          : `Take generation failed${errSuffix}`;
-      }
-      if (pending > 0) {
-        const ids = Array.isArray(result.take_ids) ? result.take_ids.length : 0;
-        return ids
-          ? `Queued ${ids} take${ids === 1 ? "" : "s"} — still generating`
-          : "Take generation still in progress";
-      }
-      const ids = Array.isArray(result.take_ids) ? result.take_ids.length : 0;
-      return ids
-        ? `Queued ${ids} take${ids === 1 ? "" : "s"} — generating`
-        : "Take generation started";
     }
     case "create_character_sheet": {
       if (result.error && typeof result.error === "string") {
@@ -102,8 +69,6 @@ function toolDisplayName(name: string): string {
       return "add_ingredient";
     case "bind_identity":
       return "bind_identity";
-    case "generate_take":
-      return "generate_take";
     case "create_character_sheet":
       return "create_character_sheet";
     case "update_series_memory":

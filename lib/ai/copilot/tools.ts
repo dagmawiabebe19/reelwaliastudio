@@ -1,13 +1,12 @@
 import "server-only";
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { getPublicModelCatalog } from "@/lib/ai/registry";
 
 export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "draft_storyboard",
     description:
-      "Create or update scenes for an episode. Each segment becomes a scene with title, prompt, act label, duration, and optional orientation override. Auto-resolves character sheets, locations, and voices per segment.",
+      "Create or update scenes for an episode. Each segment becomes a storyboard placeholder (0 takes) with title, prompt, act label, duration, and optional orientation override. Auto-resolves character sheets, locations, and voices per segment. Does NOT generate images or video — the director generates takes manually per segment in the New Take panel.",
     input_schema: {
       type: "object",
       properties: {
@@ -90,39 +89,6 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
-    name: "generate_take",
-    description:
-      "Trigger image or video generation for a scene. Image models use identity-lock references. Video models animate a ready storyboard image take — star a take or use the latest ready image. For seedance pass duration (6/7/8). For higgsfield (DoP) optional dop_model (dop-turbo, dop-lite, dop-standard) and motion_id from list motions — duration is not configurable.",
-    input_schema: {
-      type: "object",
-      properties: {
-        scene_id: { type: "string" },
-        model: {
-          type: "string",
-          description:
-            "Registry model id such as openai-image, higgsfield, or seedance. Omit to use the composer default image model. Use higgsfield or seedance for video.",
-        },
-        count: { type: "number", description: "Image takes only (1–5). Video always generates 1 take." },
-        resolution: { type: "string", enum: ["480p", "720p"] },
-        duration: {
-          type: "number",
-          enum: [6, 7, 8],
-          description: "Seedance only — not used for higgsfield DoP.",
-        },
-        dop_model: {
-          type: "string",
-          enum: ["dop-turbo", "dop-lite", "dop-standard"],
-          description: "Higgsfield DoP variant. Defaults to dop-turbo.",
-        },
-        motion_id: {
-          type: "string",
-          description: "Optional Higgsfield camera motion id (from getMotions).",
-        },
-      },
-      required: ["scene_id"],
-    },
-  },
-  {
     name: "update_series_memory",
     description:
       "Append a persistent fact or production preference to series memory. Use when the user states a rule, correction, or canonical world detail that must apply in all future sessions for this series.",
@@ -172,8 +138,6 @@ export type CopilotContext = {
     status: string;
     episode_ids: string[];
   }>;
-  preferredImageModel?: string | null;
-  preferredVideoModel?: string | null;
   workspace?: {
     view: string;
     viewLabel: string;
@@ -193,15 +157,21 @@ export function buildSystemPrompt(context: CopilotContext): string {
   const locations = (context.ingredients ?? []).filter((i) => i.kind === "location");
   const voices = (context.ingredients ?? []).filter((i) => i.kind === "voice");
 
-  const generationModels = getPublicModelCatalog().filter(
-    (m) => (m.kind === "image" || m.kind === "video") && m.configured,
-  );
-  const modelsSection = `
-## Generation models (generate_take)
-Use these exact registry ids — never pass generic words like "image" or "video":
-${generationModels.map((m) => `- ${m.id} (${m.label}, ${m.kind})`).join("\n") || "(none configured — set API keys)"}
-Composer default image model: ${context.preferredImageModel ?? "(first configured image model)"}
-If model is omitted in generate_take, the composer default image model is used.
+  const divisionOfLabor = `
+## Division of labor (critical)
+You PLAN episodes — you do NOT generate scene takes (images or video). Scene take generation is a manual director action in the **New Take** panel per segment.
+
+Your job after breaking down an episode:
+- Create segments via draft_storyboard as storyboard placeholders (0 takes each).
+- Write each segment prompt; set duration and orientation; bind identity sheets, locations, and voices.
+- Then STOP. Tell the creator the shot list is ready.
+
+You may still generate **library assets** (character headshots, location establishing shots, costume previews, character sheets) via add_ingredient and create_character_sheet — those are ingredients, not segment takes.
+
+If the user asks to "generate", "render", or "shoot" a segment or take:
+- Do NOT attempt generation. There is no generate_take tool.
+- Briefly direct them: open the segment, review/adjust the prompt, then use the **New Take** panel to choose model, takes count, length/quality (480p/720p), and hit Generate.
+- You may confirm the segment is set up (prompt, bindings, orientation) and ready to generate.
 `;
 
   const pipelineNotes = `
@@ -211,12 +181,12 @@ If model is omitted in generate_take, the composer default image model is used.
 3. **Character sheets** — turnaround (front, profiles, 3/4, back) locking face + wardrobe. One sheet links to many episodes via character_sheet_episodes — never duplicate per episode.
 4. **Locations** — clean establishing shots.
 5. **Voices** — description for timbre/age/accent; generation is stubbed until provider is wired.
-6. **Storyboard** — bind SHEETS (not raw headshots) per segment. generate_take uses sheet angle images + location for images. For video (higgsfield / seedance), a ready image take must exist — prefer the starred take as the source frame.
+6. **Storyboard** — draft_storyboard creates placeholder segments (0 takes). Bind SHEETS (not raw headshots) per segment. The director generates takes manually in the New Take panel.
 7. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).
 
-The creator is always in context — see ## Where the creator is right now. Never ask which scene, episode, or character they mean unless the workspace block is empty. Interpret short requests ("rewrite this", "generate it", "make it more emotional") against the current scene and selections.
+The creator is always in context — see ## Where the creator is right now. Never ask which scene, episode, or character they mean unless the workspace block is empty. Interpret short requests ("rewrite this", "make it more emotional") against the current scene and selections. If they say "generate it" or "render this", they mean manual generation in the New Take panel — guide them there; do not call any generation tool for segment takes.
 `;
 
   const workspace = context.workspace;
@@ -242,7 +212,7 @@ Series: ${context.seriesTitle} (${context.seriesId})
 Default orientation: ${context.defaultOrientation} (portrait = 9:16, landscape = 16:9)
 ${context.episodeId ? `Episode id: ${context.episodeId}${workspace?.episodeTitle ? ` — ${workspace.episodeTitle}` : ""}` : ""}
 ${context.sceneId ? `Active scene id: ${context.sceneId}` : ""}
-${modelsSection}
+${divisionOfLabor}
 ${pipelineNotes}
 
 When drafting storyboard scenes:

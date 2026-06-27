@@ -21,7 +21,6 @@ import type {
   CopilotSuggestion,
 } from "@/lib/copilot/workspace-types";
 import type { CopilotContextPayload, MentionIngredient } from "@/components/series/copilot/CopilotPane";
-import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
 
 type CopilotWorkspaceContextValue = {
@@ -30,7 +29,6 @@ type CopilotWorkspaceContextValue = {
   scopeId: string | null;
   context: CopilotContextPayload | null;
   ingredients: MentionIngredient[];
-  imageModels: ModelCatalogEntry[];
   suggestions: CopilotSuggestion[];
   prefs: CopilotPanelPrefs;
   messagesVersion: number;
@@ -65,7 +63,6 @@ export function useRegisterCopilotContext(registration: CopilotRegistration | nu
   const ingredientIds = registration?.ingredients.map((i) => i.id).join(",") ?? "";
   const suggestionIds = registration?.suggestions?.map((s) => s.id).join(",") ?? "";
   const sceneIds = registration?.context.scenes?.map((s) => s.id).join(",") ?? "";
-  const imageModelIds = registration?.imageModels.map((m) => m.id).join(",") ?? "";
 
   const signature = useMemo(
     () => registrationSignature(registration),
@@ -89,7 +86,6 @@ export function useRegisterCopilotContext(registration: CopilotRegistration | nu
       ingredientIds,
       suggestionIds,
       sceneIds,
-      imageModelIds,
       Boolean(registration?.onOutputEvent),
     ],
   );
@@ -138,7 +134,6 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
 
   const context = reg?.context ?? null;
   const ingredients = reg?.ingredients ?? [];
-  const imageModels = reg?.imageModels ?? [];
   const suggestions = (reg?.suggestions ?? []).filter((s) => !dismissedSuggestionIds.has(s.id));
 
   const updatePrefs = useCallback((patch: Partial<CopilotPanelPrefs>) => {
@@ -179,7 +174,6 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
       scopeId,
       context,
       ingredients,
-      imageModels,
       suggestions,
       prefs,
       messagesVersion,
@@ -201,7 +195,6 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
       scopeId,
       context,
       ingredients,
-      imageModels,
       suggestions,
       prefs,
       messagesVersion,

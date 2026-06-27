@@ -25,7 +25,6 @@ export function registrationSignature(reg: CopilotRegistration | null): string {
     ingredientIds: reg.ingredients.map((i) => i.id).join(","),
     suggestionIds: (reg.suggestions ?? []).map((s) => s.id).join(","),
     hasOutputHandler: Boolean(reg.onOutputEvent),
-    imageModelIds: reg.imageModels.map((m) => m.id).join(","),
     sceneIds: (reg.context.scenes ?? []).map((s) => s.id).join(","),
   });
 }

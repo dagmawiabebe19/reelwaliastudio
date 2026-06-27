@@ -1,5 +1,4 @@
 import type { ChatMessageData, CopilotContextPayload, MentionIngredient } from "@/components/series/copilot/CopilotPane";
-import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
 
 export type CopilotDockSide = "left" | "right";
@@ -49,7 +48,6 @@ export type CopilotRegistration = {
   scopeId: string;
   context: CopilotContextPayload;
   ingredients: MentionIngredient[];
-  imageModels: ModelCatalogEntry[];
   initialMessages?: ChatMessageData[];
   suggestions?: CopilotSuggestion[];
   onOutputEvent?: (event: CopilotOutputEvent) => void;
