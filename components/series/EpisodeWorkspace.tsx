@@ -32,14 +32,16 @@ interface EpisodeWorkspaceProps {
   models: ModelCatalogEntry[];
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
+  copilotCollapsed?: boolean;
 }
 
-export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
+export function EpisodeWorkspace({ copilotCollapsed, ...props }: EpisodeWorkspaceProps) {
   return (
     <StudioShell
       {...props}
       scopeType="episode"
       scopeId={props.episodeId}
+      copilotCollapsed={copilotCollapsed}
     />
   );
 }

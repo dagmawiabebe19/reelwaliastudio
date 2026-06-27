@@ -16,9 +16,10 @@ const navItems = [
 
 interface SidebarProps {
   userEmail?: string | null;
+  onNavigate?: () => void;
 }
 
-export function Sidebar({ userEmail }: SidebarProps) {
+export function Sidebar({ userEmail, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -55,6 +56,7 @@ export function Sidebar({ userEmail }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               className={`block rounded-md px-3 py-2 text-sm transition-colors ${
                 isActive
                   ? "bg-accent-muted font-medium text-accent"
@@ -70,6 +72,7 @@ export function Sidebar({ userEmail }: SidebarProps) {
       <div className="space-y-2 border-t border-border px-3 py-4">
         <Link
           href="/projects/new"
+          onClick={onNavigate}
           className={`block rounded-md px-3 py-2 text-center text-sm font-medium transition-colors ${
             pathname === "/projects/new"
               ? "bg-primary text-primary-foreground shadow-sm"

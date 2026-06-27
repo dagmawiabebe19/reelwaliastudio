@@ -1,0 +1,86 @@
+"use client";
+
+import Link from "next/link";
+import { EpisodeFilmExportButton } from "@/components/series/export/EpisodeFilmExportButton";
+import { useStudioNav } from "@/components/sidebar/studio-nav-context";
+
+interface EpisodeStudioChromeProps {
+  seriesId: string;
+  seriesTitle: string;
+  episodeId: string;
+  episodeTitle: string;
+  audioLineCount: number;
+  showAudio: boolean;
+  onToggleAudio: () => void;
+  copilotCollapsed: boolean;
+  onToggleCopilot: () => void;
+}
+
+export function EpisodeStudioChrome({
+  seriesId,
+  seriesTitle,
+  episodeId,
+  episodeTitle,
+  audioLineCount,
+  showAudio,
+  onToggleAudio,
+  copilotCollapsed,
+  onToggleCopilot,
+}: EpisodeStudioChromeProps) {
+  const { openNav } = useStudioNav();
+
+  return (
+    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={openNav}
+          className="rounded-md border border-border px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent/50 hover:text-accent"
+        >
+          Menu
+        </button>
+        <Link
+          href="/"
+          className="rounded-md px-2 py-1 text-xs text-muted transition-colors hover:text-accent"
+        >
+          Home
+        </Link>
+        <Link
+          href={`/series/${seriesId}`}
+          className="max-w-[8rem] truncate rounded-md px-2 py-1 text-xs text-muted transition-colors hover:text-accent"
+          title={seriesTitle}
+        >
+          ← {seriesTitle}
+        </Link>
+      </div>
+
+      <div className="min-w-0 flex-1 text-center">
+        <p className="studio-column-heading-sm truncate font-display text-foreground" title={episodeTitle}>
+          {episodeTitle}
+        </p>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={onToggleAudio}
+          className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+            showAudio
+              ? "border-accent bg-accent-muted text-accent"
+              : "border-border text-muted hover:border-accent/50 hover:text-accent"
+          }`}
+        >
+          Audio{audioLineCount > 0 ? ` (${audioLineCount})` : ""}
+        </button>
+        <EpisodeFilmExportButton episodeId={episodeId} seriesId={seriesId} compact />
+        <button
+          type="button"
+          onClick={onToggleCopilot}
+          className="rounded-md border border-border px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent/50 hover:text-accent"
+        >
+          {copilotCollapsed ? "Show co-pilot" : "Hide co-pilot"}
+        </button>
+      </div>
+    </header>
+  );
+}

@@ -1,8 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AudioLinesPanel } from "@/components/series/audio/AudioLinesPanel";
-import { EpisodeWorkspace } from "@/components/series/EpisodeWorkspace";
-import { EpisodeFilmExportButton } from "@/components/series/export/EpisodeFilmExportButton";
+import { EpisodeStudioPage } from "@/components/series/EpisodeStudioPage";
 import { getPublicModelCatalog } from "@/lib/ai/registry";
 import { listAudioLinesByEpisode } from "@/lib/db/audio-lines";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
@@ -98,61 +95,35 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
   const models = getPublicModelCatalog();
 
   return (
-    <section className="space-y-10">
-      <header className="border-b border-border pb-6">
-        <Link href={`/series/${seriesId}`} className="link-muted text-sm">
-          ← {series.title}
-        </Link>
-        <h1 className="mt-4 font-display text-3xl text-foreground">{episode.title}</h1>
-        {episode.logline ? (
-          <p className="mt-2 text-sm text-muted">{episode.logline}</p>
-        ) : null}
-      </header>
-
-      <AudioLinesPanel
-        seriesId={seriesId}
-        episodeId={episodeId}
-        lines={audioLines.map((line) => ({
-          id: line.id,
-          title: line.title,
-          description: line.description,
-          ref_tag: line.ref_tag,
-          assetUrl: line.assetUrl,
-          assetId: line.asset_id,
-        }))}
-      />
-
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4">
-        <div>
-          <h2 className="font-display text-lg text-foreground">Episode Film</h2>
-          <p className="text-sm text-muted">
-            Concatenate starred takes into one film (orientation-aware).
-          </p>
-        </div>
-        <EpisodeFilmExportButton episodeId={episodeId} seriesId={seriesId} />
-      </div>
-
-      <EpisodeWorkspace
-        seriesId={seriesId}
-        episodeId={episodeId}
-        seriesTitle={series.title}
-        defaultOrientation={series.default_orientation}
-        briefMarkdown={series.brief_markdown}
-        scenes={scenes}
-        ingredients={mentionIngredients}
-        sheets={sheets}
-        characterSheets={characterSheets}
-        models={models}
-        takesByScene={takesEnriched}
-        chatMessages={chatMessages.map((m) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content,
-          tool_name: m.tool_name,
-          tool_args: m.tool_args as Record<string, unknown> | null,
-          tool_result: m.tool_result as Record<string, unknown> | null,
-        }))}
-      />
-    </section>
+    <EpisodeStudioPage
+      seriesId={seriesId}
+      episodeId={episodeId}
+      seriesTitle={series.title}
+      episodeTitle={episode.title}
+      defaultOrientation={series.default_orientation}
+      briefMarkdown={series.brief_markdown}
+      scenes={scenes}
+      ingredients={mentionIngredients}
+      sheets={sheets}
+      characterSheets={characterSheets}
+      models={models}
+      takesByScene={takesEnriched}
+      chatMessages={chatMessages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        tool_name: m.tool_name,
+        tool_args: m.tool_args as Record<string, unknown> | null,
+        tool_result: m.tool_result as Record<string, unknown> | null,
+      }))}
+      audioLines={audioLines.map((line) => ({
+        id: line.id,
+        title: line.title,
+        description: line.description,
+        ref_tag: line.ref_tag,
+        assetUrl: line.assetUrl,
+        assetId: line.asset_id,
+      }))}
+    />
   );
 }

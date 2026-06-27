@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { isDevNoAuth } from "@/lib/auth/dev";
 import { getActiveUserId } from "@/lib/auth/active-user";
 import { createClient } from "@/lib/supabase/server";
-import { Sidebar } from "@/components/sidebar/Sidebar";
+import { ShellLayout } from "@/components/sidebar/ShellLayout";
 
 interface AppShellProps {
   children: ReactNode;
@@ -21,12 +21,5 @@ export async function AppShell({ children }: AppShellProps) {
     userEmail = user?.email ?? null;
   }
 
-  return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <Sidebar userEmail={userEmail} />
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl px-10 py-12">{children}</div>
-      </main>
-    </div>
-  );
+  return <ShellLayout userEmail={userEmail}>{children}</ShellLayout>;
 }

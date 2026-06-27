@@ -41,6 +41,7 @@ interface StudioShellProps {
   chatMessages: ChatMessageData[];
   scopeType: "episode" | "scene";
   scopeId: string;
+  copilotCollapsed?: boolean;
 }
 
 export function StudioShell({
@@ -58,10 +59,13 @@ export function StudioShell({
   chatMessages,
   scopeType,
   scopeId,
+  copilotCollapsed: copilotCollapsedProp,
 }: StudioShellProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
-  const [copilotCollapsed, setCopilotCollapsed] = useState(false);
+  const [copilotCollapsedInternal] = useState(false);
   const [activeTakeIndex, setActiveTakeIndex] = useState(0);
+
+  const copilotCollapsed = copilotCollapsedProp ?? copilotCollapsedInternal;
 
   const selectedScene = scenes.find((s) => s.id === selectedSceneId) ?? null;
   const sceneOrientation = selectedScene
@@ -96,18 +100,7 @@ export function StudioShell({
   };
 
   return (
-    <div className="flex h-[calc(100vh-12rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg border border-border bg-surface">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Episode studio</p>
-        <button
-          type="button"
-          onClick={() => setCopilotCollapsed((v) => !v)}
-          className="rounded-md border border-border px-3 py-1 text-xs text-muted transition-colors hover:border-accent/50 hover:text-accent"
-        >
-          {copilotCollapsed ? "Show co-pilot" : "Hide co-pilot"}
-        </button>
-      </div>
-
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface">
       <div
         className={`grid min-h-0 flex-1 ${
           copilotCollapsed
