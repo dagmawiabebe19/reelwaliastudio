@@ -8,7 +8,9 @@ import {
   generateCostumeAction,
 } from "@/app/(app)/series/[id]/production-actions";
 import { RefTag } from "@/components/ui/RefTag";
+import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import { SHEET_ANGLE_LABELS } from "@/lib/production/prompts";
 import type { CharacterSheetCardData, EpisodeOption, IngredientCardData } from "@/lib/production/types";
 
@@ -38,6 +40,17 @@ export function CharactersSection({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [expandedSheet, setExpandedSheet] = useState<string | null>(null);
+
+  const hasPending =
+    characters.some((c) => c.generationStatus === "pending") ||
+    Object.values(costumesByCharacter)
+      .flat()
+      .some((c) => c.generationStatus === "pending") ||
+    Object.values(sheetsByCharacter)
+      .flat()
+      .some((s) => s.status === "pending");
+
+  usePollWhilePending(hasPending);
 
   function runAction(action: () => Promise<{ error?: string }>) {
     setError(null);
@@ -126,9 +139,10 @@ export function CharactersSection({
                     {character.description ? (
                       <p className="text-sm text-muted">{character.description}</p>
                     ) : null}
-                    {character.generationError ? (
-                      <p className="text-xs text-accent">{character.generationError}</p>
-                    ) : null}
+                    <GenerationStatusLine
+                      status={character.generationStatus}
+                      error={character.generationError}
+                    />
 
                     <div className="space-y-2 border-t border-border pt-3">
                       <p className="text-xs uppercase tracking-widest text-muted">Costumes</p>
@@ -188,6 +202,10 @@ export function CharactersSection({
                               <div className="p-1.5">
                                 <p className="truncate text-xs">{costume.name}</p>
                                 <RefTag tag={costume.ref_tag} />
+                                <GenerationStatusLine
+                                  status={costume.generationStatus}
+                                  error={costume.generationError}
+                                />
                               </div>
                             </div>
                           ))}
@@ -267,8 +285,14 @@ export function CharactersSection({
                                 </span>
                                 <GenerationBadge status={sheet.status} />
                               </button>
-                              {sheet.generation_error ? (
-                                <p className="mt-1 text-xs text-accent">{sheet.generation_error}</p>
+                              <GenerationStatusLine
+                                status={sheet.status}
+                                error={sheet.generation_error}
+                              />
+                              {sheet.status === "pending" ? (
+                                <p className="mt-1 text-[10px] text-muted">
+                                  Rendering 5 angles — check back shortly
+                                </p>
                               ) : null}
                               {expandedSheet === sheet.id || sheet.status === "ready" ? (
                                 <div className="mt-3 flex gap-1 overflow-x-auto">

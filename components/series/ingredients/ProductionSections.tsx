@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { generateLocationAction } from "@/app/(app)/series/[id]/production-actions";
 import { generateVoiceAction } from "@/app/(app)/series/[id]/voice-actions";
 import { RefTag } from "@/components/ui/RefTag";
+import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { IngredientCardData } from "@/lib/production/types";
 import { IngredientCard } from "./IngredientsSection";
 
@@ -18,6 +20,8 @@ export function LocationsSection({ seriesId, locations }: LocationsSectionProps)
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  usePollWhilePending(locations.some((l) => l.generationStatus === "pending"));
 
   return (
     <section className="space-y-4">
@@ -157,13 +161,14 @@ export function VoicesSection({ seriesId, voices, characters }: VoicesSectionPro
               {voice.description ? (
                 <p className="mt-2 text-sm text-muted">{voice.description}</p>
               ) : null}
+              <GenerationStatusLine
+                status={voice.generationStatus}
+                error={voice.generationError}
+              />
               {voice.generationStatus && voice.generationStatus !== "ready" ? (
                 <div className="mt-2">
                   <StatusDot variant="open" label={voice.generationStatus} />
                 </div>
-              ) : null}
-              {voice.generationError ? (
-                <p className="mt-1 text-xs text-accent">{voice.generationError}</p>
               ) : null}
             </article>
           ))}

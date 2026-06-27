@@ -16,6 +16,7 @@ import { collectGenerationRefUrls, resolveSceneReferences } from "@/lib/producti
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { persistRemoteAsset } from "@/lib/storage/persist-generated";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
+import type { GenerationProgressCallback } from "@/lib/generation/progress";
 
 export interface GenerateTakeParams {
   sceneId: string;
@@ -85,7 +86,8 @@ export async function createPendingTakes(params: GenerateTakeParams): Promise<st
 export async function executeGenerationJob(
   params: GenerateTakeParams,
   takeIds: string[],
-): Promise<void> {
+  onProgress?: GenerationProgressCallback,
+): Promise<{ ready: number; failed: number }> {
   const scene = await getScene(params.sceneId);
   if (!scene) throw new Error("Scene not found.");
 
@@ -94,6 +96,8 @@ export async function executeGenerationJob(
 
   const model = getModelById(params.modelId);
   if (!model) throw new Error("Unknown model.");
+
+  onProgress?.("resolving references…", 0, takeIds.length);
 
   const aspectRatio = orientationToAspectRatio(
     effectiveOrientation(scene.orientation, series.default_orientation),
@@ -109,6 +113,13 @@ export async function executeGenerationJob(
 
   const refImageUrls = await resolveIdentityLockUrlsFromScene(scene);
   const isVideo = model.kind === "video";
+  const total = takeIds.length;
+
+  onProgress?.(
+    isVideo ? "generating video…" : `generating image${total > 1 ? "s" : ""}…`,
+    0,
+    total,
+  );
 
   const result = isVideo
     ? await runVideoModel(params.modelId, {
@@ -131,11 +142,19 @@ export async function executeGenerationJob(
   if (result.error || (result.assetUrls.length === 0 && !result.persistedAssets?.length)) {
     const message = result.error ?? "Generation returned no assets.";
     await Promise.all(takeIds.map((id) => markTakeFailed(id, message)));
-    return;
+    return { ready: 0, failed: takeIds.length };
   }
+
+  let ready = 0;
+  let failed = 0;
 
   for (let i = 0; i < takeIds.length; i++) {
     const takeId = takeIds[i];
+    onProgress?.(
+      isVideo ? "saving video…" : `saving take ${i + 1}/${total}…`,
+      i + 1,
+      total,
+    );
     const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
     const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
 
@@ -156,11 +175,13 @@ export async function executeGenerationJob(
         await updateTake(takeId, {
           duration_seconds: isVideo ? (params.durationSeconds ?? 6) : null,
         });
+        ready++;
         continue;
       }
 
       if (!remoteUrl) {
         await markTakeFailed(takeId, "No asset URL returned for this take.");
+        failed++;
         continue;
       }
 
@@ -184,11 +205,15 @@ export async function executeGenerationJob(
       await updateTake(takeId, {
         duration_seconds: isVideo ? (params.durationSeconds ?? 6) : null,
       });
+      ready++;
     } catch (error) {
       await markTakeFailed(
         takeId,
         error instanceof Error ? error.message : "Failed to persist generated asset.",
       );
+      failed++;
     }
   }
+
+  return { ready, failed };
 }

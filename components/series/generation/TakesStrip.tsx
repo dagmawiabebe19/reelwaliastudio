@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { starTakeAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import { VideoTakePlayer } from "@/components/series/generation/VideoTakePlayer";
+import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
+import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { Orientation } from "@/lib/db/types";
 
 export type TakeCardData = {
@@ -67,12 +69,7 @@ export function TakesStrip({
   const activeTake = takes[activeIndex] ?? null;
   const isPortrait = orientation === "portrait";
   const hasPending = takes.some((t) => t.status === "pending");
-
-  useEffect(() => {
-    if (!hasPending) return;
-    const interval = setInterval(() => router.refresh(), 3000);
-    return () => clearInterval(interval);
-  }, [hasPending, router]);
+  usePollWhilePending(hasPending);
 
   function toggleStar(takeId: string, starred: boolean) {
     startTransition(async () => {
@@ -110,9 +107,17 @@ export function TakesStrip({
                 }`}
               >
                 Take {take.take_number}
-                <span className={`ml-2 ${statusColor(take.status)}`}>
-                  {statusLabel(take.status)}
-                </span>
+                {take.status === "pending" ? (
+                  <span className="ml-2 text-amber-400">…</span>
+                ) : take.status === "ready" ? (
+                  <span className="ml-2 text-emerald-400">✓</span>
+                ) : take.status === "failed" ? (
+                  <span className="ml-2 text-accent">✗</span>
+                ) : (
+                  <span className={`ml-2 ${statusColor(take.status)}`}>
+                    {statusLabel(take.status)}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -131,18 +136,19 @@ export function TakesStrip({
                     {activeTake.starred ? "★" : "☆"}
                   </button>
                   <span className="text-sm text-muted">
-                    {activeTake.model ?? "—"} · {statusLabel(activeTake.status)}
+                    {activeTake.model ?? "—"}
                   </span>
                 </div>
+
+                <GenerationStatusLine
+                  status={activeTake.status}
+                  error={activeTake.error_message}
+                />
 
                 {activeTake.status === "failed" && activeTake.error_message ? (
                   <p className="rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
                     {activeTake.error_message}
                   </p>
-                ) : null}
-
-                {activeTake.status === "pending" ? (
-                  <p className="text-sm text-amber-400">Generation in progress…</p>
                 ) : null}
               </div>
 
@@ -164,7 +170,7 @@ export function TakesStrip({
                   )
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs text-muted">
-                    {activeTake.status === "pending" ? "Rendering…" : "No preview"}
+                    {activeTake.status === "pending" ? "Generating…" : "No preview"}
                   </div>
                 )}
               </div>

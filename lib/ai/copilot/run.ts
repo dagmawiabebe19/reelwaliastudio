@@ -1,10 +1,9 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
-import { after } from "next/server";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
 import {
-  queueIngredientImageGeneration,
+  executeIngredientImageGeneration,
   getIngredientRefUrl,
 } from "@/lib/ai/generation/ingredient-generation";
 import { getModelById, isModelConfigured } from "@/lib/ai/registry";
@@ -19,24 +18,38 @@ import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
 import { bindSheetToScene } from "@/lib/db/scene-sheets";
 import { createScene, getScene, updateScene } from "@/lib/db/scenes";
 import { resolveCopilotModel } from "@/lib/ai/copilot/resolve-model";
+import { formatToolDoneSummary, formatToolRunningLabel } from "@/lib/ai/copilot/progress";
 import {
   buildSystemPrompt,
   COPILOT_TOOLS,
   type CopilotContext,
 } from "@/lib/ai/copilot/tools";
 import { appendChatMessage, listChatMessages } from "@/lib/db/chat";
+import type { GenerationProgressCallback } from "@/lib/generation/progress";
 
 export type CopilotStreamEvent =
   | { type: "text"; content: string }
-  | { type: "tool_start"; name: string; args: Record<string, unknown> }
-  | { type: "tool_done"; name: string; result: Record<string, unknown> }
+  | { type: "tool_start"; toolId: string; name: string; args: Record<string, unknown> }
+  | {
+      type: "tool_progress";
+      toolId: string;
+      name: string;
+      message: string;
+      step?: number;
+      total?: number;
+    }
+  | { type: "tool_done"; toolId: string; name: string; result: Record<string, unknown>; summary: string }
+  | { type: "turn_complete"; summary: string }
   | { type: "error"; message: string }
   | { type: "done" };
+
+type ToolProgressEmitter = (detail: string, step?: number, total?: number) => void;
 
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
   context: CopilotContext,
+  emitProgress: ToolProgressEmitter,
 ): Promise<Record<string, unknown>> {
   switch (name) {
     case "draft_storyboard": {
@@ -45,12 +58,19 @@ async function executeTool(
       const created: string[] = [];
       const updated: string[] = [];
       const resolved: Array<{ scene_id: string; references: unknown[] }> = [];
+      const total = segments.filter((s) => String(s.title ?? "").trim()).length;
+      let index = 0;
+
+      emitProgress("running…", 0, total || 1);
 
       for (const segment of segments) {
         const sceneId = segment.scene_id ? String(segment.scene_id) : null;
         const title = String(segment.title ?? "").trim();
         const prompt = String(segment.prompt ?? "").trim();
         if (!title) continue;
+
+        index++;
+        emitProgress(`writing segment ${index}/${total || index}: ${title}…`, index, total || index);
 
         let targetSceneId: string;
 
@@ -86,6 +106,8 @@ async function executeTool(
           created.push(scene.id);
         }
 
+        emitProgress(`resolving references for segment ${index}/${total || index}…`, index, total || index);
+
         const refs = await resolveSceneReferences({
           sceneId: targetSceneId,
           seriesId: context.seriesId,
@@ -113,6 +135,8 @@ async function executeTool(
         return { error: "character_id is required to generate a costume preview." };
       }
 
+      emitProgress("creating ingredient…", 1, generate ? 2 : 1);
+
       const ingredient = await createIngredient({
         seriesId,
         kind,
@@ -128,8 +152,10 @@ async function executeTool(
 
         if (kind === "character") {
           prompt = `${CHARACTER_HEADSHOT_PREFIX}${description}`;
+          emitProgress("generating headshot…", 2, 2);
         } else if (kind === "location") {
           prompt = `${LOCATION_ESTABLISHING_PREFIX}${description}`;
+          emitProgress("generating establishing shot…", 2, 2);
         } else if (kind === "outfit" && characterId) {
           const character = await getIngredient(characterId);
           if (!character) return { error: "Character not found." };
@@ -139,16 +165,25 @@ async function executeTool(
           }
           prompt = costumePreviewPrompt(character.name, description);
           refImageUrls = [headshotUrl];
+          emitProgress("generating costume preview…", 2, 2);
         } else {
           return { ingredient_id: ingredient.id, ref_tag: ingredient.ref_tag, note: "Generate not supported for this kind." };
         }
 
-        await queueIngredientImageGeneration({
+        const genResult = await executeIngredientImageGeneration({
           ingredientId: ingredient.id,
           prompt,
           refImageUrls,
-          revalidatePath: `/series/${seriesId}`,
+          onProgress: (msg, step, total) => emitProgress(msg, step, total),
         });
+
+        return {
+          ingredient_id: ingredient.id,
+          ref_tag: ingredient.ref_tag,
+          generating: true,
+          status: genResult.status,
+          error: genResult.error,
+        };
       }
 
       return { ingredient_id: ingredient.id, ref_tag: ingredient.ref_tag, generating: generate };
@@ -158,17 +193,26 @@ async function executeTool(
       const sceneId = String(args.scene_id);
       const sheetIds = (args.character_sheet_ids as string[]) ?? [];
       const ingredientIds = (args.ingredient_ids as string[]) ?? [];
+      const total = sheetIds.length + ingredientIds.length;
 
+      emitProgress("binding identity locks…", 0, total || 1);
+
+      let step = 0;
       for (const sheetId of sheetIds) {
+        step++;
+        emitProgress(`binding sheet ${step}/${total || step}…`, step, total || step);
         await bindSheetToScene(sceneId, sheetId, "identity_lock");
       }
       for (const ingredientId of ingredientIds) {
+        step++;
+        emitProgress(`binding ingredient ${step}/${total || step}…`, step, total || step);
         await bindIngredientToScene(sceneId, ingredientId, "reference");
       }
 
       const scene = await getScene(sceneId);
       const episodeId = context.episodeId ?? scene?.episode_id;
       if (episodeId) {
+        emitProgress("refreshing resolved references…", total || 1, total || 1);
         await resolveSceneReferences({
           sceneId,
           seriesId: context.seriesId,
@@ -198,12 +242,7 @@ async function executeTool(
       const seriesId = context.seriesId;
       const episodeId = context.episodeId ?? scene.episode_id;
 
-      await resolveSceneReferences({
-        sceneId,
-        seriesId,
-        episodeId,
-        autoBind: true,
-      });
+      emitProgress("creating pending takes…", 0, count);
 
       const takeIds = await createPendingTakes({
         sceneId,
@@ -215,14 +254,27 @@ async function executeTool(
         durationSeconds,
       });
 
-      after(async () => {
-        await executeGenerationJob(
-          { sceneId, seriesId, episodeId, modelId, count, resolution, durationSeconds },
-          takeIds,
-        );
-      });
+      const onProgress: GenerationProgressCallback = (message, step, total) => {
+        const label = model.kind === "video" ? "video" : "image";
+        const detail =
+          step && total
+            ? `generating ${label} (${step}/${total}) — ${message}`
+            : `generating ${label} — ${message}`;
+        emitProgress(detail, step, total);
+      };
 
-      return { take_ids: takeIds, status: "pending" };
+      const outcome = await executeGenerationJob(
+        { sceneId, seriesId, episodeId, modelId, count, resolution, durationSeconds },
+        takeIds,
+        onProgress,
+      );
+
+      return {
+        take_ids: takeIds,
+        status: outcome.failed === 0 ? "ready" : outcome.ready > 0 ? "partial" : "failed",
+        ready_count: outcome.ready,
+        failed_count: outcome.failed,
+      };
     }
 
     default:
@@ -265,6 +317,7 @@ export async function runCopilotStream(input: {
     }));
 
   let assistantText = "";
+  const turnSummaries: string[] = [];
 
   try {
     let response = await client.messages.create({
@@ -292,23 +345,50 @@ export async function runCopilotStream(input: {
 
       for (const tool of toolBlocks) {
         const args = tool.input as Record<string, unknown>;
-        input.onEvent({ type: "tool_start", name: tool.name, args });
+        const toolId = tool.id;
+
+        input.onEvent({
+          type: "tool_start",
+          toolId,
+          name: tool.name,
+          args,
+        });
 
         await appendChatMessage({
           sessionId: input.sessionId,
           role: "tool",
-          content: "",
+          content: formatToolRunningLabel(tool.name),
           toolName: tool.name,
           toolArgs: args,
         });
 
-        const result = await executeTool(tool.name, args, input.context);
-        input.onEvent({ type: "tool_done", name: tool.name, result });
+        const emitProgress: ToolProgressEmitter = (detail, step, total) => {
+          input.onEvent({
+            type: "tool_progress",
+            toolId,
+            name: tool.name,
+            message: formatToolRunningLabel(tool.name, detail),
+            step,
+            total,
+          });
+        };
+
+        const result = await executeTool(tool.name, args, input.context, emitProgress);
+        const summary = formatToolDoneSummary(tool.name, result);
+        turnSummaries.push(summary);
+
+        input.onEvent({
+          type: "tool_done",
+          toolId,
+          name: tool.name,
+          result,
+          summary,
+        });
 
         await appendChatMessage({
           sessionId: input.sessionId,
           role: "tool",
-          content: JSON.stringify(result),
+          content: summary,
           toolName: tool.name,
           toolArgs: args,
           toolResult: result,
@@ -347,6 +427,11 @@ export async function runCopilotStream(input: {
         role: "assistant",
         content: assistantText.trim(),
       });
+    }
+
+    if (turnSummaries.length) {
+      const turnSummary = turnSummaries.join(" · ");
+      input.onEvent({ type: "turn_complete", summary: turnSummary });
     }
 
     input.onEvent({ type: "done" });

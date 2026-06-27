@@ -31,6 +31,7 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
   const [count, setCount] = useState(1);
   const [resolution, setResolution] = useState<"480p" | "720p">("720p");
   const [duration, setDuration] = useState<6 | 7 | 8>(6);
+  const [startedMessage, setStartedMessage] = useState<string | null>(null);
 
   const selected = allModels.find((m) => m.id === modelId);
   const isVideo = selected?.kind === "video";
@@ -39,6 +40,7 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
     if (!modelId || !selected?.configured) return;
 
     startTransition(async () => {
+      setStartedMessage(null);
       const result = await generateTakesAction({
         sceneId,
         seriesId,
@@ -52,6 +54,8 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
       if ("error" in result && result.error) {
         alert(result.error);
       } else {
+        const n = isVideo ? 1 : count;
+        setStartedMessage(`Generating ${n} take${n === 1 ? "" : "s"}… ~30–90s — refresh automatically`);
         router.refresh();
       }
     });
@@ -126,6 +130,10 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
       >
         {pending ? "Starting…" : "Generate"}
       </Button>
+
+      {startedMessage ? (
+        <p className="text-xs text-amber-400">{startedMessage}</p>
+      ) : null}
 
       {selected && !selected.configured ? (
         <p className="text-xs text-accent">This model&apos;s API key is not set in the environment.</p>

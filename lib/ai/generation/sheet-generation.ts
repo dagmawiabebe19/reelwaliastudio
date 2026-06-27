@@ -2,7 +2,7 @@ import "server-only";
 
 import { after } from "next/server";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
-import { defaultAspectRatioForIngredients, sheetAnglePrompt, type SheetAngle } from "@/lib/production/prompts";
+import { defaultAspectRatioForIngredients, sheetAnglePrompt, SHEET_ANGLE_LABELS, type SheetAngle } from "@/lib/production/prompts";
 import { createAsset } from "@/lib/db/assets";
 import {
   addSheetAngle,
@@ -10,6 +10,7 @@ import {
   updateCharacterSheetStatus,
 } from "@/lib/db/character-sheets";
 import { getIngredientRefUrl } from "@/lib/ai/generation/ingredient-generation";
+import type { GenerationProgressCallback } from "@/lib/generation/progress";
 
 const SHEET_ANGLES: SheetAngle[] = [
   "front",
@@ -19,7 +20,10 @@ const SHEET_ANGLES: SheetAngle[] = [
   "back",
 ];
 
-export async function executeSheetGeneration(sheetId: string): Promise<void> {
+export async function executeSheetGeneration(
+  sheetId: string,
+  onProgress?: GenerationProgressCallback,
+): Promise<{ status: "ready" | "failed"; error?: string }> {
   const sheet = await getCharacterSheet(sheetId);
   if (!sheet) throw new Error("Character sheet not found.");
 
@@ -37,12 +41,22 @@ export async function executeSheetGeneration(sheetId: string): Promise<void> {
   }
 
   if (!refUrls.length) {
-    await updateCharacterSheetStatus(sheetId, "failed", "Character headshot is required before generating a sheet.");
-    return;
+    const error = "Character headshot is required before generating a sheet.";
+    await updateCharacterSheetStatus(sheetId, "failed", error);
+    return { status: "failed", error };
   }
 
+  const total = SHEET_ANGLES.length;
+
   try {
-    for (const angle of SHEET_ANGLES) {
+    for (let i = 0; i < SHEET_ANGLES.length; i++) {
+      const angle = SHEET_ANGLES[i];
+      onProgress?.(
+        `rendering angle ${i + 1}/${total} (${SHEET_ANGLE_LABELS[angle]})…`,
+        i + 1,
+        total,
+      );
+
       const prompt = sheetAnglePrompt(angle, characterName, costumeNote);
       const result = await runOpenAiImage({
         prompt,
@@ -74,12 +88,11 @@ export async function executeSheetGeneration(sheetId: string): Promise<void> {
     }
 
     await updateCharacterSheetStatus(sheetId, "ready", null);
+    return { status: "ready" };
   } catch (error) {
-    await updateCharacterSheetStatus(
-      sheetId,
-      "failed",
-      error instanceof Error ? error.message : "Sheet generation failed.",
-    );
+    const message = error instanceof Error ? error.message : "Sheet generation failed.";
+    await updateCharacterSheetStatus(sheetId, "failed", message);
+    return { status: "failed", error: message };
   }
 }
 

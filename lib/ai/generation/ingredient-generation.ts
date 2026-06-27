@@ -5,13 +5,17 @@ import { runOpenAiImage } from "@/lib/ai/image/openai-image";
 import { defaultAspectRatioForIngredients } from "@/lib/production/prompts";
 import { createAsset } from "@/lib/db/assets";
 import { getIngredient, updateIngredient } from "@/lib/db/ingredients";
+import type { GenerationProgressCallback } from "@/lib/generation/progress";
 
 export async function executeIngredientImageGeneration(input: {
   ingredientId: string;
   prompt: string;
   refImageUrls?: string[];
-}): Promise<void> {
+  onProgress?: GenerationProgressCallback;
+}): Promise<{ status: "ready" | "failed"; error?: string }> {
   try {
+    input.onProgress?.("Rendering image…", 1, 1);
+
     const result = await runOpenAiImage({
       prompt: input.prompt,
       refImageUrls: input.refImageUrls ?? [],
@@ -23,14 +27,16 @@ export async function executeIngredientImageGeneration(input: {
     });
 
     if (result.error || !result.persistedAssets?.[0]) {
+      const error = result.error ?? "No image returned.";
       await updateIngredient(input.ingredientId, {
         generation_status: "failed",
-        generation_error: result.error ?? "No image returned.",
+        generation_error: error,
       });
-      return;
+      return { status: "failed", error };
     }
 
     const persisted = result.persistedAssets[0];
+    input.onProgress?.("Saving to library…", 1, 1);
     const asset = await createAsset({
       bucket: persisted.bucket,
       storagePath: persisted.storagePath,
@@ -47,11 +53,14 @@ export async function executeIngredientImageGeneration(input: {
       generation_status: "ready",
       generation_error: null,
     });
+    return { status: "ready" };
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Generation failed.";
     await updateIngredient(input.ingredientId, {
       generation_status: "failed",
-      generation_error: error instanceof Error ? error.message : "Generation failed.",
+      generation_error: message,
     });
+    return { status: "failed", error: message };
   }
 }
 

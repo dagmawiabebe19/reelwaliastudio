@@ -3,7 +3,9 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefTag } from "@/components/ui/RefTag";
+import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { MediaPlayer } from "@/components/ui/MediaPlayer";
+import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { IngredientKind } from "@/lib/db/types";
 import {
   uploadIngredientFromClient,
@@ -54,6 +56,10 @@ export function IngredientCard({ ingredient }: IngredientCardProps) {
         {ingredient.description ? (
           <p className="line-clamp-2 text-xs text-muted">{ingredient.description}</p>
         ) : null}
+        <GenerationStatusLine
+          status={ingredient.generationStatus}
+          error={ingredient.generationError}
+        />
       </div>
     </article>
   );
@@ -100,6 +106,9 @@ export function IngredientsSection({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [refFilter, setRefFilter] = useState<RefFilter>("all");
   const [dragOver, setDragOver] = useState(false);
+
+  const hasPending = ingredients.some((i) => i.generationStatus === "pending");
+  usePollWhilePending(hasPending);
 
   const uploadFiles = useCallback(
     async (files: FileList | File[], kind: IngredientKind = "reference") => {

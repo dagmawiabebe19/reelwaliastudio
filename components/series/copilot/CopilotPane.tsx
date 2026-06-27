@@ -9,11 +9,14 @@ import type { ModelCatalogEntry } from "@/components/series/generation/Generatio
 
 export type ChatMessageData = {
   id: string;
-  role: "user" | "assistant" | "tool";
+  role: "user" | "assistant" | "tool" | "system";
   content: string;
   tool_name?: string | null;
   tool_args?: Record<string, unknown> | null;
   tool_result?: Record<string, unknown> | null;
+  tool_status?: "running" | "done";
+  step?: number;
+  total?: number;
 };
 
 export type MentionIngredient = {
@@ -56,6 +59,13 @@ interface CopilotPaneProps {
   imageModels: ModelCatalogEntry[];
   ingredients: MentionIngredient[];
   initialMessages?: ChatMessageData[];
+}
+
+function toolMessageClass(message: ChatMessageData): string {
+  if (message.role !== "tool") return "";
+  if (message.tool_status === "running") return "text-amber-400";
+  if (message.content.toLowerCase().includes("failed")) return "text-accent";
+  return "text-emerald-400";
 }
 
 export function CopilotPane({
@@ -129,10 +139,14 @@ export function CopilotPane({
           const event = JSON.parse(line.slice(6)) as {
             type: string;
             content?: string;
+            toolId?: string;
             name?: string;
             args?: Record<string, unknown>;
-            result?: Record<string, unknown>;
             message?: string;
+            step?: number;
+            total?: number;
+            result?: Record<string, unknown>;
+            summary?: string;
           };
 
           if (event.type === "text" && event.content) {
@@ -151,31 +165,62 @@ export function CopilotPane({
             });
           }
 
-          if (event.type === "tool_start" && event.name) {
+          if (event.type === "tool_start" && event.name && event.toolId) {
             setMessages((prev) => [
               ...prev,
               {
-                id: `tool-${event.name}-${Date.now()}`,
+                id: event.toolId!,
                 role: "tool",
-                content: `TOOL ${event.name} …`,
+                content: `TOOL ${event.name} — running…`,
                 tool_name: event.name,
                 tool_args: event.args ?? null,
+                tool_status: "running",
               },
             ]);
           }
 
-          if (event.type === "tool_done" && event.name) {
+          if (event.type === "tool_progress" && event.toolId && event.message) {
             setMessages((prev) =>
               prev.map((m) =>
-                m.tool_name === event.name && m.content.endsWith("…")
+                m.id === event.toolId
                   ? {
                       ...m,
-                      content: `TOOL ${event.name} DONE`,
-                      tool_result: event.result ?? null,
+                      content: event.message!,
+                      tool_status: "running" as const,
+                      step: event.step,
+                      total: event.total,
                     }
                   : m,
               ),
             );
+          }
+
+          if (event.type === "tool_done" && event.toolId && event.name) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === event.toolId
+                  ? {
+                      ...m,
+                      content: event.summary ?? `TOOL ${event.name} DONE`,
+                      tool_result: event.result ?? null,
+                      tool_status: "done",
+                      step: undefined,
+                      total: undefined,
+                    }
+                  : m,
+              ),
+            );
+          }
+
+          if (event.type === "turn_complete" && event.summary) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `turn-${Date.now()}`,
+                role: "system",
+                content: `✓ Turn complete — ${event.summary}`,
+              },
+            ]);
           }
 
           if (event.type === "error" && event.message) {
@@ -221,13 +266,20 @@ export function CopilotPane({
                   ? "border-border bg-surface-elevated"
                   : message.role === "tool"
                     ? "border-accent/30 bg-accent-muted/10 font-mono text-xs"
-                    : "border-border bg-background"
+                    : message.role === "system"
+                      ? "border-emerald-500/30 bg-emerald-500/5 text-xs"
+                      : "border-border bg-background"
               }`}
             >
               {message.role === "tool" ? (
                 <div>
-                  <p className="text-accent">{message.content}</p>
-                  {message.tool_result ? (
+                  <p className={toolMessageClass(message)}>
+                    {message.content}
+                    {message.tool_status === "running" && message.step && message.total ? (
+                      <span className="ml-2 text-muted">({message.step}/{message.total})</span>
+                    ) : null}
+                  </p>
+                  {message.tool_result && message.tool_status === "done" ? (
                     <pre className="mt-2 overflow-x-auto text-[10px] text-muted">
                       {JSON.stringify(message.tool_result, null, 2)}
                     </pre>
@@ -308,7 +360,7 @@ export function CopilotPane({
           disabled={streaming || !input.trim()}
           className="w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
-          {streaming ? "Streaming…" : "Send"}
+          {streaming ? "Working…" : "Send"}
         </button>
       </div>
     </div>
