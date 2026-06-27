@@ -10,6 +10,8 @@ import {
   updateSceneAction,
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/actions";
 import { ScenePromptEditor, type MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
+import type { MentionSheet } from "@/lib/production/types";
+import type { ResolvedReference } from "@/lib/production/types";
 import { GenerationPanel, type ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { Button } from "@/components/ui/Button";
@@ -24,6 +26,7 @@ interface StoryboardWorkspaceProps {
   defaultOrientation: Orientation;
   scenes: SceneWithBindings[];
   ingredients: MentionIngredient[];
+  sheets: MentionSheet[];
   models: ModelCatalogEntry[];
   takesByScene: Record<string, TakeCardData[]>;
 }
@@ -34,6 +37,7 @@ export function StoryboardWorkspace({
   defaultOrientation,
   scenes,
   ingredients,
+  sheets,
   models,
   takesByScene,
 }: StoryboardWorkspaceProps) {
@@ -223,6 +227,7 @@ export function StoryboardWorkspace({
             episodeId={episodeId}
             defaultOrientation={defaultOrientation}
             ingredients={ingredients}
+            sheets={sheets}
             models={models}
             takes={takesByScene[selectedScene.id] ?? []}
           />
@@ -240,6 +245,7 @@ function SceneDetailPanel({
   episodeId,
   defaultOrientation,
   ingredients,
+  sheets,
   models,
   takes,
 }: {
@@ -248,6 +254,7 @@ function SceneDetailPanel({
   episodeId: string;
   defaultOrientation: Orientation;
   ingredients: MentionIngredient[];
+  sheets: MentionSheet[];
   models: ModelCatalogEntry[];
   takes: TakeCardData[];
 }) {
@@ -259,6 +266,8 @@ function SceneDetailPanel({
   );
 
   const boundIds = scene.scene_ingredients.map((b) => b.ingredient_id);
+  const boundSheetIds = (scene.scene_character_sheets ?? []).map((b) => b.character_sheet_id);
+  const resolvedReferences = (scene.resolved_references ?? []) as ResolvedReference[];
 
   function saveMeta() {
     startTransition(async () => {
@@ -312,7 +321,10 @@ function SceneDetailPanel({
         seriesId={seriesId}
         initialPrompt={scene.prompt ?? ""}
         ingredients={ingredients}
+        sheets={sheets}
         boundIngredientIds={boundIds}
+        boundSheetIds={boundSheetIds}
+        resolvedReferences={resolvedReferences}
       />
 
       <GenerationPanel

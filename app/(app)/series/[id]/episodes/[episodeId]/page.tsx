@@ -7,10 +7,12 @@ import { getPublicModelCatalog } from "@/lib/ai/registry";
 import { listAudioLinesByEpisode } from "@/lib/db/audio-lines";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
 import { getEpisode } from "@/lib/db/episodes";
+import { listCharacterSheetsBySeries } from "@/lib/db/character-sheets";
 import { listIngredientsBySeries } from "@/lib/db/ingredients";
 import { listScenesByEpisode } from "@/lib/db/scenes";
 import { getSeries } from "@/lib/db/series";
 import { listTakesForScenes } from "@/lib/db/takes";
+import { buildMentionSheets } from "@/lib/production/library-data";
 import { resolveAssetUrl, resolveAssetUrls } from "@/lib/storage/resolve-urls";
 
 interface EpisodeStoryboardPageProps {
@@ -20,13 +22,14 @@ interface EpisodeStoryboardPageProps {
 export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboardPageProps) {
   const { id: seriesId, episodeId } = await params;
 
-  const [series, episode, scenes, ingredients, audioLinesRaw, chatSession] = await Promise.all([
+  const [series, episode, scenes, ingredients, audioLinesRaw, chatSession, sheetsRaw] = await Promise.all([
     getSeries(seriesId),
     getEpisode(episodeId),
     listScenesByEpisode(episodeId),
     listIngredientsBySeries(seriesId),
     listAudioLinesByEpisode(episodeId),
     getOrCreateChatSession("episode", episodeId),
+    listCharacterSheetsBySeries(seriesId),
   ]);
 
   if (!series || !episode || episode.series_id !== seriesId) notFound();
@@ -41,6 +44,20 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
     id: i.id,
     ref_tag: i.ref_tag,
     name: i.name,
+    kind: i.kind,
+    character_id: i.character_id,
+    generation_status: i.generation_status,
+  }));
+
+  const sheets = buildMentionSheets(sheetsRaw);
+  const characterSheets = sheetsRaw.map((sheet) => ({
+    id: sheet.id,
+    name: sheet.name,
+    character_id: sheet.character_id,
+    character_name: sheet.character?.name ?? "Character",
+    costume_name: sheet.costume?.name ?? null,
+    status: sheet.status,
+    episode_ids: sheet.episode_ids,
   }));
 
   const takesByScene: Record<string, (typeof takes)[number][]> = {};
@@ -123,6 +140,8 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
         briefMarkdown={series.brief_markdown}
         scenes={scenes}
         ingredients={mentionIngredients}
+        sheets={sheets}
+        characterSheets={characterSheets}
         models={models}
         takesByScene={takesEnriched}
         chatMessages={chatMessages.map((m) => ({

@@ -113,6 +113,105 @@ export type Database = {
           },
         ];
       };
+      character_sheets: {
+        Row: {
+          id: string;
+          series_id: string;
+          character_id: string;
+          costume_id: string | null;
+          name: string;
+          status: Database["public"]["Enums"]["character_sheet_status"];
+          generation_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          series_id: string;
+          character_id: string;
+          costume_id?: string | null;
+          name: string;
+          status?: Database["public"]["Enums"]["character_sheet_status"];
+          generation_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          series_id?: string;
+          character_id?: string;
+          costume_id?: string | null;
+          name?: string;
+          status?: Database["public"]["Enums"]["character_sheet_status"];
+          generation_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      character_sheet_angles: {
+        Row: {
+          id: string;
+          sheet_id: string;
+          asset_id: string;
+          angle_label: Database["public"]["Enums"]["sheet_angle"];
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          sheet_id: string;
+          asset_id: string;
+          angle_label: Database["public"]["Enums"]["sheet_angle"];
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          sheet_id?: string;
+          asset_id?: string;
+          angle_label?: Database["public"]["Enums"]["sheet_angle"];
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      character_sheet_episodes: {
+        Row: {
+          sheet_id: string;
+          episode_id: string;
+          created_at: string;
+        };
+        Insert: {
+          sheet_id: string;
+          episode_id: string;
+          created_at?: string;
+        };
+        Update: {
+          sheet_id?: string;
+          episode_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      scene_character_sheets: {
+        Row: {
+          scene_id: string;
+          character_sheet_id: string;
+          role: Database["public"]["Enums"]["scene_ingredient_role"];
+          created_at: string;
+        };
+        Insert: {
+          scene_id: string;
+          character_sheet_id: string;
+          role?: Database["public"]["Enums"]["scene_ingredient_role"];
+          created_at?: string;
+        };
+        Update: {
+          scene_id?: string;
+          character_sheet_id?: string;
+          role?: Database["public"]["Enums"]["scene_ingredient_role"];
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       chat_messages: {
         Row: {
           id: string;
@@ -275,6 +374,9 @@ export type Database = {
           ref_tag: string;
           metadata: Json;
           sort_order: number;
+          character_id: string | null;
+          generation_status: string;
+          generation_error: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -288,6 +390,9 @@ export type Database = {
           ref_tag: string;
           metadata?: Json;
           sort_order?: number;
+          character_id?: string | null;
+          generation_status?: string;
+          generation_error?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -301,6 +406,9 @@ export type Database = {
           ref_tag?: string;
           metadata?: Json;
           sort_order?: number;
+          character_id?: string | null;
+          generation_status?: string;
+          generation_error?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -428,6 +536,8 @@ export type Database = {
           position: number | null;
           status: Database["public"]["Enums"]["scene_status"];
           sort_order: number;
+          resolved_references: Json;
+          reference_overrides: Json;
           created_at: string;
           updated_at: string;
         };
@@ -442,6 +552,8 @@ export type Database = {
           position?: number | null;
           status?: Database["public"]["Enums"]["scene_status"];
           sort_order?: number;
+          resolved_references?: Json;
+          reference_overrides?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -456,6 +568,8 @@ export type Database = {
           position?: number | null;
           status?: Database["public"]["Enums"]["scene_status"];
           sort_order?: number;
+          resolved_references?: Json;
+          reference_overrides?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -605,6 +719,8 @@ export type Database = {
       series_status: "in_progress" | "validated" | "released";
       take_media_type: "image" | "video";
       take_status: "draft" | "ready" | "archived" | "pending" | "failed";
+      character_sheet_status: "draft" | "pending" | "ready" | "failed";
+      sheet_angle: "front" | "left_profile" | "right_profile" | "three_quarter" | "back";
     };
     CompositeTypes: Record<string, never>;
   };
@@ -625,8 +741,11 @@ export type Series = Tables<"series">;
 export type Episode = Tables<"episodes">;
 export type Scene = Tables<"scenes">;
 export type Take = Tables<"takes">;
-export type ChatMessage = Tables<"chat_messages">;
+export type CharacterSheet = Tables<"character_sheets">;
+export type CharacterSheetStatus = Enums<"character_sheet_status">;
+export type SheetAngle = Enums<"sheet_angle">;
 export type ChatSession = Tables<"chat_sessions">;
+export type ChatMessage = Tables<"chat_messages">;
 export type EpisodeExport = Tables<"episode_exports">;
 export type ChatScopeType = Enums<"chat_scope_type">;
 export type TakeStatus = Enums<"take_status">;

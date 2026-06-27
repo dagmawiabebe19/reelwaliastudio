@@ -5,6 +5,8 @@ import { CopilotPane, type ChatMessageData, type CopilotContextPayload, type Men
 import { GenerationPanel, type ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { ScenePromptEditor } from "@/components/series/storyboard/ScenePromptEditor";
+import type { MentionSheet } from "@/lib/production/types";
+import type { ResolvedReference } from "@/lib/production/types";
 import type { Orientation } from "@/lib/db/types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 import { effectiveOrientation } from "@/lib/storyboard/orientation";
@@ -17,6 +19,16 @@ interface StudioShellProps {
   briefMarkdown: string;
   scenes: SceneWithBindings[];
   ingredients: MentionIngredient[];
+  sheets: MentionSheet[];
+  characterSheets: Array<{
+    id: string;
+    name: string;
+    character_id: string;
+    character_name: string;
+    costume_name: string | null;
+    status: string;
+    episode_ids: string[];
+  }>;
   models: ModelCatalogEntry[];
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
@@ -32,6 +44,8 @@ export function StudioShell({
   briefMarkdown,
   scenes,
   ingredients,
+  sheets,
+  characterSheets,
   models,
   takesByScene,
   chatMessages,
@@ -60,6 +74,7 @@ export function StudioShell({
       name: i.name,
       kind: "character",
     })),
+    characterSheets,
   };
 
   return (
@@ -108,7 +123,10 @@ export function StudioShell({
               seriesId={seriesId}
               initialPrompt={selectedScene.prompt ?? ""}
               ingredients={ingredients}
+              sheets={sheets}
               boundIngredientIds={selectedScene.scene_ingredients.map((b) => b.ingredient_id)}
+              boundSheetIds={(selectedScene.scene_character_sheets ?? []).map((b) => b.character_sheet_id)}
+              resolvedReferences={(selectedScene.resolved_references ?? []) as ResolvedReference[]}
             />
 
             <GenerationPanel

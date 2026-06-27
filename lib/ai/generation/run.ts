@@ -12,6 +12,7 @@ import {
   markTakeReady,
   updateTake,
 } from "@/lib/db/takes";
+import { collectGenerationRefUrls, resolveSceneReferences } from "@/lib/production/resolve-references";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { persistRemoteAsset } from "@/lib/storage/persist-generated";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
@@ -27,6 +28,9 @@ export interface GenerateTakeParams {
 }
 
 async function resolveIdentityLockUrlsFromScene(scene: SceneWithBindings): Promise<string[]> {
+  const fromSheets = await collectGenerationRefUrls(scene.id);
+  if (fromSheets.length) return fromSheets;
+
   const supabase = await import("@/lib/db/client").then((m) => m.getDbClient());
   const ingredientIds = (scene.scene_ingredients ?? [])
     .filter((b) => b.role === "identity_lock")
@@ -95,6 +99,14 @@ export async function executeGenerationJob(
     effectiveOrientation(scene.orientation, series.default_orientation),
   );
   const prompt = scene.prompt?.trim() || scene.title;
+
+  await resolveSceneReferences({
+    sceneId: params.sceneId,
+    seriesId: params.seriesId,
+    episodeId: params.episodeId,
+    autoBind: true,
+  });
+
   const refImageUrls = await resolveIdentityLockUrlsFromScene(scene);
   const isVideo = model.kind === "video";
 

@@ -69,6 +69,8 @@ export async function createIngredient(input: {
   description?: string;
   primaryAssetId?: string | null;
   mediaType?: AssetMediaType;
+  characterId?: string | null;
+  generationStatus?: string;
 }): Promise<Ingredient> {
   const supabase = await getDbClient();
   const refTag = await allocateRefTag(
@@ -90,6 +92,8 @@ export async function createIngredient(input: {
     primary_asset_id: input.primaryAssetId ?? null,
     ref_tag: refTag,
     sort_order: count ?? 0,
+    character_id: input.characterId ?? null,
+    generation_status: input.generationStatus ?? "ready",
   };
 
   const { data, error } = await supabase.from("ingredients").insert(payload).select().single();
@@ -97,9 +101,39 @@ export async function createIngredient(input: {
   return data;
 }
 
+export async function getIngredient(id: string): Promise<IngredientWithAsset | null> {
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from("ingredients")
+    .select("*, assets:primary_asset_id(id, bucket, storage_path, media_type)")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data as IngredientWithAsset | null;
+}
+
+export async function listCostumesByCharacter(characterId: string): Promise<IngredientWithAsset[]> {
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from("ingredients")
+    .select("*, assets:primary_asset_id(id, bucket, storage_path, media_type)")
+    .eq("character_id", characterId)
+    .eq("kind", "outfit")
+    .order("sort_order", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as IngredientWithAsset[];
+}
+
 export async function updateIngredient(
   id: string,
-  patch: Partial<Pick<Ingredient, "name" | "description" | "primary_asset_id">>,
+  patch: Partial<
+    Pick<
+      Ingredient,
+      "name" | "description" | "primary_asset_id" | "character_id" | "generation_status" | "generation_error"
+    >
+  >,
 ): Promise<Ingredient> {
   const supabase = await getDbClient();
   const { data, error } = await supabase

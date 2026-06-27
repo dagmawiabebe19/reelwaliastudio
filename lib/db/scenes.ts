@@ -12,7 +12,12 @@ export async function listScenesByEpisode(episodeId: string): Promise<SceneWithB
   const { data, error } = await supabase
     .from("scenes")
     .select(
-      "*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind))",
+      `*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind)),
+       scene_character_sheets(character_sheet_id, role,
+         character_sheets(id, name, character_id, costume_id, status,
+           character:character_id(id, name, ref_tag),
+           costume:costume_id(id, name, ref_tag),
+           angles:character_sheet_angles(angle_label, asset_id, assets:asset_id(bucket, storage_path, media_type))))`,
     )
     .eq("episode_id", episodeId)
     .order("sort_order", { ascending: true });
@@ -26,7 +31,12 @@ export async function getScene(id: string): Promise<SceneWithBindings | null> {
   const { data, error } = await supabase
     .from("scenes")
     .select(
-      "*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind))",
+      `*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind)),
+       scene_character_sheets(character_sheet_id, role,
+         character_sheets(id, name, character_id, costume_id, status,
+           character:character_id(id, name, ref_tag),
+           costume:costume_id(id, name, ref_tag),
+           angles:character_sheet_angles(angle_label, asset_id, assets:asset_id(bucket, storage_path, media_type))))`,
     )
     .eq("id", id)
     .maybeSingle();
@@ -61,7 +71,17 @@ export async function createScene(
 export async function updateScene(
   id: string,
   patch: Partial<
-    Pick<Scene, "title" | "prompt" | "orientation" | "duration_seconds" | "act_label" | "status">
+    Pick<
+      Scene,
+      | "title"
+      | "prompt"
+      | "orientation"
+      | "duration_seconds"
+      | "act_label"
+      | "status"
+      | "resolved_references"
+      | "reference_overrides"
+    >
   >,
 ): Promise<Scene> {
   const supabase = await getDbClient();

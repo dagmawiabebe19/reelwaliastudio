@@ -3,14 +3,29 @@
 import Link from "next/link";
 import { CopilotPane, type ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
-import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 
 interface SeriesStudioShellProps {
   seriesId: string;
   seriesTitle: string;
   defaultOrientation: string;
   briefMarkdown: string;
-  ingredients: MentionIngredient[];
+  ingredients: Array<{
+    id: string;
+    ref_tag: string;
+    name: string;
+    kind?: string;
+    character_id?: string | null;
+    generation_status?: string;
+  }>;
+  characterSheets?: Array<{
+    id: string;
+    name: string;
+    character_id: string;
+    character_name: string;
+    costume_name: string | null;
+    status: string;
+    episode_ids: string[];
+  }>;
   models: ModelCatalogEntry[];
   chatMessages: ChatMessageData[];
 }
@@ -21,6 +36,7 @@ export function SeriesStudioShell({
   defaultOrientation,
   briefMarkdown,
   ingredients,
+  characterSheets,
   models,
   chatMessages,
 }: SeriesStudioShellProps) {
@@ -40,8 +56,11 @@ export function SeriesStudioShell({
               id: i.id,
               ref_tag: i.ref_tag,
               name: i.name,
-              kind: "reference",
+              kind: i.kind ?? "reference",
+              character_id: i.character_id,
+              generation_status: i.generation_status,
             })),
+            characterSheets,
           }}
           imageModels={models.filter((m) => m.kind === "image")}
           ingredients={ingredients}

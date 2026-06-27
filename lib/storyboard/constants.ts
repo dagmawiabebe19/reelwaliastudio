@@ -8,6 +8,32 @@ export type SceneWithBindings = Scene & {
     role: string;
     ingredients: { id: string; ref_tag: string; name: string; kind: string } | null;
   }[];
+  scene_character_sheets?: {
+    character_sheet_id: string;
+    role: string;
+    character_sheets: {
+      id: string;
+      name: string;
+      character_id: string;
+      costume_id: string | null;
+      status: string;
+      character: { id: string; name: string; ref_tag: string } | null;
+      costume: { id: string; name: string; ref_tag: string } | null;
+      angles?: Array<{
+        angle_label: string;
+        asset_id: string;
+        assets: { bucket: string; storage_path: string; media_type: string } | null;
+      }>;
+    } | null;
+  }[];
+  resolved_references?: Array<{
+    type: string;
+    id: string;
+    label: string;
+    ref_tag?: string;
+    assetUrls?: string[];
+  }>;
+  reference_overrides?: Record<string, unknown>;
 };
 
 export type SceneGroup = (typeof ACT_GROUPS)[number] | "Archive";

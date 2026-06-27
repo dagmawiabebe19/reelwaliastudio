@@ -7,10 +7,7 @@ import { StatTiles } from "@/components/series/StatTiles";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { ViewToggle } from "@/components/series/ViewToggle";
 import { SeriesStudioShell } from "@/components/series/SeriesStudioShell";
-import {
-  IngredientsSection,
-  type IngredientCardData,
-} from "@/components/series/ingredients/IngredientsSection";
+import { IngredientsSection } from "@/components/series/ingredients/IngredientsSection";
 import {
   EpisodesSection,
   type EpisodeCardData,
@@ -18,6 +15,7 @@ import {
 import type { Orientation, SeriesStatus } from "@/lib/db/types";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
+import type { CharacterSheetCardData, EpisodeOption, IngredientCardData } from "@/lib/production/types";
 
 type Tab = "ingredients" | "episodes" | "brief";
 
@@ -50,6 +48,18 @@ interface SeriesWorkspaceProps {
     reference: number;
   };
   ingredients: IngredientCardData[];
+  costumesByCharacter: Record<string, IngredientCardData[]>;
+  sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
+  episodes: EpisodeOption[];
+  characterSheets: Array<{
+    id: string;
+    name: string;
+    character_id: string;
+    character_name: string;
+    costume_name: string | null;
+    status: string;
+    episode_ids: string[];
+  }>;
   activeEpisodes: EpisodeCardData[];
   archivedEpisodes: EpisodeCardData[];
   models: ModelCatalogEntry[];
@@ -61,6 +71,10 @@ export function SeriesWorkspace({
   stats,
   counts,
   ingredients,
+  costumesByCharacter,
+  sheetsByCharacter,
+  episodes,
+  characterSheets,
   activeEpisodes,
   archivedEpisodes,
   models,
@@ -107,7 +121,11 @@ export function SeriesWorkspace({
             id: i.id,
             ref_tag: i.ref_tag,
             name: i.name,
+            kind: i.kind,
+            character_id: i.characterId,
+            generation_status: i.generationStatus ?? undefined,
           }))}
+          characterSheets={characterSheets}
           models={models}
           chatMessages={chatMessages}
         />
@@ -141,6 +159,9 @@ export function SeriesWorkspace({
               seriesId={series.id}
               ingredients={ingredients}
               counts={counts}
+              costumesByCharacter={costumesByCharacter}
+              sheetsByCharacter={sheetsByCharacter}
+              episodes={episodes}
             />
           ) : null}
 

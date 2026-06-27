@@ -30,7 +30,23 @@ export type CopilotContextPayload = {
   defaultOrientation: string;
   briefMarkdown?: string;
   scenes?: Array<{ id: string; title: string; prompt: string | null; act_label: string | null }>;
-  ingredients?: Array<{ id: string; ref_tag: string; name: string; kind: string }>;
+  ingredients?: Array<{
+    id: string;
+    ref_tag: string;
+    name: string;
+    kind: string;
+    character_id?: string | null;
+    generation_status?: string;
+  }>;
+  characterSheets?: Array<{
+    id: string;
+    name: string;
+    character_id: string;
+    character_name: string;
+    costume_name: string | null;
+    status: string;
+    episode_ids: string[];
+  }>;
 };
 
 interface CopilotPaneProps {

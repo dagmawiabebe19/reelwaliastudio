@@ -2,9 +2,14 @@ import { notFound } from "next/navigation";
 import { SeriesWorkspace } from "@/components/series/SeriesWorkspace";
 import { getPublicModelCatalog } from "@/lib/ai/registry";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
+import { listCharacterSheetsBySeries } from "@/lib/db/character-sheets";
 import { getIngredientCounts, listIngredientsBySeries } from "@/lib/db/ingredients";
 import { listEpisodesBySeries } from "@/lib/db/episodes";
 import { getSeries, getSeriesStats } from "@/lib/db/series";
+import {
+  buildCopilotCharacterSheets,
+  buildProductionLibraryData,
+} from "@/lib/production/library-data";
 import { resolveAssetUrls } from "@/lib/storage/resolve-urls";
 
 interface SeriesPageProps {
@@ -14,7 +19,7 @@ interface SeriesPageProps {
 export default async function SeriesPage({ params }: SeriesPageProps) {
   const { id } = await params;
 
-  const [series, stats, ingredientsRaw, counts, activeEpisodes, archivedEpisodes, chatSession] =
+  const [series, stats, ingredientsRaw, counts, activeEpisodes, archivedEpisodes, chatSession, sheetsRaw] =
     await Promise.all([
       getSeries(id),
       getSeriesStats(id),
@@ -23,6 +28,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       listEpisodesBySeries(id, "active"),
       listEpisodesBySeries(id, "archived"),
       getOrCreateChatSession("series", id),
+      listCharacterSheetsBySeries(id),
     ]);
 
   if (!series) notFound();
@@ -37,6 +43,13 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     })),
   );
 
+  const { costumesByCharacter, sheetsByCharacter } = await buildProductionLibraryData({
+    ingredients: ingredientsWithUrls,
+    sheets: sheetsRaw,
+  });
+
+  const characterSheets = await buildCopilotCharacterSheets(sheetsRaw);
+
   const ingredients = ingredientsWithUrls.map((i) => ({
     id: i.id,
     kind: i.kind,
@@ -45,6 +58,14 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     ref_tag: i.ref_tag,
     assetUrl: i.assetUrl,
     mediaType: i.assets?.media_type ?? null,
+    characterId: i.character_id,
+    generationStatus: i.generation_status,
+    generationError: i.generation_error,
+  }));
+
+  const episodes = [...activeEpisodes, ...archivedEpisodes].map((ep) => ({
+    id: ep.id,
+    title: ep.title,
   }));
 
   return (
@@ -60,6 +81,10 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       stats={stats}
       counts={counts}
       ingredients={ingredients}
+      costumesByCharacter={costumesByCharacter}
+      sheetsByCharacter={sheetsByCharacter}
+      episodes={episodes}
+      characterSheets={characterSheets}
       activeEpisodes={activeEpisodes}
       archivedEpisodes={archivedEpisodes}
       models={models}

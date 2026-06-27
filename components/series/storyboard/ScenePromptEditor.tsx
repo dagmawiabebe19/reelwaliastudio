@@ -6,8 +6,14 @@ import {
   bindMentionAction,
   updateSceneAction,
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/actions";
+import { bindSheetAction } from "@/app/(app)/series/[id]/production-actions";
 import { RefTag } from "@/components/ui/RefTag";
 import { SceneCalloutPreview } from "@/components/series/storyboard/SceneCalloutPreview";
+import {
+  SceneReferencesPanel,
+} from "@/components/series/storyboard/SceneReferencesPanel";
+import type { MentionSheet } from "@/lib/production/types";
+import type { ResolvedReference } from "@/lib/production/types";
 
 export type MentionIngredient = {
   id: string;
@@ -21,7 +27,10 @@ interface ScenePromptEditorProps {
   seriesId: string;
   initialPrompt: string;
   ingredients: MentionIngredient[];
+  sheets: MentionSheet[];
   boundIngredientIds: string[];
+  boundSheetIds: string[];
+  resolvedReferences: ResolvedReference[];
 }
 
 export function ScenePromptEditor({
@@ -30,7 +39,10 @@ export function ScenePromptEditor({
   seriesId,
   initialPrompt,
   ingredients,
+  sheets,
   boundIngredientIds,
+  boundSheetIds,
+  resolvedReferences,
 }: ScenePromptEditorProps) {
   const router = useRouter();
   const [prompt, setPrompt] = useState(initialPrompt);
@@ -43,7 +55,13 @@ export function ScenePromptEditor({
     setPrompt(initialPrompt);
   }, [initialPrompt]);
 
-  const filtered = ingredients.filter(
+  const readySheets = sheets.filter((s) => s.status === "ready");
+  const filteredSheets = readySheets.filter(
+    (s) =>
+      s.label.toLowerCase().includes(filter.toLowerCase()) ||
+      s.character_name.toLowerCase().includes(filter.toLowerCase()),
+  );
+  const filteredIngredients = ingredients.filter(
     (i) =>
       i.ref_tag.toLowerCase().includes(filter.toLowerCase()) ||
       i.name.toLowerCase().includes(filter.toLowerCase()),
@@ -57,8 +75,21 @@ export function ScenePromptEditor({
     }
   }
 
+  function selectSheet(sheet: MentionSheet) {
+    const next = prompt.replace(/@$/, `@sheet:${sheet.label} `);
+    setPrompt(next);
+    setShowPicker(false);
+
+    startTransition(async () => {
+      await bindSheetAction(sceneId, sheet.id, seriesId, episodeId);
+      await updateSceneAction(sceneId, episodeId, seriesId, { prompt: next });
+      router.refresh();
+    });
+
+    textareaRef.current?.focus();
+  }
+
   function selectMention(ingredient: MentionIngredient) {
-    const textarea = textareaRef.current;
     const next = prompt.replace(/@$/, `${ingredient.ref_tag} `);
     setPrompt(next);
     setShowPicker(false);
@@ -69,7 +100,7 @@ export function ScenePromptEditor({
       router.refresh();
     });
 
-    textarea?.focus();
+    textareaRef.current?.focus();
   }
 
   function savePrompt() {
@@ -80,17 +111,27 @@ export function ScenePromptEditor({
     });
   }
 
-  const boundChips = ingredients.filter((i) => boundIngredientIds.includes(i.id));
+  const boundChips = [
+    ...sheets.filter((s) => boundSheetIds.includes(s.id)).map((s) => ({ id: s.id, tag: s.label })),
+    ...ingredients
+      .filter((i) => boundIngredientIds.includes(i.id))
+      .map((i) => ({ id: i.id, tag: i.ref_tag })),
+  ];
 
   return (
     <div className="space-y-4">
       {boundChips.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {boundChips.map((chip) => (
-            <RefTag key={chip.id} tag={chip.ref_tag} />
+            <RefTag key={chip.id} tag={chip.tag} />
           ))}
         </div>
       ) : null}
+
+      <SceneReferencesPanel
+        resolvedReferences={resolvedReferences}
+        boundSheetIds={boundSheetIds}
+      />
 
       <div className="relative">
         <textarea
@@ -98,19 +139,39 @@ export function ScenePromptEditor({
           value={prompt}
           onChange={(e) => handleChange(e.target.value)}
           rows={10}
-          placeholder="Scene prompt… Type @ to bind an ingredient identity lock."
+          placeholder="Scene prompt… Type @ to bind a character sheet or ingredient."
           className="w-full rounded-lg border border-border bg-surface-elevated px-4 py-3 font-mono text-sm leading-relaxed focus-ring focus:ring-2 focus:ring-ring"
         />
         {showPicker ? (
-          <div className="absolute left-0 top-full z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-surface-elevated shadow-lg">
+          <div className="absolute left-0 top-full z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-surface-elevated shadow-lg">
             <input
               autoFocus
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="Search ingredients…"
+              placeholder="Search sheets & ingredients…"
               className="w-full border-b border-border bg-transparent px-3 py-2 text-sm focus:outline-none"
             />
-            {filtered.map((item) => (
+            {filteredSheets.length > 0 ? (
+              <p className="px-3 py-1 text-[10px] uppercase tracking-widest text-muted">Character sheets</p>
+            ) : null}
+            {filteredSheets.map((sheet) => (
+              <button
+                key={sheet.id}
+                type="button"
+                onClick={() => selectSheet(sheet)}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent-muted"
+              >
+                <span>
+                  {sheet.character_name}
+                  {sheet.costume_name ? ` · ${sheet.costume_name}` : ""} — {sheet.label}
+                </span>
+                <span className="text-xs text-muted">sheet</span>
+              </button>
+            ))}
+            {filteredIngredients.length > 0 ? (
+              <p className="px-3 py-1 text-[10px] uppercase tracking-widest text-muted">Ingredients</p>
+            ) : null}
+            {filteredIngredients.map((item) => (
               <button
                 key={item.id}
                 type="button"

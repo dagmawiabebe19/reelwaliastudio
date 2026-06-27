@@ -1,10 +1,22 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { after } from "next/server";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
+import {
+  queueIngredientImageGeneration,
+  getIngredientRefUrl,
+} from "@/lib/ai/generation/ingredient-generation";
 import { getModelById, isModelConfigured } from "@/lib/ai/registry";
-import { createIngredient } from "@/lib/db/ingredients";
+import {
+  CHARACTER_HEADSHOT_PREFIX,
+  LOCATION_ESTABLISHING_PREFIX,
+  costumePreviewPrompt,
+} from "@/lib/production/prompts";
+import { resolveSceneReferences } from "@/lib/production/resolve-references";
+import { createIngredient, getIngredient } from "@/lib/db/ingredients";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
+import { bindSheetToScene } from "@/lib/db/scene-sheets";
 import { createScene, getScene, updateScene } from "@/lib/db/scenes";
 import { resolveCopilotModel } from "@/lib/ai/copilot/resolve-model";
 import {
@@ -32,12 +44,15 @@ async function executeTool(
       const segments = (args.segments as Array<Record<string, unknown>>) ?? [];
       const created: string[] = [];
       const updated: string[] = [];
+      const resolved: Array<{ scene_id: string; references: unknown[] }> = [];
 
       for (const segment of segments) {
         const sceneId = segment.scene_id ? String(segment.scene_id) : null;
         const title = String(segment.title ?? "").trim();
         const prompt = String(segment.prompt ?? "").trim();
         if (!title) continue;
+
+        let targetSceneId: string;
 
         if (sceneId) {
           await updateScene(sceneId, {
@@ -51,6 +66,7 @@ async function executeTool(
                 ? segment.orientation
                 : undefined,
           });
+          targetSceneId = sceneId;
           updated.push(sceneId);
         } else {
           const scene = await createScene(episodeId, {
@@ -66,11 +82,20 @@ async function executeTool(
                 ? segment.orientation
                 : null,
           });
+          targetSceneId = scene.id;
           created.push(scene.id);
         }
+
+        const refs = await resolveSceneReferences({
+          sceneId: targetSceneId,
+          seriesId: context.seriesId,
+          episodeId,
+          autoBind: true,
+        });
+        resolved.push({ scene_id: targetSceneId, references: refs });
       }
 
-      return { created, updated, count: created.length + updated.length };
+      return { created, updated, count: created.length + updated.length, resolved };
     }
 
     case "add_ingredient": {
@@ -78,17 +103,81 @@ async function executeTool(
       const kind = args.kind as Parameters<typeof createIngredient>[0]["kind"];
       const name = String(args.name ?? "").trim();
       const description = args.description ? String(args.description) : undefined;
-      const ingredient = await createIngredient({ seriesId, kind, name, description });
-      return { ingredient_id: ingredient.id, ref_tag: ingredient.ref_tag };
+      const characterId = args.character_id ? String(args.character_id) : undefined;
+      const generate = args.generate === true;
+
+      if (generate && !description) {
+        return { error: "description is required when generate=true." };
+      }
+      if (kind === "outfit" && generate && !characterId) {
+        return { error: "character_id is required to generate a costume preview." };
+      }
+
+      const ingredient = await createIngredient({
+        seriesId,
+        kind,
+        name,
+        description,
+        characterId: characterId ?? null,
+        generationStatus: generate ? "pending" : "ready",
+      });
+
+      if (generate && description) {
+        let prompt = description;
+        let refImageUrls: string[] | undefined;
+
+        if (kind === "character") {
+          prompt = `${CHARACTER_HEADSHOT_PREFIX}${description}`;
+        } else if (kind === "location") {
+          prompt = `${LOCATION_ESTABLISHING_PREFIX}${description}`;
+        } else if (kind === "outfit" && characterId) {
+          const character = await getIngredient(characterId);
+          if (!character) return { error: "Character not found." };
+          const headshotUrl = await getIngredientRefUrl(characterId);
+          if (!headshotUrl) {
+            return { error: "Generate the character headshot first.", ingredient_id: ingredient.id };
+          }
+          prompt = costumePreviewPrompt(character.name, description);
+          refImageUrls = [headshotUrl];
+        } else {
+          return { ingredient_id: ingredient.id, ref_tag: ingredient.ref_tag, note: "Generate not supported for this kind." };
+        }
+
+        await queueIngredientImageGeneration({
+          ingredientId: ingredient.id,
+          prompt,
+          refImageUrls,
+          revalidatePath: `/series/${seriesId}`,
+        });
+      }
+
+      return { ingredient_id: ingredient.id, ref_tag: ingredient.ref_tag, generating: generate };
     }
 
     case "bind_identity": {
       const sceneId = String(args.scene_id);
+      const sheetIds = (args.character_sheet_ids as string[]) ?? [];
       const ingredientIds = (args.ingredient_ids as string[]) ?? [];
-      for (const ingredientId of ingredientIds) {
-        await bindIngredientToScene(sceneId, ingredientId, "identity_lock");
+
+      for (const sheetId of sheetIds) {
+        await bindSheetToScene(sceneId, sheetId, "identity_lock");
       }
-      return { bound: ingredientIds.length };
+      for (const ingredientId of ingredientIds) {
+        await bindIngredientToScene(sceneId, ingredientId, "reference");
+      }
+
+      const scene = await getScene(sceneId);
+      const episodeId = context.episodeId ?? scene?.episode_id;
+      if (episodeId) {
+        await resolveSceneReferences({
+          sceneId,
+          seriesId: context.seriesId,
+          episodeId,
+          autoBind: false,
+        });
+      }
+
+      return { bound_sheets: sheetIds.length, bound_ingredients: ingredientIds.length };
     }
 
     case "generate_take": {
@@ -109,6 +198,13 @@ async function executeTool(
       const seriesId = context.seriesId;
       const episodeId = context.episodeId ?? scene.episode_id;
 
+      await resolveSceneReferences({
+        sceneId,
+        seriesId,
+        episodeId,
+        autoBind: true,
+      });
+
       const takeIds = await createPendingTakes({
         sceneId,
         seriesId,
@@ -119,10 +215,12 @@ async function executeTool(
         durationSeconds,
       });
 
-      void executeGenerationJob(
-        { sceneId, seriesId, episodeId, modelId, count, resolution, durationSeconds },
-        takeIds,
-      );
+      after(async () => {
+        await executeGenerationJob(
+          { sceneId, seriesId, episodeId, modelId, count, resolution, durationSeconds },
+          takeIds,
+        );
+      });
 
       return { take_ids: takeIds, status: "pending" };
     }

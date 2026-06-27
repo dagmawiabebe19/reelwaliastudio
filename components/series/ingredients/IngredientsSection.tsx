@@ -9,17 +9,17 @@ import {
   uploadIngredientFromClient,
   type UploadProgress,
 } from "@/lib/storage/client-upload";
-import { allowedMimeTypesForKind } from "@/lib/storage/validate";
+import type { IngredientCardData } from "@/lib/production/types";
+import {
+  CharactersSection,
+} from "@/components/series/ingredients/CharactersSection";
+import type { CharacterSheetCardData, EpisodeOption } from "@/lib/production/types";
+import {
+  LocationsSection,
+  VoicesSection,
+} from "@/components/series/ingredients/ProductionSections";
 
-export type IngredientCardData = {
-  id: string;
-  kind: IngredientKind;
-  name: string;
-  description: string | null;
-  ref_tag: string;
-  assetUrl: string | null;
-  mediaType: string | null;
-};
+export type { IngredientCardData } from "@/lib/production/types";
 
 interface IngredientCardProps {
   ingredient: IngredientCardData;
@@ -70,13 +70,12 @@ interface IngredientsSectionProps {
     locations: number;
     reference: number;
   };
+  costumesByCharacter: Record<string, IngredientCardData[]>;
+  sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
+  episodes: EpisodeOption[];
 }
 
 const SECTIONS: { label: string; kinds: IngredientKind[]; countKey: keyof IngredientsSectionProps["counts"] }[] = [
-  { label: "Characters", kinds: ["character"], countKey: "characters" },
-  { label: "Voices", kinds: ["voice"], countKey: "voices" },
-  { label: "Outfits", kinds: ["outfit"], countKey: "outfits" },
-  { label: "Locations", kinds: ["location"], countKey: "locations" },
   { label: "Reference Media", kinds: ["reference", "prop"], countKey: "reference" },
 ];
 
@@ -88,7 +87,14 @@ function acceptForKind(kind: IngredientKind): string {
   return "image/*";
 }
 
-export function IngredientsSection({ seriesId, ingredients, counts }: IngredientsSectionProps) {
+export function IngredientsSection({
+  seriesId,
+  ingredients,
+  counts,
+  costumesByCharacter,
+  sheetsByCharacter,
+  episodes,
+}: IngredientsSectionProps) {
   const router = useRouter();
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -171,12 +177,28 @@ export function IngredientsSection({ seriesId, ingredients, counts }: Ingredient
         </div>
       ) : null}
 
+      <CharactersSection
+        seriesId={seriesId}
+        characters={ingredients.filter((i) => i.kind === "character")}
+        costumesByCharacter={costumesByCharacter}
+        sheetsByCharacter={sheetsByCharacter}
+        episodes={episodes}
+      />
+
+      <VoicesSection
+        seriesId={seriesId}
+        voices={ingredients.filter((i) => i.kind === "voice")}
+        characters={ingredients.filter((i) => i.kind === "character")}
+      />
+
+      <LocationsSection
+        seriesId={seriesId}
+        locations={ingredients.filter((i) => i.kind === "location")}
+      />
+
       {SECTIONS.map((section) => {
         const sectionItems = ingredients.filter((i) => section.kinds.includes(i.kind));
-        const displayItems =
-          section.label === "Reference Media"
-            ? filterReference(sectionItems)
-            : sectionItems;
+        const displayItems = filterReference(sectionItems);
         const uploadKind = section.kinds[0];
 
         return (
@@ -186,42 +208,37 @@ export function IngredientsSection({ seriesId, ingredients, counts }: Ingredient
                 {section.label}{" "}
                 <span className="text-muted">({counts[section.countKey]})</span>
               </h2>
-              {section.label === "Reference Media" ? (
-                <div className="inline-flex rounded-md border border-border p-1">
-                  {(["all", "image", "video", "audio"] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => setRefFilter(tab)}
-                      className={`rounded px-2 py-1 text-xs capitalize ${
-                        refFilter === tab
-                          ? "bg-accent-muted text-accent"
-                          : "text-muted hover:text-accent"
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <label className="cursor-pointer text-xs text-accent hover:underline">
-                  + Upload
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept={acceptForKind(uploadKind)}
-                    onChange={(e) => {
-                      if (e.target.files?.length) void uploadFiles(e.target.files, uploadKind);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-              )}
+              <div className="inline-flex rounded-md border border-border p-1">
+                {(["all", "image", "video", "audio"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setRefFilter(tab)}
+                    className={`rounded px-2 py-1 text-xs capitalize ${
+                      refFilter === tab
+                        ? "bg-accent-muted text-accent"
+                        : "text-muted hover:text-accent"
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+              <label className="cursor-pointer text-xs text-accent hover:underline">
+                + Upload
+                <input
+                  type="file"
+                  className="hidden"
+                  accept={acceptForKind(uploadKind)}
+                  onChange={(e) => {
+                    if (e.target.files?.length) void uploadFiles(e.target.files, uploadKind);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
             </div>
             {displayItems.length === 0 ? (
-              <p className="text-sm text-muted">
-                No items yet. Drop {allowedMimeTypesForKind(uploadKind)} files anywhere on this page.
-              </p>
+              <p className="text-sm text-muted">No reference media yet. Drop files anywhere on this page.</p>
             ) : (
               <div className="grid grid-cols-3 gap-4">
                 {displayItems.map((item) => (
