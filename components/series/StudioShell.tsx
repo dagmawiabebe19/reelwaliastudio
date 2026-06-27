@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { CopilotPane, type ChatMessageData, type CopilotContextPayload, type MentionIngredient } from "@/components/series/copilot/CopilotPane";
+import { useEffect, useState } from "react";
+import {
+  CopilotPane,
+  type ChatMessageData,
+  type CopilotContextPayload,
+  type MentionIngredient,
+} from "@/components/series/copilot/CopilotPane";
 import { GenerationPanel, type ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
+import { SceneMetaControls } from "@/components/series/storyboard/SceneMetaControls";
 import { ScenePromptEditor } from "@/components/series/storyboard/ScenePromptEditor";
+import { SceneRail } from "@/components/series/storyboard/SceneRail";
 import type { MentionSheet } from "@/lib/production/types";
 import type { ResolvedReference } from "@/lib/production/types";
 import type { Orientation } from "@/lib/db/types";
@@ -53,7 +60,18 @@ export function StudioShell({
   scopeId,
 }: StudioShellProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
+  const [copilotCollapsed, setCopilotCollapsed] = useState(false);
+  const [activeTakeIndex, setActiveTakeIndex] = useState(0);
+
   const selectedScene = scenes.find((s) => s.id === selectedSceneId) ?? null;
+  const sceneOrientation = selectedScene
+    ? effectiveOrientation(selectedScene.orientation, defaultOrientation)
+    : defaultOrientation;
+  const sceneTakes = selectedScene ? (takesByScene[selectedScene.id] ?? []) : [];
+
+  useEffect(() => {
+    setActiveTakeIndex(0);
+  }, [selectedSceneId]);
 
   const copilotContext: CopilotContextPayload = {
     seriesId,
@@ -78,76 +96,125 @@ export function StudioShell({
   };
 
   return (
-    <div className="grid h-[calc(100vh-12rem)] grid-cols-2 gap-4 rounded-lg border border-border bg-surface">
-      <div className="flex min-h-0 flex-col border-r border-border p-4">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">Co-pilot</p>
-        <CopilotPane
-          scopeType={scopeType}
-          scopeId={scopeId}
-          context={copilotContext}
-          imageModels={models.filter((m) => m.kind === "image")}
-          ingredients={ingredients}
-          initialMessages={chatMessages}
-        />
+    <div className="flex h-[calc(100vh-12rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Episode studio</p>
+        <button
+          type="button"
+          onClick={() => setCopilotCollapsed((v) => !v)}
+          className="rounded-md border border-border px-3 py-1 text-xs text-muted transition-colors hover:border-accent/50 hover:text-accent"
+        >
+          {copilotCollapsed ? "Show co-pilot" : "Hide co-pilot"}
+        </button>
       </div>
 
-      <div className="flex min-h-0 flex-col overflow-y-auto p-4">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-          Scene + Takes
-        </p>
-
-        <div className="mb-4 flex flex-wrap gap-2">
-          {scenes.map((scene) => (
-            <button
-              key={scene.id}
-              type="button"
-              onClick={() => setSelectedSceneId(scene.id)}
-              className={`rounded-md border px-3 py-1.5 text-xs ${
-                selectedSceneId === scene.id
-                  ? "border-accent bg-accent-muted text-accent"
-                  : "border-border text-muted hover:text-accent"
-              }`}
-            >
-              {scene.title}
-            </button>
-          ))}
-        </div>
-
-        {selectedScene ? (
-          <div className="space-y-6">
-            <h2 className="font-display text-2xl text-foreground">{selectedScene.title}</h2>
-
-            <ScenePromptEditor
-              sceneId={selectedScene.id}
-              episodeId={episodeId}
-              seriesId={seriesId}
-              initialPrompt={selectedScene.prompt ?? ""}
+      <div
+        className={`grid min-h-0 flex-1 ${
+          copilotCollapsed
+            ? "grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]"
+            : "grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)_minmax(280px,360px)]"
+        }`}
+      >
+        {!copilotCollapsed ? (
+          <aside className="flex min-h-0 flex-col border-b border-border p-4 xl:border-b-0 xl:border-r">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+              Co-pilot
+            </p>
+            <CopilotPane
+              scopeType={scopeType}
+              scopeId={scopeId}
+              context={copilotContext}
+              imageModels={models.filter((m) => m.kind === "image")}
               ingredients={ingredients}
-              sheets={sheets}
-              boundIngredientIds={selectedScene.scene_ingredients.map((b) => b.ingredient_id)}
-              boundSheetIds={(selectedScene.scene_character_sheets ?? []).map((b) => b.character_sheet_id)}
-              resolvedReferences={(selectedScene.resolved_references ?? []) as ResolvedReference[]}
+              initialMessages={chatMessages}
             />
+          </aside>
+        ) : null}
 
-            <GenerationPanel
-              sceneId={selectedScene.id}
+        <main className="flex min-h-0 min-w-0 flex-col border-b border-border xl:border-b-0">
+          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+            {selectedScene ? (
+              <>
+                <SceneMetaControls
+                  scene={selectedScene}
+                  seriesId={seriesId}
+                  episodeId={episodeId}
+                  defaultOrientation={defaultOrientation}
+                />
+
+                <ScenePromptEditor
+                  sceneId={selectedScene.id}
+                  episodeId={episodeId}
+                  seriesId={seriesId}
+                  initialPrompt={selectedScene.prompt ?? ""}
+                  ingredients={ingredients}
+                  sheets={sheets}
+                  boundIngredientIds={selectedScene.scene_ingredients.map((b) => b.ingredient_id)}
+                  boundSheetIds={(selectedScene.scene_character_sheets ?? []).map(
+                    (b) => b.character_sheet_id,
+                  )}
+                  resolvedReferences={(selectedScene.resolved_references ?? []) as ResolvedReference[]}
+                />
+
+                <TakesStrip
+                  sceneId={selectedScene.id}
+                  seriesId={seriesId}
+                  episodeId={episodeId}
+                  sceneTitle={selectedScene.title}
+                  orientation={sceneOrientation}
+                  takes={sceneTakes}
+                  layout="strip"
+                  activeIndex={activeTakeIndex}
+                  onActiveIndexChange={setActiveTakeIndex}
+                />
+              </>
+            ) : (
+              <p className="text-sm text-muted">Select a scene below to edit and generate.</p>
+            )}
+          </div>
+
+          <div className="shrink-0 border-t border-border bg-surface-elevated/30 p-4">
+            <SceneRail
               seriesId={seriesId}
               episodeId={episodeId}
-              models={models}
-            />
-
-            <TakesStrip
-              sceneId={selectedScene.id}
-              seriesId={seriesId}
-              episodeId={episodeId}
-              sceneTitle={selectedScene.title}
-              orientation={effectiveOrientation(selectedScene.orientation, defaultOrientation)}
-              takes={takesByScene[selectedScene.id] ?? []}
+              defaultOrientation={defaultOrientation}
+              scenes={scenes}
+              selectedSceneId={selectedSceneId}
+              onSelectScene={setSelectedSceneId}
             />
           </div>
-        ) : (
-          <p className="text-sm text-muted">Select a scene to generate takes.</p>
-        )}
+        </main>
+
+        <aside className="flex min-h-0 flex-col overflow-y-auto p-4 xl:border-l xl:border-border">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+            Output
+          </p>
+
+          {selectedScene ? (
+            <div className="space-y-6">
+              <TakesStrip
+                sceneId={selectedScene.id}
+                seriesId={seriesId}
+                episodeId={episodeId}
+                sceneTitle={selectedScene.title}
+                orientation={sceneOrientation}
+                takes={sceneTakes}
+                layout="preview"
+                activeIndex={activeTakeIndex}
+                onActiveIndexChange={setActiveTakeIndex}
+              />
+
+              <GenerationPanel
+                sceneId={selectedScene.id}
+                seriesId={seriesId}
+                episodeId={episodeId}
+                models={models}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-muted">Select a scene to preview takes and generate.</p>
+          )}
+        </aside>
       </div>
     </div>
   );

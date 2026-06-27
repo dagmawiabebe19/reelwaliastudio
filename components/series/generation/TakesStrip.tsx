@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { starTakeAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import {
@@ -24,6 +24,8 @@ export type TakeCardData = {
   model: string | null;
 };
 
+type TakesStripLayout = "combined" | "strip" | "preview";
+
 interface TakesStripProps {
   sceneId: string;
   seriesId: string;
@@ -31,6 +33,9 @@ interface TakesStripProps {
   sceneTitle: string;
   orientation: Orientation;
   takes: TakeCardData[];
+  layout?: TakesStripLayout;
+  activeIndex?: number;
+  onActiveIndexChange?: (index: number) => void;
 }
 
 function statusLabel(status: string) {
@@ -66,15 +71,27 @@ export function TakesStrip({
   sceneTitle,
   orientation,
   takes,
+  layout = "combined",
+  activeIndex: controlledIndex,
+  onActiveIndexChange,
 }: TakesStripProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [internalIndex, setInternalIndex] = useState(0);
+
+  const activeIndex = controlledIndex ?? internalIndex;
+  const setActiveIndex = onActiveIndexChange ?? setInternalIndex;
 
   const activeTake = takes[activeIndex] ?? null;
   const isPortrait = orientation === "portrait";
   const hasPending = takes.some((t) => t.status === "pending");
   usePollWhilePending(hasPending);
+
+  useEffect(() => {
+    if (controlledIndex === undefined) {
+      setInternalIndex(0);
+    }
+  }, [sceneId, takes.length, controlledIndex]);
 
   function toggleStar(takeId: string, starred: boolean) {
     startTransition(async () => {
@@ -83,22 +100,61 @@ export function TakesStrip({
     });
   }
 
+  const showStrip = layout === "combined" || layout === "strip";
+  const showPreview = layout === "combined" || layout === "preview";
+
+  const previewFrameClass =
+    activeTake?.media_type === "video"
+      ? isPortrait
+        ? "w-full max-w-[min(100%,280px)]"
+        : "w-full"
+      : isPortrait
+        ? "aspect-[9/16] w-full max-w-[min(100%,280px)]"
+        : "aspect-video w-full";
+
+  if (takes.length === 0 && layout !== "preview") {
+    return (
+      <div className="space-y-2">
+        {showStrip ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-display text-lg text-foreground">Takes</h3>
+            <a
+              href={`/api/export/scene/${sceneId}`}
+              className="text-xs text-accent hover:underline"
+            >
+              Download starred takes
+            </a>
+          </div>
+        ) : null}
+        <p className="text-sm text-muted">No takes yet. Generate one in the output panel.</p>
+      </div>
+    );
+  }
+
+  if (takes.length === 0 && layout === "preview") {
+    return (
+      <div
+        className={`flex items-center justify-center rounded-lg border border-dashed border-border bg-background text-sm text-muted ${previewFrameClass}`}
+      >
+        No take selected
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="font-display text-lg text-foreground">Takes</h3>
-        <a
-          href={`/api/export/scene/${sceneId}`}
-          className="text-xs text-accent hover:underline"
-        >
-          Download starred takes
-        </a>
-      </div>
-
-      {takes.length === 0 ? (
-        <p className="text-sm text-muted">No takes yet. Generate one above.</p>
-      ) : (
+      {showStrip ? (
         <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-display text-lg text-foreground">Takes</h3>
+            <a
+              href={`/api/export/scene/${sceneId}`}
+              className="text-xs text-accent hover:underline"
+            >
+              Download starred takes
+            </a>
+          </div>
+
           <div className="flex flex-wrap gap-2">
             {takes.map((take, index) => (
               <button
@@ -127,70 +183,116 @@ export function TakesStrip({
             ))}
           </div>
 
-          {activeTake ? (
-            <div className="grid gap-4 md:grid-cols-[1fr_auto]">
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() => toggleStar(activeTake.id, activeTake.starred)}
-                    className={`text-lg ${activeTake.starred ? "text-amber-400" : "text-muted"}`}
-                    aria-label={activeTake.starred ? "Unstar take" : "Star take"}
-                  >
-                    {activeTake.starred ? "★" : "☆"}
-                  </button>
-                  <span className="text-sm text-muted">
-                    {activeTake.model ?? "—"}
-                  </span>
-                  <DeleteConfirmButton
-                    ariaLabel="Delete take"
-                    fetchPreview={() =>
-                      getTakeDeletePreviewAction(activeTake.id, episodeId, seriesId)
-                    }
-                    onDelete={() => deleteTakeAction(activeTake.id, episodeId, seriesId)}
-                    onSuccess={() => router.refresh()}
-                  />
-                </div>
-
-                <GenerationStatusLine
-                  status={activeTake.status}
-                  error={activeTake.error_message}
-                />
-
-                {activeTake.status === "failed" && activeTake.error_message ? (
-                  <p className="rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
-                    {activeTake.error_message}
-                  </p>
-                ) : null}
-              </div>
-
-              <div
-                className={`overflow-hidden rounded-lg border border-border bg-background ${
-                  isPortrait ? "aspect-[9/16] w-48" : "aspect-video w-80"
-                }`}
+          {activeTake && layout === "strip" ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => toggleStar(activeTake.id, activeTake.starred)}
+                className={`text-lg ${activeTake.starred ? "text-amber-400" : "text-muted"}`}
+                aria-label={activeTake.starred ? "Unstar take" : "Star take"}
               >
-                {activeTake.assetUrl ? (
-                  activeTake.media_type === "video" ? (
-                    <VideoTakePlayer src={activeTake.assetUrl} isPortrait={isPortrait} />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={activeTake.assetUrl}
-                      alt={`${sceneTitle} take ${activeTake.take_number}`}
-                      className="h-full w-full object-cover"
-                    />
-                  )
-                ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-muted">
-                    {activeTake.status === "pending" ? "Generating…" : "No preview"}
-                  </div>
-                )}
-              </div>
+                {activeTake.starred ? "★" : "☆"}
+              </button>
+              <span className="text-sm text-muted">{activeTake.model ?? "—"}</span>
+              <DeleteConfirmButton
+                ariaLabel="Delete take"
+                fetchPreview={() =>
+                  getTakeDeletePreviewAction(activeTake.id, episodeId, seriesId)
+                }
+                onDelete={() => deleteTakeAction(activeTake.id, episodeId, seriesId)}
+                onSuccess={() => router.refresh()}
+              />
+              <GenerationStatusLine
+                status={activeTake.status}
+                error={activeTake.error_message}
+              />
             </div>
           ) : null}
         </>
-      )}
+      ) : null}
+
+      {showPreview && activeTake ? (
+        <div className={layout === "combined" ? "grid gap-4 md:grid-cols-[1fr_auto]" : "space-y-3"}>
+          {layout === "combined" ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => toggleStar(activeTake.id, activeTake.starred)}
+                  className={`text-lg ${activeTake.starred ? "text-amber-400" : "text-muted"}`}
+                  aria-label={activeTake.starred ? "Unstar take" : "Star take"}
+                >
+                  {activeTake.starred ? "★" : "☆"}
+                </button>
+                <span className="text-sm text-muted">{activeTake.model ?? "—"}</span>
+                <DeleteConfirmButton
+                  ariaLabel="Delete take"
+                  fetchPreview={() =>
+                    getTakeDeletePreviewAction(activeTake.id, episodeId, seriesId)
+                  }
+                  onDelete={() => deleteTakeAction(activeTake.id, episodeId, seriesId)}
+                  onSuccess={() => router.refresh()}
+                />
+              </div>
+
+              <GenerationStatusLine
+                status={activeTake.status}
+                error={activeTake.error_message}
+              />
+
+              {activeTake.status === "failed" && activeTake.error_message ? (
+                <p className="rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
+                  {activeTake.error_message}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted">
+                Take {activeTake.take_number}
+                {activeTake.starred ? <span className="ml-2 text-amber-400">★</span> : null}
+              </p>
+              <GenerationStatusLine
+                status={activeTake.status}
+                error={activeTake.error_message}
+              />
+            </div>
+          )}
+
+          <div
+            className={`mx-auto overflow-hidden rounded-lg border border-border bg-background ${previewFrameClass}`}
+          >
+            {activeTake.assetUrl ? (
+              activeTake.media_type === "video" ? (
+                <VideoTakePlayer
+                  src={activeTake.assetUrl}
+                  isPortrait={isPortrait}
+                  fullWidth
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={activeTake.assetUrl}
+                  alt={`${sceneTitle} take ${activeTake.take_number}`}
+                  className="h-full w-full object-contain"
+                />
+              )
+            ) : (
+              <div className="flex h-full min-h-[12rem] items-center justify-center text-xs text-muted">
+                {activeTake.status === "pending" ? "Generating…" : "No preview"}
+              </div>
+            )}
+          </div>
+
+          {layout === "preview" && activeTake.status === "failed" && activeTake.error_message ? (
+            <p className="rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
+              {activeTake.error_message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

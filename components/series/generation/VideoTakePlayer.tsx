@@ -3,11 +3,14 @@
 interface VideoTakePlayerProps {
   src: string;
   isPortrait: boolean;
+  fullWidth?: boolean;
 }
 
-export function VideoTakePlayer({ src, isPortrait }: VideoTakePlayerProps) {
+export function VideoTakePlayer({ src, isPortrait, fullWidth = false }: VideoTakePlayerProps) {
+  const widthClass = fullWidth ? "w-full" : isPortrait ? "w-48" : "w-80";
+
   return (
-    <div className={`flex flex-col gap-3 ${isPortrait ? "w-48" : "w-80"}`}>
+    <div className={`flex flex-col gap-3 ${widthClass}`}>
       <video
         src={src}
         controls
