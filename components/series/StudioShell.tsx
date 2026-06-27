@@ -221,6 +221,7 @@ export function StudioShell({
                 seriesId={seriesId}
                 episodeId={episodeId}
                 models={models}
+                takes={sceneTakes}
               />
             </div>
           ) : (

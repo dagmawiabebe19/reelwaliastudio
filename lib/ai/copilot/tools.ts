@@ -92,7 +92,7 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "generate_take",
     description:
-      "Trigger image or video generation for a scene. Use a registry model id (e.g. openai-image). Omit model to use the composer default image model.",
+      "Trigger image or video generation for a scene. Image models use identity-lock references. Video models (higgsfield, seedance) animate a ready storyboard image take — star a take or use the latest ready image. Pass duration (6/7/8) for video.",
     input_schema: {
       type: "object",
       properties: {
@@ -100,11 +100,11 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
         model: {
           type: "string",
           description:
-            "Registry model id such as openai-image or seedance. Omit to use composer default. Do NOT pass generic words like image or video.",
+            "Registry model id such as openai-image, higgsfield, or seedance. Omit to use the composer default image model. Use higgsfield or seedance for video.",
         },
-        count: { type: "number" },
+        count: { type: "number", description: "Image takes only (1–5). Video always generates 1 take." },
         resolution: { type: "string", enum: ["480p", "720p"] },
-        duration: { type: "number", enum: [6, 7, 8] },
+        duration: { type: "number", enum: [6, 7, 8], description: "Required for video models." },
       },
       required: ["scene_id"],
     },
@@ -198,7 +198,7 @@ If model is omitted in generate_take, the composer default image model is used.
 3. **Character sheets** — turnaround (front, profiles, 3/4, back) locking face + wardrobe. One sheet links to many episodes via character_sheet_episodes — never duplicate per episode.
 4. **Locations** — clean establishing shots.
 5. **Voices** — description for timbre/age/accent; generation is stubbed until provider is wired.
-6. **Storyboard** — bind SHEETS (not raw headshots) per segment. generate_take uses sheet angle images + location.
+6. **Storyboard** — bind SHEETS (not raw headshots) per segment. generate_take uses sheet angle images + location for images. For video (higgsfield / seedance), a ready image take must exist — prefer the starred take as the source frame.
 7. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).

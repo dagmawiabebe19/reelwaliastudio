@@ -16,7 +16,7 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
   { id: "nano-banana", label: "Nano Banana", kind: "image", safety: "sfw", envKey: "FAL_KEY" },
   { id: "grok", label: "Grok Image", kind: "image", safety: "nsfw", envKey: "XAI_API_KEY" },
   { id: "seedance", label: "Seedance", kind: "video", safety: "sfw", envKey: "FAL_KEY" },
-  { id: "higgsfield", label: "Higgsfield", kind: "video", safety: "sfw", envKey: "HIGGSFIELD_API_KEY" },
+  { id: "higgsfield", label: "Higgsfield Seedance", kind: "video", safety: "sfw", envKey: "HIGGSFIELD_API_KEY" },
   { id: "azure-speech", label: "Azure Speech", kind: "voice", safety: "sfw", envKey: "AZURE_SPEECH_KEY" },
 ];
 

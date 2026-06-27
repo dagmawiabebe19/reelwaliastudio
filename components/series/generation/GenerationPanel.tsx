@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { generateTakesAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import { Button } from "@/components/ui/Button";
+import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 
 export type ModelCatalogEntry = {
   id: string;
@@ -18,9 +19,24 @@ interface GenerationPanelProps {
   seriesId: string;
   episodeId: string;
   models: ModelCatalogEntry[];
+  takes?: TakeCardData[];
 }
 
-export function GenerationPanel({ sceneId, seriesId, episodeId, models }: GenerationPanelProps) {
+function resolveVideoSourceTake(takes: TakeCardData[]): TakeCardData | null {
+  const readyImages = takes.filter(
+    (take) => take.media_type === "image" && take.status === "ready" && take.assetUrl,
+  );
+  if (!readyImages.length) return null;
+  return readyImages.find((take) => take.starred) ?? readyImages[readyImages.length - 1];
+}
+
+export function GenerationPanel({
+  sceneId,
+  seriesId,
+  episodeId,
+  models,
+  takes = [],
+}: GenerationPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const imageModels = models.filter((m) => m.kind === "image");
@@ -35,9 +51,12 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
 
   const selected = allModels.find((m) => m.id === modelId);
   const isVideo = selected?.kind === "video";
+  const videoSourceTake = useMemo(() => resolveVideoSourceTake(takes), [takes]);
+  const canGenerateVideo = Boolean(videoSourceTake?.assetUrl);
 
   function handleGenerate() {
     if (!modelId || !selected?.configured) return;
+    if (isVideo && !canGenerateVideo) return;
 
     startTransition(async () => {
       setStartedMessage(null);
@@ -55,7 +74,11 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
         alert(result.error);
       } else {
         const n = isVideo ? 1 : count;
-        setStartedMessage(`Generating ${n} take${n === 1 ? "" : "s"}… ~30–90s — refresh automatically`);
+        setStartedMessage(
+          isVideo
+            ? `Generating video from take #${videoSourceTake?.take_number}… may take several minutes`
+            : `Generating ${n} take${n === 1 ? "" : "s"}… ~30–90s — refresh automatically`,
+        );
         router.refresh();
       }
     });
@@ -75,14 +98,44 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
           >
             {allModels.map((model) => (
               <option key={model.id} value={model.id} disabled={!model.configured}>
-                {model.label} ({model.safety.toUpperCase()})
+                {model.label} ({model.kind.toUpperCase()}, {model.safety.toUpperCase()})
                 {!model.configured ? " — not configured" : ""}
               </option>
             ))}
           </select>
         </div>
 
-        {!isVideo ? (
+        {isVideo ? (
+          <>
+            <div>
+              <label className="mb-1 block text-xs text-muted">Source image</label>
+              {videoSourceTake ? (
+                <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
+                  Take #{videoSourceTake.take_number}
+                  {videoSourceTake.starred ? " ★ starred" : " (latest ready)"}
+                </p>
+              ) : (
+                <p className="rounded-md border border-accent/30 bg-accent-muted/10 px-3 py-2 text-xs text-accent">
+                  Generate a storyboard image first, then star it (or use the latest ready take) as the
+                  source frame.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-muted">Duration</label>
+              <select
+                value={duration}
+                onChange={(e) => setDuration(Number(e.target.value) as 6 | 7 | 8)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value={6}>6s</option>
+                <option value={7}>7s</option>
+                <option value={8}>8s</option>
+              </select>
+            </div>
+          </>
+        ) : (
           <div>
             <label className="mb-1 block text-xs text-muted">Takes (1–5)</label>
             <input
@@ -93,19 +146,6 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
               onChange={(e) => setCount(Number(e.target.value))}
               className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
-          </div>
-        ) : (
-          <div>
-            <label className="mb-1 block text-xs text-muted">Duration</label>
-            <select
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value) as 6 | 7 | 8)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value={6}>6s</option>
-              <option value={7}>7s</option>
-              <option value={8}>8s</option>
-            </select>
           </div>
         )}
 
@@ -125,10 +165,10 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
       <Button
         type="button"
         onClick={handleGenerate}
-        disabled={pending || !selected?.configured}
+        disabled={pending || !selected?.configured || (isVideo && !canGenerateVideo)}
         className="w-full"
       >
-        {pending ? "Starting…" : "Generate"}
+        {pending ? "Starting…" : isVideo ? "Generate video" : "Generate"}
       </Button>
 
       {startedMessage ? (

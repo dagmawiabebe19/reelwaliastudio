@@ -116,6 +116,7 @@ function SceneDetailPanel({
         seriesId={seriesId}
         episodeId={episodeId}
         models={models}
+        takes={takes}
       />
 
       <TakesStrip

@@ -7,6 +7,7 @@ export interface GenerateVideoInput {
   durationSeconds: number;
   aspectRatio: AspectRatio;
   resolution: string;
+  sceneId: string;
 }
 
 export type { GenerationResult };

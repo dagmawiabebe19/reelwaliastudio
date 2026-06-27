@@ -2,6 +2,7 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
+import { validateVideoGeneration } from "@/lib/ai/generation/video-source";
 import {
   executeIngredientImageGeneration,
   getIngredientRefUrl,
@@ -307,7 +308,7 @@ async function executeTool(
 
     case "generate_take": {
       const sceneId = String(args.scene_id);
-      const count = typeof args.count === "number" ? args.count : 1;
+      let count = typeof args.count === "number" ? args.count : 1;
       const resolution = String(args.resolution ?? "720p");
       const durationSeconds = typeof args.duration === "number" ? args.duration : 6;
 
@@ -325,6 +326,14 @@ async function executeTool(
 
       const scene = await getScene(sceneId);
       if (!scene) return { error: "Scene not found." };
+
+      if (model.kind === "video") {
+        if (count > 1) count = 1;
+        const videoCheck = await validateVideoGeneration(sceneId);
+        if (!videoCheck.ok) {
+          return { error: videoCheck.error };
+        }
+      }
 
       const seriesId = context.seriesId;
       const episodeId = context.episodeId ?? scene.episode_id;
