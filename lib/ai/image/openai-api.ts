@@ -118,9 +118,11 @@ export async function openAiEditImages(input: {
   form.append("size", input.size);
   form.append("quality", "high");
 
+  const imageFieldName = referenceImages.length > 1 ? "image[]" : "image";
+
   for (const image of referenceImages) {
     const blob = new Blob([Uint8Array.from(image.buffer)], { type: image.mimeType });
-    form.append("image", blob, image.filename);
+    form.append(imageFieldName, blob, image.filename);
   }
 
   const response = await fetch(`${OPENAI_API_BASE}/images/edits`, {
