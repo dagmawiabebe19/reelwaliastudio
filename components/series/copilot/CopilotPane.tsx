@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ANTHROPIC_MODELS,
   DEFAULT_ANTHROPIC_MODEL,
@@ -53,6 +53,17 @@ export type CopilotContextPayload = {
     status: string;
     episode_ids: string[];
   }>;
+  workspace?: {
+    view: string;
+    viewLabel: string;
+    episodeTitle?: string;
+    sceneTitle?: string;
+    scenePrompt?: string | null;
+    sceneActLabel?: string | null;
+    selectedCharacterName?: string;
+    selectedIngredientName?: string;
+    activeTakeSummary?: string;
+  };
 };
 
 interface CopilotPaneProps {
@@ -62,6 +73,9 @@ interface CopilotPaneProps {
   imageModels: ModelCatalogEntry[];
   ingredients: MentionIngredient[];
   initialMessages?: ChatMessageData[];
+  controlledMessages?: ChatMessageData[];
+  onMessagesChange?: (messages: ChatMessageData[]) => void;
+  getLiveContext?: () => CopilotContextPayload | null;
   onOutputEvent?: (event: CopilotOutputEvent) => void;
 }
 
@@ -79,9 +93,24 @@ export function CopilotPane({
   imageModels,
   ingredients,
   initialMessages = [],
+  controlledMessages,
+  onMessagesChange,
+  getLiveContext,
   onOutputEvent,
 }: CopilotPaneProps) {
-  const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages);
+  const [internalMessages, setInternalMessages] = useState<ChatMessageData[]>(initialMessages);
+  const messages = controlledMessages ?? internalMessages;
+
+  const setMessages = useCallback(
+    (updater: ChatMessageData[] | ((prev: ChatMessageData[]) => ChatMessageData[])) => {
+      const current = controlledMessages ?? internalMessages;
+      const next = typeof updater === "function" ? updater(current) : updater;
+      if (onMessagesChange) onMessagesChange(next);
+      else setInternalMessages(next);
+    },
+    [controlledMessages, internalMessages, onMessagesChange],
+  );
+
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [copilotModel, setCopilotModel] = useState<string>(DEFAULT_ANTHROPIC_MODEL);
@@ -108,6 +137,27 @@ export function CopilotPane({
     const assistantId = `assistant-${Date.now()}`;
 
     try {
+      const live = getLiveContext?.() ?? context;
+      let resolvedContext = { ...live, preferredImageModel: imageModel };
+
+      try {
+        const params = new URLSearchParams({ seriesId: live.seriesId });
+        if (live.episodeId) params.set("episodeId", live.episodeId);
+        if (live.sceneId) params.set("sceneId", live.sceneId);
+        if (live.workspace) params.set("workspace", JSON.stringify(live.workspace));
+        const refresh = await fetch(`/api/copilot/context?${params.toString()}`);
+        if (refresh.ok) {
+          const data = (await refresh.json()) as { context: CopilotContextPayload };
+          resolvedContext = {
+            ...data.context,
+            workspace: live.workspace ?? data.context.workspace,
+            preferredImageModel: imageModel,
+          };
+        }
+      } catch {
+        // use live context if refresh fails
+      }
+
       const response = await fetch("/api/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -116,10 +166,7 @@ export function CopilotPane({
           scopeId,
           message: text,
           modelId: copilotModel,
-          context: {
-            ...context,
-            preferredImageModel: imageModel,
-          },
+          context: resolvedContext,
         }),
       });
 
@@ -265,7 +312,8 @@ export function CopilotPane({
       <div className="flex-1 space-y-3 overflow-y-auto pr-2">
         {messages.length === 0 ? (
           <p className="text-sm text-muted">
-            Ask the co-pilot to draft storyboards, add ingredients, bind identity locks, or generate takes.
+            Your production partner — ask anything about this series, rewrite scenes, generate storyboards,
+            or say &ldquo;generate it&rdquo;. Context updates live as you work.
           </p>
         ) : (
           messages.map((message) => (
@@ -359,7 +407,7 @@ export function CopilotPane({
               }
             }}
             rows={3}
-            placeholder="Message co-pilot… type @ to add ingredients"
+            placeholder="What do you think? Rewrite this. Generate it. Help me…"
             className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm"
           />
         </div>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { BrandWordmark } from "@/components/brand/BrandWordmark";
+import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvider";
 import { EpisodeFilmExportButton } from "@/components/series/export/EpisodeFilmExportButton";
 import { useStudioNav } from "@/components/sidebar/studio-nav-context";
 
@@ -13,8 +14,6 @@ interface EpisodeStudioChromeProps {
   audioLineCount: number;
   showAudio: boolean;
   onToggleAudio: () => void;
-  copilotCollapsed: boolean;
-  onToggleCopilot: () => void;
 }
 
 export function EpisodeStudioChrome({
@@ -25,10 +24,9 @@ export function EpisodeStudioChrome({
   audioLineCount,
   showAudio,
   onToggleAudio,
-  copilotCollapsed,
-  onToggleCopilot,
 }: EpisodeStudioChromeProps) {
   const { openNav } = useStudioNav();
+  const { toggleCollapsed, prefs } = useCopilotWorkspace();
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
@@ -72,10 +70,10 @@ export function EpisodeStudioChrome({
         <EpisodeFilmExportButton episodeId={episodeId} seriesId={seriesId} compact />
         <button
           type="button"
-          onClick={onToggleCopilot}
+          onClick={toggleCollapsed}
           className="rounded-md border border-border px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent/50 hover:text-accent"
         >
-          {copilotCollapsed ? "Show co-pilot" : "Hide co-pilot"}
+          {prefs.collapsed ? "Show co-pilot" : "Hide co-pilot"}
         </button>
       </div>
     </header>

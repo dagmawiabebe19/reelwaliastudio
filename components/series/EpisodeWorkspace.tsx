@@ -22,6 +22,7 @@ type CharacterSheetCopilotData = {
 interface EpisodeWorkspaceProps {
   seriesId: string;
   episodeId: string;
+  episodeTitle: string;
   seriesTitle: string;
   defaultOrientation: Orientation;
   briefMarkdown: string;
@@ -33,16 +34,8 @@ interface EpisodeWorkspaceProps {
   models: ModelCatalogEntry[];
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
-  copilotCollapsed?: boolean;
 }
 
-export function EpisodeWorkspace({ copilotCollapsed, ...props }: EpisodeWorkspaceProps) {
-  return (
-    <StudioShell
-      {...props}
-      scopeType="episode"
-      scopeId={props.episodeId}
-      copilotCollapsed={copilotCollapsed}
-    />
-  );
+export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {
+  return <StudioShell {...props} />;
 }

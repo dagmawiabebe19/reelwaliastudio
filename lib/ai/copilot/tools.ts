@@ -161,6 +161,17 @@ export type CopilotContext = {
   }>;
   preferredImageModel?: string | null;
   preferredVideoModel?: string | null;
+  workspace?: {
+    view: string;
+    viewLabel: string;
+    episodeTitle?: string;
+    sceneTitle?: string;
+    scenePrompt?: string | null;
+    sceneActLabel?: string | null;
+    selectedCharacterName?: string;
+    selectedIngredientName?: string;
+    activeTakeSummary?: string;
+  };
 };
 
 export function buildSystemPrompt(context: CopilotContext): string {
@@ -188,20 +199,36 @@ If model is omitted in generate_take, the composer default image model is used.
 4. **Locations** — clean establishing shots.
 5. **Voices** — description for timbre/age/accent; generation is stubbed until provider is wired.
 6. **Storyboard** — bind SHEETS (not raw headshots) per segment. generate_take uses sheet angle images + location.
-7. **Series memory** — follow ## Series memory in context. When the user states a preference or correction, call update_series_memory so it persists across sessions.
+7. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).
+
+The creator is always in context — see ## Where the creator is right now. Never ask which scene, episode, or character they mean unless the workspace block is empty. Interpret short requests ("rewrite this", "generate it", "make it more emotional") against the current scene and selections.
 `;
 
-  return `You are the ReelWalia Studio co-pilot — an AI production assistant for serialized short-form shows.
+  const workspace = context.workspace;
+  const workspaceSection = workspace
+    ? `
+## Where the creator is right now
+- View: ${workspace.viewLabel} (${workspace.view})
+${workspace.episodeTitle ? `- Episode: ${workspace.episodeTitle}` : ""}
+${workspace.sceneTitle ? `- Scene: ${workspace.sceneTitle}${workspace.sceneActLabel ? ` (${workspace.sceneActLabel})` : ""}` : ""}
+${workspace.scenePrompt ? `- Current scene prompt:\n${workspace.scenePrompt}` : ""}
+${workspace.selectedCharacterName ? `- Focus character: ${workspace.selectedCharacterName}` : ""}
+${workspace.selectedIngredientName ? `- Focus ingredient: ${workspace.selectedIngredientName}` : ""}
+${workspace.activeTakeSummary ? `- Render status: ${workspace.activeTakeSummary}` : ""}
+`
+    : "";
+
+  return `You are the ReelWalia Studio co-pilot — an AI production partner (director, writer, cinematographer, script supervisor, producer, editor, showrunner). The creator directs; you handle production.
 
 ## Series memory (persistent — always follow)
-${context.seriesMemoryMarkdown?.trim() || "(empty — use update_series_memory when the user states preferences, corrections, or canonical world facts)"}
-
+${context.seriesMemoryMarkdown?.trim() || "(empty — use update_series_memory when the user confirms canonical facts)"}
+${workspaceSection}
 Series: ${context.seriesTitle} (${context.seriesId})
 Default orientation: ${context.defaultOrientation} (portrait = 9:16, landscape = 16:9)
-${context.episodeId ? `Episode: ${context.episodeId}` : ""}
-${context.sceneId ? `Scene: ${context.sceneId}` : ""}
+${context.episodeId ? `Episode id: ${context.episodeId}${workspace?.episodeTitle ? ` — ${workspace.episodeTitle}` : ""}` : ""}
+${context.sceneId ? `Active scene id: ${context.sceneId}` : ""}
 ${modelsSection}
 ${pipelineNotes}
 

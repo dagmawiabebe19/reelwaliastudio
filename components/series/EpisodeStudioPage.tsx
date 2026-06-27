@@ -42,7 +42,6 @@ interface EpisodeStudioPageProps {
 
 export function EpisodeStudioPage(props: EpisodeStudioPageProps) {
   const [showAudio, setShowAudio] = useState(false);
-  const [copilotCollapsed, setCopilotCollapsed] = useState(false);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -54,8 +53,6 @@ export function EpisodeStudioPage(props: EpisodeStudioPageProps) {
         audioLineCount={props.audioLines.length}
         showAudio={showAudio}
         onToggleAudio={() => setShowAudio((v) => !v)}
-        copilotCollapsed={copilotCollapsed}
-        onToggleCopilot={() => setCopilotCollapsed((v) => !v)}
       />
 
       {showAudio ? (
@@ -68,7 +65,7 @@ export function EpisodeStudioPage(props: EpisodeStudioPageProps) {
         </div>
       ) : null}
 
-      <EpisodeWorkspace {...props} copilotCollapsed={copilotCollapsed} />
+      <EpisodeWorkspace {...props} />
     </div>
   );
 }

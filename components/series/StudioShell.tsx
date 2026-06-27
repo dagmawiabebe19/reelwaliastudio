@@ -1,17 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  CopilotPane,
-  type ChatMessageData,
-  type CopilotContextPayload,
-  type MentionIngredient,
-} from "@/components/series/copilot/CopilotPane";
+import { useEffect, useMemo, useState } from "react";
+import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspaceProvider";
 import { GenerationPanel, type ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { SceneMetaControls } from "@/components/series/storyboard/SceneMetaControls";
 import { ScenePromptEditor } from "@/components/series/storyboard/ScenePromptEditor";
 import { SceneRail } from "@/components/series/storyboard/SceneRail";
+import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
+import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 import type { MentionSheet } from "@/lib/production/types";
 import type { ResolvedReference } from "@/lib/production/types";
 import type { Orientation } from "@/lib/db/types";
@@ -21,6 +18,7 @@ import { effectiveOrientation } from "@/lib/storyboard/orientation";
 interface StudioShellProps {
   seriesId: string;
   episodeId: string;
+  episodeTitle: string;
   seriesTitle: string;
   defaultOrientation: Orientation;
   briefMarkdown: string;
@@ -40,14 +38,12 @@ interface StudioShellProps {
   models: ModelCatalogEntry[];
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
-  scopeType: "episode" | "scene";
-  scopeId: string;
-  copilotCollapsed?: boolean;
 }
 
 export function StudioShell({
   seriesId,
   episodeId,
+  episodeTitle,
   seriesTitle,
   defaultOrientation,
   briefMarkdown,
@@ -59,74 +55,94 @@ export function StudioShell({
   models,
   takesByScene,
   chatMessages,
-  scopeType,
-  scopeId,
-  copilotCollapsed: copilotCollapsedProp,
 }: StudioShellProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
-  const [copilotCollapsedInternal] = useState(false);
   const [activeTakeIndex, setActiveTakeIndex] = useState(0);
-
-  const copilotCollapsed = copilotCollapsedProp ?? copilotCollapsedInternal;
 
   const selectedScene = scenes.find((s) => s.id === selectedSceneId) ?? null;
   const sceneOrientation = selectedScene
     ? effectiveOrientation(selectedScene.orientation, defaultOrientation)
     : defaultOrientation;
   const sceneTakes = selectedScene ? (takesByScene[selectedScene.id] ?? []) : [];
+  const activeTake = sceneTakes[activeTakeIndex] ?? sceneTakes[sceneTakes.length - 1];
 
   useEffect(() => {
     setActiveTakeIndex(0);
   }, [selectedSceneId]);
 
-  const copilotContext: CopilotContextPayload = {
-    seriesId,
-    episodeId,
-    sceneId: selectedSceneId ?? undefined,
-    seriesTitle,
-    defaultOrientation,
-    briefMarkdown,
-    seriesMemoryMarkdown,
-    scenes: scenes.map((s) => ({
-      id: s.id,
-      title: s.title,
-      prompt: s.prompt,
-      act_label: s.act_label,
-    })),
-    ingredients: ingredients.map((i) => ({
-      id: i.id,
-      ref_tag: i.ref_tag,
-      name: i.name,
-      kind: "character",
-    })),
-    characterSheets,
-  };
+  const sceneIndex = selectedScene ? scenes.findIndex((s) => s.id === selectedScene.id) + 1 : null;
+  const activeTakeSummary = activeTake
+    ? `Take #${activeTake.take_number} — ${activeTake.status}${activeTake.error_message ? ` (${activeTake.error_message})` : ""}`
+    : undefined;
+
+  const copilotRegistration = useMemo(
+    () => ({
+      scopeType: "episode" as const,
+      scopeId: episodeId,
+      context: {
+        seriesId,
+        episodeId,
+        sceneId: selectedSceneId ?? undefined,
+        seriesTitle,
+        defaultOrientation,
+        briefMarkdown,
+        seriesMemoryMarkdown,
+        scenes: scenes.map((s) => ({
+          id: s.id,
+          title: s.title,
+          prompt: s.prompt,
+          act_label: s.act_label,
+        })),
+        ingredients: ingredients.map((i) => ({
+          id: i.id,
+          ref_tag: i.ref_tag,
+          name: i.name,
+          kind: "character",
+        })),
+        characterSheets,
+        workspace: {
+          view: "episode-studio",
+          viewLabel: selectedScene
+            ? `Episode · Scene ${sceneIndex}: ${selectedScene.title}`
+            : `Episode · ${episodeTitle}`,
+          episodeTitle,
+          sceneTitle: selectedScene?.title,
+          scenePrompt: selectedScene?.prompt,
+          sceneActLabel: selectedScene?.act_label,
+          activeTakeSummary,
+        },
+      },
+      ingredients,
+      imageModels: models.filter((m) => m.kind === "image"),
+      initialMessages: chatMessages,
+    }),
+    [
+      seriesId,
+      episodeId,
+      episodeTitle,
+      seriesTitle,
+      defaultOrientation,
+      briefMarkdown,
+      seriesMemoryMarkdown,
+      scenes,
+      ingredients,
+      characterSheets,
+      models,
+      chatMessages,
+      selectedSceneId,
+      selectedScene?.title,
+      selectedScene?.prompt,
+      selectedScene?.act_label,
+      sceneIndex,
+      activeTakeSummary,
+    ],
+  );
+
+  useRegisterCopilotContext(copilotRegistration);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface">
-      <div
-        className={`grid min-h-0 flex-1 ${
-          copilotCollapsed
-            ? "grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(240px,5fr)]"
-            : "grid-cols-1 xl:grid-cols-[minmax(320px,8fr)_minmax(0,7fr)_minmax(240px,5fr)]"
-        }`}
-      >
-        {!copilotCollapsed ? (
-          <aside className="flex min-h-0 flex-col border-b border-border p-4 xl:border-b-0 xl:border-r">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-              Co-pilot
-            </p>
-            <CopilotPane
-              scopeType={scopeType}
-              scopeId={scopeId}
-              context={copilotContext}
-              imageModels={models.filter((m) => m.kind === "image")}
-              ingredients={ingredients}
-              initialMessages={chatMessages}
-            />
-          </aside>
-        ) : null}
-
+      <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(240px,5fr)]">
         <main className="flex min-h-0 min-w-0 flex-col border-b border-border xl:border-b-0">
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
             {selectedScene ? (

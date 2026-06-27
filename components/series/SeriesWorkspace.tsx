@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspaceProvider";
 import { OrientationToggle } from "@/components/series/OrientationToggle";
 import { SeriesBriefEditor } from "@/components/series/SeriesBriefEditor";
 import { SeriesMemoryEditor } from "@/components/series/SeriesMemoryEditor";
 import { StatTiles } from "@/components/series/StatTiles";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { ViewToggle } from "@/components/series/ViewToggle";
-import { SeriesStudioShell } from "@/components/series/SeriesStudioShell";
+import {
+  SeriesStudioOutputPanel,
+  useSeriesStudioOutput,
+} from "@/components/series/SeriesStudioShell";
 import { IngredientsSection } from "@/components/series/ingredients/IngredientsSection";
 import {
   EpisodesSection,
@@ -20,6 +24,13 @@ import type { CopilotOutputItem, LibraryHighlight } from "@/lib/copilot/output";
 import type { CharacterSheetCardData, EpisodeOption, IngredientCardData } from "@/lib/production/types";
 
 type Tab = "ingredients" | "episodes" | "brief" | "memory";
+
+const TAB_LABELS: Record<Tab, string> = {
+  ingredients: "Ingredients",
+  episodes: "Episodes",
+  brief: "Series Brief",
+  memory: "Memory",
+};
 
 const statusLabels: Record<SeriesStatus, string> = {
   in_progress: "In progress",
@@ -86,6 +97,87 @@ export function SeriesWorkspace({
   const [view, setView] = useState<"classic" | "studio">("classic");
   const [tab, setTab] = useState<Tab>("ingredients");
   const [libraryHighlight, setLibraryHighlight] = useState<LibraryHighlight>(null);
+  const { outputItems, handleOutputEvent, handleItemsUpdate } = useSeriesStudioOutput();
+
+  const mentionIngredients = useMemo(
+    () =>
+      ingredients.map((i) => ({
+        id: i.id,
+        ref_tag: i.ref_tag,
+        name: i.name,
+      })),
+    [ingredients],
+  );
+
+  const copilotRegistration = useMemo(() => {
+    const viewLabel = view === "studio" ? "Studio output" : TAB_LABELS[tab];
+    const suggestions = [];
+    if (tab === "memory" && series.memory_markdown.trim().length < 120) {
+      suggestions.push({
+        id: "memory-sparse",
+        message: "Series Memory is still light — add world rules and character canon as you decide them.",
+      });
+    }
+    if (tab === "brief" && series.brief_markdown.trim().length < 80) {
+      suggestions.push({
+        id: "brief-empty",
+        message: "A short series brief helps the co-pilot match tone and format across episodes.",
+      });
+    }
+    if (stats.episodeCount > 0 && stats.episodeCount < 3) {
+      suggestions.push({
+        id: "episode-arc",
+        message: "Early episodes set audience expectations — consider a stronger midpoint hook.",
+      });
+    }
+
+    return {
+      scopeType: "series" as const,
+      scopeId: series.id,
+      context: {
+        seriesId: series.id,
+        seriesTitle: series.title,
+        defaultOrientation: series.default_orientation,
+        briefMarkdown: series.brief_markdown,
+        seriesMemoryMarkdown: series.memory_markdown,
+        ingredients: ingredients.map((i) => ({
+          id: i.id,
+          ref_tag: i.ref_tag,
+          name: i.name,
+          kind: i.kind,
+          character_id: i.characterId,
+          generation_status: i.generationStatus ?? undefined,
+        })),
+        characterSheets,
+        workspace: {
+          view: view === "studio" ? "studio-output" : tab,
+          viewLabel,
+        },
+      },
+      ingredients: mentionIngredients,
+      imageModels: models.filter((m) => m.kind === "image"),
+      initialMessages: chatMessages,
+      suggestions,
+      onOutputEvent: view === "studio" ? handleOutputEvent : undefined,
+    };
+  }, [
+    view,
+    tab,
+    series.id,
+    series.title,
+    series.default_orientation,
+    series.brief_markdown,
+    series.memory_markdown,
+    ingredients,
+    characterSheets,
+    models,
+    chatMessages,
+    mentionIngredients,
+    stats.episodeCount,
+    handleOutputEvent,
+  ]);
+
+  useRegisterCopilotContext(copilotRegistration);
 
   function handleOpenInLibrary(item: CopilotOutputItem) {
     setView("classic");
@@ -125,24 +217,11 @@ export function SeriesWorkspace({
       </header>
 
       {view === "studio" ? (
-        <SeriesStudioShell
+        <SeriesStudioOutputPanel
           seriesId={series.id}
-          seriesTitle={series.title}
-          defaultOrientation={series.default_orientation}
-          briefMarkdown={series.brief_markdown}
-          seriesMemoryMarkdown={series.memory_markdown}
-          ingredients={ingredients.map((i) => ({
-            id: i.id,
-            ref_tag: i.ref_tag,
-            name: i.name,
-            kind: i.kind,
-            character_id: i.characterId,
-            generation_status: i.generationStatus ?? undefined,
-          }))}
-          characterSheets={characterSheets}
-          models={models}
-          chatMessages={chatMessages}
+          items={outputItems}
           onOpenInLibrary={handleOpenInLibrary}
+          onItemsUpdate={handleItemsUpdate}
         />
       ) : (
         <>

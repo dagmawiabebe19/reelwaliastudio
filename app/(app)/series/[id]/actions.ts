@@ -201,6 +201,27 @@ export async function updateSeriesMemoryAction(seriesId: string, memoryMarkdown:
   }
 }
 
+export async function appendSeriesMemoryEntryAction(
+  seriesId: string,
+  entry: string,
+  section: "world" | "preferences" = "preferences",
+) {
+  try {
+    const { getSeriesMemoryMarkdown, updateSeriesMemoryMarkdown } = await import(
+      "@/lib/db/series-memory"
+    );
+    const { appendSeriesMemoryEntry } = await import("@/lib/series/memory");
+    const current = await getSeriesMemoryMarkdown(seriesId);
+    const next = appendSeriesMemoryEntry(current, entry, section);
+    await updateSeriesMemoryMarkdown(seriesId, next);
+    revalidatePath(`/series/${seriesId}`);
+    revalidatePath(`/series/${seriesId}/episodes`, "layout");
+    return { success: true, memoryMarkdown: next };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Save failed." };
+  }
+}
+
 export async function updateSeriesOrientationAction(
   seriesId: string,
   orientation: Orientation,
