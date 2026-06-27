@@ -1,7 +1,19 @@
 import "server-only";
 
+import type { AssetMediaType } from "@/lib/db/types";
+
+export interface PersistedAssetRef {
+  bucket: string;
+  storagePath: string;
+  mediaType: AssetMediaType;
+  width?: number | null;
+  height?: number | null;
+}
+
 export interface GenerationResult {
   assetUrls: string[];
+  /** When the adapter already uploaded to storage, skip re-download in the orchestrator. */
+  persistedAssets?: PersistedAssetRef[];
   providerJobId: string | null;
   costEstimate: number | null;
   configured: boolean;
@@ -31,4 +43,29 @@ export function pendingIntegrationResult(provider: string): GenerationResult {
 export function getEnv(key: string): string | null {
   const value = process.env[key]?.trim();
   return value || null;
+}
+
+export function errorResult(message: string): GenerationResult {
+  return {
+    assetUrls: [],
+    providerJobId: null,
+    costEstimate: null,
+    configured: true,
+    error: message,
+  };
+}
+
+export function successResult(input: {
+  assetUrls: string[];
+  persistedAssets?: PersistedAssetRef[];
+  providerJobId?: string | null;
+  costEstimate?: number | null;
+}): GenerationResult {
+  return {
+    assetUrls: input.assetUrls,
+    persistedAssets: input.persistedAssets,
+    providerJobId: input.providerJobId ?? null,
+    costEstimate: input.costEstimate ?? null,
+    configured: true,
+  };
 }

@@ -113,9 +113,10 @@ export async function executeGenerationJob(
         count: params.count,
         resolution: params.resolution,
         safety: model.safety,
+        sceneId: params.sceneId,
       });
 
-  if (result.error || result.assetUrls.length === 0) {
+  if (result.error || (result.assetUrls.length === 0 && !result.persistedAssets?.length)) {
     const message = result.error ?? "Generation returned no assets.";
     await Promise.all(takeIds.map((id) => markTakeFailed(id, message)));
     return;
@@ -123,13 +124,34 @@ export async function executeGenerationJob(
 
   for (let i = 0; i < takeIds.length; i++) {
     const takeId = takeIds[i];
+    const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
     const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
-    if (!remoteUrl) {
-      await markTakeFailed(takeId, "No asset URL returned for this take.");
-      continue;
-    }
 
     try {
+      if (persisted) {
+        const asset = await createAsset({
+          bucket: persisted.bucket,
+          storagePath: persisted.storagePath,
+          mediaType: persisted.mediaType,
+          width: persisted.width ?? null,
+          height: persisted.height ?? null,
+          source: "generated",
+          model: params.modelId,
+          prompt,
+        });
+
+        await markTakeReady(takeId, asset.id);
+        await updateTake(takeId, {
+          duration_seconds: isVideo ? (params.durationSeconds ?? 6) : null,
+        });
+        continue;
+      }
+
+      if (!remoteUrl) {
+        await markTakeFailed(takeId, "No asset URL returned for this take.");
+        continue;
+      }
+
       const stored = await persistRemoteAsset({
         sceneId: params.sceneId,
         remoteUrl,

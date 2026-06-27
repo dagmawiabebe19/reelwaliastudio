@@ -5,9 +5,9 @@ import { getActiveUserId } from "@/lib/auth/active-user";
 import { buildGeneratedAssetPath } from "@/lib/db/assets";
 import { detectMediaType } from "@/lib/storage/buckets";
 import { getStorageClient } from "@/lib/storage/client";
+import { getSignedUrl } from "@/lib/storage/signed-url";
 
 const GENERATED_BUCKET = "assets" as const;
-const LARGE_FILE_BYTES = 1_048_576;
 
 function extensionFromContentType(contentType: string, fallback = "bin"): string {
   if (contentType.includes("png")) return "png";
@@ -29,6 +29,41 @@ function extensionFromUrl(url: string): string {
     // ignore
   }
   return "bin";
+}
+
+export async function persistGeneratedBuffer(input: {
+  sceneId: string;
+  buffer: Buffer;
+  contentType: string;
+  width?: number | null;
+  height?: number | null;
+}): Promise<{
+  bucket: string;
+  storagePath: string;
+  mediaType: ReturnType<typeof detectMediaType>;
+  signedUrl: string;
+}> {
+  const ownerId = await getActiveUserId();
+  const ext = extensionFromContentType(input.contentType, "png");
+  const storagePath = buildGeneratedAssetPath(ownerId, input.sceneId, ext, randomUUID());
+  const mediaType = detectMediaType(input.contentType);
+
+  const supabase = await getStorageClient();
+  const { error } = await supabase.storage.from(GENERATED_BUCKET).upload(storagePath, input.buffer, {
+    contentType: input.contentType,
+    upsert: false,
+  });
+
+  if (error) {
+    throw new Error(`Storage upload failed: ${error.message}`);
+  }
+
+  const signedUrl = await getSignedUrl(GENERATED_BUCKET, storagePath);
+  if (!signedUrl) {
+    throw new Error("Failed to create signed URL for generated asset.");
+  }
+
+  return { bucket: GENERATED_BUCKET, storagePath, mediaType, signedUrl };
 }
 
 export async function persistRemoteAsset(input: {
@@ -63,8 +98,6 @@ export async function persistRemoteAsset(input: {
   if (error) {
     throw new Error(`Storage upload failed: ${error.message}`);
   }
-
-  void LARGE_FILE_BYTES;
 
   return { bucket: GENERATED_BUCKET, storagePath, mediaType };
 }

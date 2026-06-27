@@ -8,6 +8,7 @@ export interface GenerateImageInput {
   count: number;
   resolution: string;
   safety: SafetyTag;
+  sceneId: string;
 }
 
 export type { GenerationResult };
