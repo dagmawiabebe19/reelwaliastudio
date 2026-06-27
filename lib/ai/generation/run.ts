@@ -1,5 +1,6 @@
 import "server-only";
 
+import { formatGenerationError, logGenerationError } from "@/lib/ai/generation/errors";
 import { orientationToAspectRatio } from "@/lib/ai/orientation";
 import { runImageModel, runVideoModel } from "@/lib/ai/router";
 import { getModelById, isModelConfigured } from "@/lib/ai/registry";
@@ -8,9 +9,9 @@ import { getScene, effectiveOrientation } from "@/lib/db/scenes";
 import { getSeries } from "@/lib/db/series";
 import {
   createTake,
+  getTake,
   markTakeFailed,
   markTakeReady,
-  updateTake,
 } from "@/lib/db/takes";
 import { collectGenerationRefUrls, resolveSceneReferences } from "@/lib/production/resolve-references";
 import { getSignedUrl } from "@/lib/storage/signed-url";
@@ -26,6 +27,47 @@ export interface GenerateTakeParams {
   count: number;
   resolution: string;
   durationSeconds?: number;
+}
+
+export interface TakeGenerationOutcome {
+  id: string;
+  status: string;
+  error_message: string | null;
+}
+
+export interface GenerationJobOutcome {
+  ready: number;
+  failed: number;
+  pending: number;
+  takes: TakeGenerationOutcome[];
+}
+
+async function resolveTakeOutcomes(takeIds: string[]): Promise<TakeGenerationOutcome[]> {
+  return Promise.all(
+    takeIds.map(async (id) => {
+      const take = await getTake(id);
+      return {
+        id,
+        status: take?.status ?? "failed",
+        error_message:
+          take?.error_message ??
+          (take ? null : "Take record not found after generation."),
+      };
+    }),
+  );
+}
+
+function countByStatus(takes: TakeGenerationOutcome[]): Pick<GenerationJobOutcome, "ready" | "failed" | "pending"> {
+  return {
+    ready: takes.filter((t) => t.status === "ready").length,
+    failed: takes.filter((t) => t.status === "failed").length,
+    pending: takes.filter((t) => t.status === "pending").length,
+  };
+}
+
+async function buildOutcome(takeIds: string[]): Promise<GenerationJobOutcome> {
+  const takes = await resolveTakeOutcomes(takeIds);
+  return { ...countByStatus(takes), takes };
 }
 
 async function resolveIdentityLockUrlsFromScene(scene: SceneWithBindings): Promise<string[]> {
@@ -87,133 +129,162 @@ export async function executeGenerationJob(
   params: GenerateTakeParams,
   takeIds: string[],
   onProgress?: GenerationProgressCallback,
-): Promise<{ ready: number; failed: number }> {
-  const scene = await getScene(params.sceneId);
-  if (!scene) throw new Error("Scene not found.");
+): Promise<GenerationJobOutcome> {
+  try {
+    const scene = await getScene(params.sceneId);
+    if (!scene) throw new Error("Scene not found.");
 
-  const series = await getSeries(params.seriesId);
-  if (!series) throw new Error("Series not found.");
+    const series = await getSeries(params.seriesId);
+    if (!series) throw new Error("Series not found.");
 
-  const model = getModelById(params.modelId);
-  if (!model) throw new Error("Unknown model.");
+    const model = getModelById(params.modelId);
+    if (!model) throw new Error("Unknown model.");
 
-  onProgress?.("resolving references…", 0, takeIds.length);
+    onProgress?.("resolving references…", 0, takeIds.length);
 
-  const aspectRatio = orientationToAspectRatio(
-    effectiveOrientation(scene.orientation, series.default_orientation),
-  );
-  const prompt = scene.prompt?.trim() || scene.title;
+    const aspectRatio = orientationToAspectRatio(
+      effectiveOrientation(scene.orientation, series.default_orientation),
+    );
+    const prompt = scene.prompt?.trim() || scene.title;
 
-  await resolveSceneReferences({
-    sceneId: params.sceneId,
-    seriesId: params.seriesId,
-    episodeId: params.episodeId,
-    autoBind: true,
-  });
+    await resolveSceneReferences({
+      sceneId: params.sceneId,
+      seriesId: params.seriesId,
+      episodeId: params.episodeId,
+      autoBind: true,
+    });
 
-  const refImageUrls = await resolveIdentityLockUrlsFromScene(scene);
-  const isVideo = model.kind === "video";
-  const total = takeIds.length;
+    const refImageUrls = await resolveIdentityLockUrlsFromScene(scene);
+    const isVideo = model.kind === "video";
+    const total = takeIds.length;
+    const durationSeconds = isVideo ? (params.durationSeconds ?? 6) : null;
 
-  onProgress?.(
-    isVideo ? "generating video…" : `generating image${total > 1 ? "s" : ""}…`,
-    0,
-    total,
-  );
-
-  const result = isVideo
-    ? await runVideoModel(params.modelId, {
-        prompt,
-        startImageUrl: refImageUrls[0] ?? null,
-        durationSeconds: params.durationSeconds ?? 6,
-        aspectRatio,
-        resolution: params.resolution,
-      })
-    : await runImageModel(params.modelId, {
-        prompt,
-        refImageUrls,
-        aspectRatio,
-        count: params.count,
-        resolution: params.resolution,
-        safety: model.safety,
-        sceneId: params.sceneId,
-      });
-
-  if (result.error || (result.assetUrls.length === 0 && !result.persistedAssets?.length)) {
-    const message = result.error ?? "Generation returned no assets.";
-    await Promise.all(takeIds.map((id) => markTakeFailed(id, message)));
-    return { ready: 0, failed: takeIds.length };
-  }
-
-  let ready = 0;
-  let failed = 0;
-
-  for (let i = 0; i < takeIds.length; i++) {
-    const takeId = takeIds[i];
     onProgress?.(
-      isVideo ? "saving video…" : `saving take ${i + 1}/${total}…`,
-      i + 1,
+      isVideo ? "generating video…" : `generating image${total > 1 ? "s" : ""}…`,
+      0,
       total,
     );
-    const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
-    const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
 
+    let result;
     try {
-      if (persisted) {
+      result = isVideo
+        ? await runVideoModel(params.modelId, {
+            prompt,
+            startImageUrl: refImageUrls[0] ?? null,
+            durationSeconds: params.durationSeconds ?? 6,
+            aspectRatio,
+            resolution: params.resolution,
+          })
+        : await runImageModel(params.modelId, {
+            prompt,
+            refImageUrls,
+            aspectRatio,
+            count: params.count,
+            resolution: params.resolution,
+            safety: model.safety,
+            sceneId: params.sceneId,
+          });
+    } catch (error) {
+      const message = formatGenerationError(error, `${model.label}: generation request failed.`);
+      logGenerationError("provider", error, {
+        modelId: params.modelId,
+        sceneId: params.sceneId,
+        takeIds,
+      });
+      await Promise.all(takeIds.map((id) => markTakeFailed(id, message)));
+      return buildOutcome(takeIds);
+    }
+
+    if (result.error || (result.assetUrls.length === 0 && !result.persistedAssets?.length)) {
+      const message = formatGenerationError(result.error, "Generation returned no assets.");
+      logGenerationError("provider-result", message, {
+        modelId: params.modelId,
+        sceneId: params.sceneId,
+        takeIds,
+        configured: result.configured,
+      });
+      await Promise.all(takeIds.map((id) => markTakeFailed(id, message)));
+      return buildOutcome(takeIds);
+    }
+
+    for (let i = 0; i < takeIds.length; i++) {
+      const takeId = takeIds[i];
+      onProgress?.(
+        isVideo ? "saving video…" : `saving take ${i + 1}/${total}…`,
+        i + 1,
+        total,
+      );
+      const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
+      const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
+
+      try {
+        if (persisted) {
+          const asset = await createAsset({
+            bucket: persisted.bucket,
+            storagePath: persisted.storagePath,
+            mediaType: persisted.mediaType,
+            width: persisted.width ?? null,
+            height: persisted.height ?? null,
+            source: "generated",
+            model: params.modelId,
+            prompt,
+          });
+
+          await markTakeReady(takeId, asset.id, { duration_seconds: durationSeconds });
+          continue;
+        }
+
+        if (!remoteUrl) {
+          const message = "No asset URL returned for this take.";
+          logGenerationError("persist", message, { takeId, modelId: params.modelId, sceneId: params.sceneId });
+          await markTakeFailed(takeId, message);
+          continue;
+        }
+
+        const stored = await persistRemoteAsset({
+          sceneId: params.sceneId,
+          remoteUrl,
+          model: params.modelId,
+          prompt,
+        });
+
         const asset = await createAsset({
-          bucket: persisted.bucket,
-          storagePath: persisted.storagePath,
-          mediaType: persisted.mediaType,
-          width: persisted.width ?? null,
-          height: persisted.height ?? null,
+          bucket: stored.bucket,
+          storagePath: stored.storagePath,
+          mediaType: stored.mediaType,
           source: "generated",
           model: params.modelId,
           prompt,
         });
 
-        await markTakeReady(takeId, asset.id);
-        await updateTake(takeId, {
-          duration_seconds: isVideo ? (params.durationSeconds ?? 6) : null,
+        await markTakeReady(takeId, asset.id, { duration_seconds: durationSeconds });
+      } catch (error) {
+        const message = formatGenerationError(error, "Failed to persist generated asset.");
+        logGenerationError("persist", error, {
+          takeId,
+          modelId: params.modelId,
+          sceneId: params.sceneId,
         });
-        ready++;
-        continue;
+        await markTakeFailed(takeId, message);
       }
-
-      if (!remoteUrl) {
-        await markTakeFailed(takeId, "No asset URL returned for this take.");
-        failed++;
-        continue;
-      }
-
-      const stored = await persistRemoteAsset({
-        sceneId: params.sceneId,
-        remoteUrl,
-        model: params.modelId,
-        prompt,
-      });
-
-      const asset = await createAsset({
-        bucket: stored.bucket,
-        storagePath: stored.storagePath,
-        mediaType: stored.mediaType,
-        source: "generated",
-        model: params.modelId,
-        prompt,
-      });
-
-      await markTakeReady(takeId, asset.id);
-      await updateTake(takeId, {
-        duration_seconds: isVideo ? (params.durationSeconds ?? 6) : null,
-      });
-      ready++;
-    } catch (error) {
-      await markTakeFailed(
-        takeId,
-        error instanceof Error ? error.message : "Failed to persist generated asset.",
-      );
-      failed++;
     }
-  }
 
-  return { ready, failed };
+    return buildOutcome(takeIds);
+  } catch (error) {
+    const message = formatGenerationError(error, "Generation job failed.");
+    logGenerationError("job", error, {
+      takeIds,
+      modelId: params.modelId,
+      sceneId: params.sceneId,
+    });
+    await Promise.all(
+      takeIds.map(async (id) => {
+        const take = await getTake(id);
+        if (take?.status === "pending") {
+          await markTakeFailed(id, message);
+        }
+      }),
+    );
+    return buildOutcome(takeIds);
+  }
 }

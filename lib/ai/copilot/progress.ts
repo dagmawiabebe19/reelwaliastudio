@@ -43,15 +43,34 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
         : "No bindings applied";
     }
     case "generate_take": {
-      const ids = Array.isArray(result.take_ids) ? result.take_ids.length : 0;
       const ready = Number(result.ready_count ?? 0);
       const failed = Number(result.failed_count ?? 0);
-      if (ready > 0 && failed === 0) {
+      const pending = Number(result.pending_count ?? 0);
+      const errors = Array.isArray(result.errors)
+        ? (result.errors as { error?: string }[])
+        : [];
+      const firstErr = errors.find((entry) => entry.error?.trim())?.error?.trim();
+      const topError = typeof result.error === "string" ? result.error.trim() : firstErr;
+
+      if (failed > 0 && ready === 0 && pending === 0 && topError) {
+        return `generate_take — failed: ${topError}`;
+      }
+      if (ready > 0 && failed === 0 && pending === 0) {
         return `Generated ${ready} take${ready === 1 ? "" : "s"} — ready`;
       }
       if (failed > 0) {
-        return `Takes: ${ready} ready, ${failed} failed`;
+        const errSuffix = topError ? ` — ${topError}` : "";
+        return ready > 0
+          ? `Takes: ${ready} ready, ${failed} failed${errSuffix}`
+          : `Take generation failed${errSuffix}`;
       }
+      if (pending > 0) {
+        const ids = Array.isArray(result.take_ids) ? result.take_ids.length : 0;
+        return ids
+          ? `Queued ${ids} take${ids === 1 ? "" : "s"} — still generating`
+          : "Take generation still in progress";
+      }
+      const ids = Array.isArray(result.take_ids) ? result.take_ids.length : 0;
       return ids
         ? `Queued ${ids} take${ids === 1 ? "" : "s"} — generating`
         : "Take generation started";

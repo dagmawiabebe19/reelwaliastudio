@@ -109,8 +109,17 @@ export async function markTakeFailed(id: string, errorMessage: string): Promise<
   return updateTake(id, { status: "failed", error_message: errorMessage });
 }
 
-export async function markTakeReady(id: string, assetId: string): Promise<Take> {
-  return updateTake(id, { status: "ready", asset_id: assetId, error_message: null });
+export async function markTakeReady(
+  id: string,
+  assetId: string,
+  patch?: Pick<Take, "duration_seconds">,
+): Promise<Take> {
+  return updateTake(id, {
+    status: "ready",
+    asset_id: assetId,
+    error_message: null,
+    ...patch,
+  });
 }
 
 export async function listStarredTakesByEpisode(episodeId: string): Promise<TakeWithAsset[]> {

@@ -356,11 +356,34 @@ async function executeTool(
         onProgress,
       );
 
+      const failedTakes = outcome.takes.filter((t) => t.status === "failed");
+      const readyTakes = outcome.takes.filter((t) => t.status === "ready");
+      const pendingTakes = outcome.takes.filter((t) => t.status === "pending");
+      const primaryError = failedTakes.find((t) => t.error_message)?.error_message;
+
       return {
         take_ids: takeIds,
-        status: outcome.failed === 0 ? "ready" : outcome.ready > 0 ? "partial" : "failed",
-        ready_count: outcome.ready,
-        failed_count: outcome.failed,
+        takes: outcome.takes,
+        status:
+          pendingTakes.length > 0
+            ? "pending"
+            : failedTakes.length === 0
+              ? "ready"
+              : readyTakes.length > 0
+                ? "partial"
+                : "failed",
+        ready_count: readyTakes.length,
+        failed_count: failedTakes.length,
+        pending_count: pendingTakes.length,
+        ...(failedTakes.length > 0
+          ? {
+              errors: failedTakes.map((t) => ({
+                take_id: t.id,
+                error: t.error_message ?? "Generation failed.",
+              })),
+            }
+          : {}),
+        ...(failedTakes.length === takeIds.length && primaryError ? { error: primaryError } : {}),
       };
     }
 

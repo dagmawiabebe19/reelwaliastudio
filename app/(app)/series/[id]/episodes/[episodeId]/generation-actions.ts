@@ -2,6 +2,7 @@
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
+import { logGenerationError } from "@/lib/ai/generation/errors";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
 import { getPublicModelCatalog } from "@/lib/ai/registry";
 import { listTakesByScene, setTakeStarred } from "@/lib/db/takes";
@@ -49,7 +50,15 @@ export async function generateTakesAction(input: {
     const path = `/series/${input.seriesId}/episodes/${input.episodeId}`;
 
     after(async () => {
-      await executeGenerationJob(input, takeIds);
+      try {
+        await executeGenerationJob(input, takeIds);
+      } catch (error) {
+        logGenerationError("background-job", error, {
+          takeIds,
+          sceneId: input.sceneId,
+          modelId: input.modelId,
+        });
+      }
       revalidatePath(path);
     });
 

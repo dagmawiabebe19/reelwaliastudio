@@ -7,6 +7,7 @@ import {
   successResult,
   type GenerationResult,
 } from "@/lib/ai/shared";
+import { formatGenerationError, logGenerationError } from "@/lib/ai/generation/errors";
 import {
   extractB64Images,
   openAiEditImages,
@@ -77,7 +78,13 @@ export const generateImage: ImageAdapter = async (input) => {
       costEstimate: b64Images.length * 0.08,
     });
   } catch (error) {
-    return errorResult(error instanceof Error ? error.message : "OpenAI Image generation failed.");
+    logGenerationError("openai-image", error, {
+      sceneId: input.sceneId,
+      refCount: input.refImageUrls.length,
+      aspectRatio: input.aspectRatio,
+      count: input.count,
+    });
+    return errorResult(formatGenerationError(error, "OpenAI Image generation failed."));
   }
 };
 
