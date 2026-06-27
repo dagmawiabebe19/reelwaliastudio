@@ -12,7 +12,7 @@ SET
   public = EXCLUDED.public,
   file_size_limit = EXCLUDED.file_size_limit;
 
--- Path convention: {owner_id}/{series_id or episode_id}/{filename}
+-- Path convention: {owner_id}/{series_id or episode_id}/{kind}/{uuid}-{filename}
 
 DROP POLICY IF EXISTS "Owners insert storage objects" ON storage.objects;
 CREATE POLICY "Owners insert storage objects"

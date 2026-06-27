@@ -2,10 +2,14 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { uploadIngredientAction } from "@/app/(app)/series/[id]/actions";
 import { RefTag } from "@/components/ui/RefTag";
 import { MediaPlayer } from "@/components/ui/MediaPlayer";
 import type { IngredientKind } from "@/lib/db/types";
+import {
+  uploadIngredientFromClient,
+  type UploadProgress,
+} from "@/lib/storage/client-upload";
+import { allowedMimeTypesForKind } from "@/lib/storage/validate";
 
 export type IngredientCardData = {
   id: string;
@@ -78,28 +82,33 @@ const SECTIONS: { label: string; kinds: IngredientKind[]; countKey: keyof Ingred
 
 type RefFilter = "all" | "image" | "video" | "audio";
 
+function acceptForKind(kind: IngredientKind): string {
+  if (kind === "voice") return "audio/*";
+  if (kind === "reference" || kind === "prop") return "image/*,video/*,audio/*";
+  return "image/*";
+}
+
 export function IngredientsSection({ seriesId, ingredients, counts }: IngredientsSectionProps) {
   const router = useRouter();
-  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [refFilter, setRefFilter] = useState<RefFilter>("all");
   const [dragOver, setDragOver] = useState(false);
 
   const uploadFiles = useCallback(
     async (files: FileList | File[], kind: IngredientKind = "reference") => {
-      setUploading(true);
+      setUploadError(null);
       try {
         for (const file of Array.from(files)) {
-          const formData = new FormData();
-          formData.set("kind", kind);
-          formData.set("file", file);
-          const result = await uploadIngredientAction(seriesId, formData);
-          if (result.error) throw new Error(result.error);
+          await uploadIngredientFromClient(seriesId, file, kind, setUploadProgress);
         }
+        setUploadProgress(null);
         router.refresh();
       } catch (error) {
-        alert(error instanceof Error ? error.message : "Upload failed");
+        setUploadProgress(null);
+        const message = error instanceof Error ? error.message : "Upload failed.";
+        setUploadError(message);
       } finally {
-        setUploading(false);
         setDragOver(false);
       }
     },
@@ -141,7 +150,26 @@ export function IngredientsSection({ seriesId, ingredients, counts }: Ingredient
         <span className="rounded-full border border-border px-3 py-1">Reference {counts.reference}</span>
       </div>
 
-      {uploading ? <p className="text-sm text-muted">Uploading…</p> : null}
+      {uploadError ? (
+        <p className="rounded-md border border-accent/40 bg-accent-muted/30 px-3 py-2 text-sm text-accent">
+          {uploadError}
+        </p>
+      ) : null}
+
+      {uploadProgress ? (
+        <div className="space-y-2 rounded-md border border-border bg-surface-elevated p-4">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="truncate text-foreground">Uploading {uploadProgress.fileName}</span>
+            <span className="text-muted">{uploadProgress.percent}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-background">
+            <div
+              className="h-full bg-accent transition-[width] duration-150"
+              style={{ width: `${uploadProgress.percent}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {SECTIONS.map((section) => {
         const sectionItems = ingredients.filter((i) => section.kinds.includes(i.kind));
@@ -181,22 +209,19 @@ export function IngredientsSection({ seriesId, ingredients, counts }: Ingredient
                   <input
                     type="file"
                     className="hidden"
-                    accept={
-                      uploadKind === "voice"
-                        ? "audio/*"
-                        : uploadKind === "reference"
-                          ? "image/*,video/*,audio/*"
-                          : "image/*"
-                    }
+                    accept={acceptForKind(uploadKind)}
                     onChange={(e) => {
                       if (e.target.files?.length) void uploadFiles(e.target.files, uploadKind);
+                      e.target.value = "";
                     }}
                   />
                 </label>
               )}
             </div>
             {displayItems.length === 0 ? (
-              <p className="text-sm text-muted">No items yet.</p>
+              <p className="text-sm text-muted">
+                No items yet. Drop {allowedMimeTypesForKind(uploadKind)} files anywhere on this page.
+              </p>
             ) : (
               <div className="grid grid-cols-3 gap-4">
                 {displayItems.map((item) => (
