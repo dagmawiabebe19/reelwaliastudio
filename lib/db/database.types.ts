@@ -582,6 +582,10 @@ export type AudioLine = Tables<"audio_lines">;
 export type Asset = Tables<"assets">;
 export type Orientation = Enums<"orientation">;
 export type SeriesStatus = Enums<"series_status">;
+export type EpisodeStatus = Enums<"episode_status">;
+export type SceneStatus = Enums<"scene_status">;
+export type IngredientKind = Enums<"ingredient_kind">;
+export type AssetMediaType = Enums<"asset_media_type">;
 
 export interface SeriesStats {
   episodeCount: number;

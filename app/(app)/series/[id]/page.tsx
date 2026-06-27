@@ -1,57 +1,61 @@
 import { notFound } from "next/navigation";
-import { OrientationToggle } from "@/components/series/OrientationToggle";
-import { SeriesBriefEditor } from "@/components/series/SeriesBriefEditor";
-import { StatTiles } from "@/components/series/StatTiles";
-import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
+import { SeriesWorkspace } from "@/components/series/SeriesWorkspace";
+import { getIngredientCounts, listIngredientsBySeries } from "@/lib/db/ingredients";
+import { listEpisodesBySeries } from "@/lib/db/episodes";
 import { getSeries, getSeriesStats } from "@/lib/db/series";
-import type { SeriesStatus } from "@/lib/db/types";
+import { resolveAssetUrls } from "@/lib/storage/resolve-urls";
 
 interface SeriesPageProps {
   params: Promise<{ id: string }>;
 }
 
-const statusLabels: Record<SeriesStatus, string> = {
-  in_progress: "In progress",
-  validated: "Validated",
-  released: "Released",
-};
-
-function seriesStatusVariant(status: SeriesStatus): StatusVariant {
-  return status;
-}
-
 export default async function SeriesPage({ params }: SeriesPageProps) {
   const { id } = await params;
-  const [series, stats] = await Promise.all([getSeries(id), getSeriesStats(id)]);
+
+  const [series, stats, ingredientsRaw, counts, activeEpisodes, archivedEpisodes] =
+    await Promise.all([
+      getSeries(id),
+      getSeriesStats(id),
+      listIngredientsBySeries(id),
+      getIngredientCounts(id),
+      listEpisodesBySeries(id, "active"),
+      listEpisodesBySeries(id, "archived"),
+    ]);
 
   if (!series) notFound();
 
-  return (
-    <section className="space-y-12">
-      <header className="border-b border-border pb-8">
-        <div className="flex flex-wrap items-start justify-between gap-6">
-          <div className="space-y-4">
-            <StatusDot
-              variant={seriesStatusVariant(series.status)}
-              label={statusLabels[series.status]}
-            />
-            <h1 className="font-display text-4xl font-normal tracking-tight text-foreground">
-              {series.title}
-            </h1>
-            <p className="font-mono text-sm text-muted">/{series.slug}</p>
-          </div>
-          <OrientationToggle seriesId={series.id} value={series.default_orientation} />
-        </div>
-        <div className="mt-10">
-          <StatTiles
-            episodeCount={stats.episodeCount}
-            ingredientCount={stats.ingredientCount}
-            runtimeSeconds={stats.runtimeSeconds}
-          />
-        </div>
-      </header>
+  const ingredientsWithUrls = await resolveAssetUrls(
+    ingredientsRaw.map((i) => ({
+      ...i,
+      assets: i.assets,
+    })),
+  );
 
-      <SeriesBriefEditor seriesId={series.id} initialMarkdown={series.brief_markdown} />
-    </section>
+  const ingredients = ingredientsWithUrls.map((i) => ({
+    id: i.id,
+    kind: i.kind,
+    name: i.name,
+    description: i.description,
+    ref_tag: i.ref_tag,
+    assetUrl: i.assetUrl,
+    mediaType: i.assets?.media_type ?? null,
+  }));
+
+  return (
+    <SeriesWorkspace
+      series={{
+        id: series.id,
+        title: series.title,
+        slug: series.slug,
+        status: series.status,
+        default_orientation: series.default_orientation,
+        brief_markdown: series.brief_markdown,
+      }}
+      stats={stats}
+      counts={counts}
+      ingredients={ingredients}
+      activeEpisodes={activeEpisodes}
+      archivedEpisodes={archivedEpisodes}
+    />
   );
 }
