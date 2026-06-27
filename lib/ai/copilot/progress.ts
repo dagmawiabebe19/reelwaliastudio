@@ -65,6 +65,11 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
         ? `Generated 5-angle sheet for ${label} — ready`
         : `Character sheet for ${label} — ${result.status ?? "pending"}`;
     }
+    case "update_series_memory": {
+      const entry = result.entry ? String(result.entry) : "entry";
+      const section = result.section === "world" ? "world" : "preferences";
+      return `Saved to series memory (${section}): ${entry.slice(0, 80)}${entry.length > 80 ? "…" : ""}`;
+    }
     default:
       return `${toolDisplayName(name)} — done`;
   }
@@ -82,6 +87,8 @@ function toolDisplayName(name: string): string {
       return "generate_take";
     case "create_character_sheet":
       return "create_character_sheet";
+    case "update_series_memory":
+      return "update_series_memory";
     default:
       return name;
   }

@@ -56,6 +56,7 @@ export async function updateSeries(
       | "title"
       | "slug"
       | "brief_markdown"
+      | "memory_markdown"
       | "default_orientation"
       | "status"
       | "runtime_seconds"

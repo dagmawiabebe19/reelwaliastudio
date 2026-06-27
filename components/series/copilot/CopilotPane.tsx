@@ -34,6 +34,7 @@ export type CopilotContextPayload = {
   seriesTitle: string;
   defaultOrientation: string;
   briefMarkdown?: string;
+  seriesMemoryMarkdown?: string;
   scenes?: Array<{ id: string; title: string; prompt: string | null; act_label: string | null }>;
   ingredients?: Array<{
     id: string;

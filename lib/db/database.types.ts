@@ -590,6 +590,7 @@ export type Database = {
           title: string;
           slug: string;
           brief_markdown: string;
+          memory_markdown: string;
           default_orientation: Database["public"]["Enums"]["orientation"];
           status: Database["public"]["Enums"]["series_status"];
           thumbnail_asset_id: string | null;
@@ -603,6 +604,7 @@ export type Database = {
           title: string;
           slug: string;
           brief_markdown?: string;
+          memory_markdown?: string;
           default_orientation?: Database["public"]["Enums"]["orientation"];
           status?: Database["public"]["Enums"]["series_status"];
           thumbnail_asset_id?: string | null;
@@ -616,6 +618,7 @@ export type Database = {
           title?: string;
           slug?: string;
           brief_markdown?: string;
+          memory_markdown?: string;
           default_orientation?: Database["public"]["Enums"]["orientation"];
           status?: Database["public"]["Enums"]["series_status"];
           thumbnail_asset_id?: string | null;

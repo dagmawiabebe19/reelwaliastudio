@@ -25,6 +25,7 @@ interface EpisodeWorkspaceProps {
   seriesTitle: string;
   defaultOrientation: Orientation;
   briefMarkdown: string;
+  seriesMemoryMarkdown?: string;
   scenes: SceneWithBindings[];
   ingredients: MentionIngredient[];
   sheets: MentionSheet[];

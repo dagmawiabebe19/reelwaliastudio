@@ -109,6 +109,28 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
       required: ["scene_id"],
     },
   },
+  {
+    name: "update_series_memory",
+    description:
+      "Append a persistent fact or production preference to series memory. Use when the user states a rule, correction, or canonical world detail that must apply in all future sessions for this series.",
+    input_schema: {
+      type: "object",
+      properties: {
+        series_id: { type: "string" },
+        entry: {
+          type: "string",
+          description: "The preference, correction, or world fact to remember",
+        },
+        section: {
+          type: "string",
+          enum: ["world", "preferences"],
+          description:
+            "preferences (default) for rules/corrections; world for canonical facts like character looks or locations",
+        },
+      },
+      required: ["series_id", "entry"],
+    },
+  },
 ];
 
 export type CopilotContext = {
@@ -118,6 +140,7 @@ export type CopilotContext = {
   seriesTitle: string;
   defaultOrientation: string;
   briefMarkdown?: string;
+  seriesMemoryMarkdown?: string;
   scenes?: Array<{ id: string; title: string; prompt: string | null; act_label: string | null }>;
   ingredients?: Array<{
     id: string;
@@ -165,11 +188,15 @@ If model is omitted in generate_take, the composer default image model is used.
 4. **Locations** — clean establishing shots.
 5. **Voices** — description for timbre/age/accent; generation is stubbed until provider is wired.
 6. **Storyboard** — bind SHEETS (not raw headshots) per segment. generate_take uses sheet angle images + location.
+7. **Series memory** — follow ## Series memory in context. When the user states a preference or correction, call update_series_memory so it persists across sessions.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).
 `;
 
   return `You are the ReelWalia Studio co-pilot — an AI production assistant for serialized short-form shows.
+
+## Series memory (persistent — always follow)
+${context.seriesMemoryMarkdown?.trim() || "(empty — use update_series_memory when the user states preferences, corrections, or canonical world facts)"}
 
 Series: ${context.seriesTitle} (${context.seriesId})
 Default orientation: ${context.defaultOrientation} (portrait = 9:16, landscape = 16:9)

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { OrientationToggle } from "@/components/series/OrientationToggle";
 import { SeriesBriefEditor } from "@/components/series/SeriesBriefEditor";
+import { SeriesMemoryEditor } from "@/components/series/SeriesMemoryEditor";
 import { StatTiles } from "@/components/series/StatTiles";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { ViewToggle } from "@/components/series/ViewToggle";
@@ -18,7 +19,7 @@ import type { ModelCatalogEntry } from "@/components/series/generation/Generatio
 import type { CopilotOutputItem, LibraryHighlight } from "@/lib/copilot/output";
 import type { CharacterSheetCardData, EpisodeOption, IngredientCardData } from "@/lib/production/types";
 
-type Tab = "ingredients" | "episodes" | "brief";
+type Tab = "ingredients" | "episodes" | "brief" | "memory";
 
 const statusLabels: Record<SeriesStatus, string> = {
   in_progress: "In progress",
@@ -34,6 +35,7 @@ interface SeriesWorkspaceProps {
     status: SeriesStatus;
     default_orientation: Orientation;
     brief_markdown: string;
+    memory_markdown: string;
   };
   stats: {
     episodeCount: number;
@@ -128,6 +130,7 @@ export function SeriesWorkspace({
           seriesTitle={series.title}
           defaultOrientation={series.default_orientation}
           briefMarkdown={series.brief_markdown}
+          seriesMemoryMarkdown={series.memory_markdown}
           ingredients={ingredients.map((i) => ({
             id: i.id,
             ref_tag: i.ref_tag,
@@ -149,6 +152,7 @@ export function SeriesWorkspace({
                 ["ingredients", "Ingredients"],
                 ["episodes", "Episodes"],
                 ["brief", "Series Brief"],
+                ["memory", "Memory"],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -191,6 +195,13 @@ export function SeriesWorkspace({
             <SeriesBriefEditor
               seriesId={series.id}
               initialMarkdown={series.brief_markdown}
+            />
+          ) : null}
+
+          {tab === "memory" ? (
+            <SeriesMemoryEditor
+              seriesId={series.id}
+              initialMarkdown={series.memory_markdown}
             />
           ) : null}
         </>

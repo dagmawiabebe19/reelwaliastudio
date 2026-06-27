@@ -102,6 +102,7 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
       episodeTitle={episode.title}
       defaultOrientation={series.default_orientation}
       briefMarkdown={series.brief_markdown}
+      seriesMemoryMarkdown={series.memory_markdown}
       scenes={scenes}
       ingredients={mentionIngredients}
       sheets={sheets}

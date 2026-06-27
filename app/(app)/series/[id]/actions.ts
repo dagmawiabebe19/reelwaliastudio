@@ -11,6 +11,7 @@ import {
   updateSeriesBrief,
   updateSeriesOrientation,
 } from "@/lib/db/series";
+import { updateSeriesMemoryMarkdown } from "@/lib/db/series-memory";
 import { finalizeIngredientUpload } from "@/lib/storage/finalize-ingredient";
 import { bucketForIngredient } from "@/lib/storage/buckets";
 import { buildIngredientStoragePath } from "@/lib/storage/paths";
@@ -187,6 +188,17 @@ export async function saveSeriesBriefAction(seriesId: string, briefMarkdown: str
 
 export async function updateSeriesBriefAction(seriesId: string, briefMarkdown: string) {
   return saveSeriesBriefAction(seriesId, briefMarkdown);
+}
+
+export async function updateSeriesMemoryAction(seriesId: string, memoryMarkdown: string) {
+  try {
+    await updateSeriesMemoryMarkdown(seriesId, memoryMarkdown);
+    revalidatePath(`/series/${seriesId}`);
+    revalidatePath(`/series/${seriesId}/episodes`, "layout");
+    return { success: true };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Save failed." };
+  }
 }
 
 export async function updateSeriesOrientationAction(

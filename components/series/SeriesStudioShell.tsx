@@ -14,6 +14,7 @@ interface SeriesStudioShellProps {
   seriesTitle: string;
   defaultOrientation: string;
   briefMarkdown: string;
+  seriesMemoryMarkdown?: string;
   ingredients: Array<{
     id: string;
     ref_tag: string;
@@ -41,6 +42,7 @@ export function SeriesStudioShell({
   seriesTitle,
   defaultOrientation,
   briefMarkdown,
+  seriesMemoryMarkdown,
   ingredients,
   characterSheets,
   models,
@@ -72,6 +74,7 @@ export function SeriesStudioShell({
             seriesTitle,
             defaultOrientation,
             briefMarkdown,
+            seriesMemoryMarkdown,
             ingredients: ingredients.map((i) => ({
               id: i.id,
               ref_tag: i.ref_tag,

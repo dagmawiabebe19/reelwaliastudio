@@ -24,6 +24,7 @@ interface StudioShellProps {
   seriesTitle: string;
   defaultOrientation: Orientation;
   briefMarkdown: string;
+  seriesMemoryMarkdown?: string;
   scenes: SceneWithBindings[];
   ingredients: MentionIngredient[];
   sheets: MentionSheet[];
@@ -50,6 +51,7 @@ export function StudioShell({
   seriesTitle,
   defaultOrientation,
   briefMarkdown,
+  seriesMemoryMarkdown,
   scenes,
   ingredients,
   sheets,
@@ -84,6 +86,7 @@ export function StudioShell({
     seriesTitle,
     defaultOrientation,
     briefMarkdown,
+    seriesMemoryMarkdown,
     scenes: scenes.map((s) => ({
       id: s.id,
       title: s.title,

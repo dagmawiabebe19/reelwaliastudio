@@ -77,6 +77,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         status: series.status,
         default_orientation: series.default_orientation,
         brief_markdown: series.brief_markdown,
+        memory_markdown: series.memory_markdown,
       }}
       stats={stats}
       counts={counts}

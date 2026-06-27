@@ -29,6 +29,7 @@ interface EpisodeStudioPageProps {
   episodeTitle: string;
   defaultOrientation: Orientation;
   briefMarkdown: string;
+  seriesMemoryMarkdown?: string;
   scenes: SceneWithBindings[];
   ingredients: MentionIngredient[];
   sheets: MentionSheet[];

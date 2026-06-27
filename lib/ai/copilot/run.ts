@@ -28,6 +28,8 @@ import {
   type CopilotContext,
 } from "@/lib/ai/copilot/tools";
 import { appendChatMessage, listChatMessages } from "@/lib/db/chat";
+import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
+import { getSeries } from "@/lib/db/series";
 import type { GenerationProgressCallback } from "@/lib/generation/progress";
 
 export type CopilotStreamEvent =
@@ -362,6 +364,29 @@ async function executeTool(
       };
     }
 
+    case "update_series_memory": {
+      const seriesId = String(args.series_id);
+      const entry = String(args.entry ?? "").trim();
+      const section = args.section === "world" ? "world" : "preferences";
+
+      if (!entry) return { error: "entry is required." };
+      if (seriesId !== context.seriesId) {
+        return { error: "series_id does not match the active co-pilot session." };
+      }
+
+      emitProgress("updating series memory…", 1, 1);
+
+      const next = await appendSeriesMemoryMarkdown(seriesId, entry, section);
+      context.seriesMemoryMarkdown = next;
+
+      return {
+        updated: true,
+        section,
+        entry,
+        memory_length: next.length,
+      };
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -382,6 +407,11 @@ export async function runCopilotStream(input: {
     });
     input.onEvent({ type: "done" });
     return;
+  }
+
+  const freshSeries = await getSeries(input.context.seriesId);
+  if (freshSeries) {
+    input.context.seriesMemoryMarkdown = freshSeries.memory_markdown ?? "";
   }
 
   await appendChatMessage({
