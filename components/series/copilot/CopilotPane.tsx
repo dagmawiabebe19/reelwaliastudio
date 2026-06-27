@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { COPILOT_MODELS, DEFAULT_COPILOT_MODEL } from "@/lib/ai/copilot/constants";
+import {
+  ANTHROPIC_MODELS,
+  DEFAULT_ANTHROPIC_MODEL,
+} from "@/lib/ai/anthropic-models";
 import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 
 export type ChatMessageData = {
@@ -50,7 +53,7 @@ export function CopilotPane({
   const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [copilotModel, setCopilotModel] = useState<string>(DEFAULT_COPILOT_MODEL);
+  const [copilotModel, setCopilotModel] = useState<string>(DEFAULT_ANTHROPIC_MODEL);
   const [imageModel, setImageModel] = useState(imageModels.find((m) => m.configured)?.id ?? "");
   const [mentionOpen, setMentionOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -230,7 +233,7 @@ export function CopilotPane({
             onChange={(e) => setCopilotModel(e.target.value)}
             className="rounded-md border border-border bg-background px-2 py-1.5 text-xs"
           >
-            {COPILOT_MODELS.map((m) => (
+            {ANTHROPIC_MODELS.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}
               </option>
