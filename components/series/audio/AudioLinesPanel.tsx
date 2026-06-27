@@ -3,9 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
+  deleteAudioLineAction,
+  getAudioLineDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
+import {
   getAudioDownloadUrlAction,
   uploadAudioLineAction,
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/actions";
+import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { RefTag } from "@/components/ui/RefTag";
 import { MediaPlayer } from "@/components/ui/MediaPlayer";
 import { Button } from "@/components/ui/Button";
@@ -94,7 +99,7 @@ export function AudioLinesPanel({ seriesId, episodeId, lines }: AudioLinesPanelP
               <div className="w-48">
                 <MediaPlayer src={line.assetUrl} />
               </div>
-              <div className="relative">
+              <div className="relative flex items-center gap-1">
                 <Button
                   type="button"
                   variant="ghost"
@@ -102,6 +107,14 @@ export function AudioLinesPanel({ seriesId, episodeId, lines }: AudioLinesPanelP
                 >
                   ⋯
                 </Button>
+                <DeleteConfirmButton
+                  ariaLabel="Delete audio line"
+                  fetchPreview={() =>
+                    getAudioLineDeletePreviewAction(line.id, episodeId, seriesId)
+                  }
+                  onDelete={() => deleteAudioLineAction(line.id, episodeId, seriesId)}
+                  onSuccess={() => router.refresh()}
+                />
                 {openMenuId === line.id ? (
                   <div className="absolute right-0 z-10 mt-1 w-36 rounded-md border border-border bg-surface-elevated py-1 shadow-lg">
                     <button

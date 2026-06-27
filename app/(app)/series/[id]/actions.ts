@@ -5,7 +5,8 @@ import { randomUUID } from "crypto";
 import { isDevNoAuth } from "@/lib/auth/dev";
 import { getActiveUserId } from "@/lib/auth/active-user";
 import { createEpisode, updateEpisodeStatus } from "@/lib/db/episodes";
-import { deleteIngredient, updateIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
+import { deleteIngredientWithCleanup } from "@/lib/db/delete";
+import { updateIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
 import {
   updateSeriesBrief,
   updateSeriesOrientation,
@@ -166,7 +167,7 @@ export async function updateIngredientAction(
 
 export async function deleteIngredientAction(ingredientId: string, seriesId: string) {
   try {
-    await deleteIngredient(ingredientId);
+    await deleteIngredientWithCleanup(ingredientId, seriesId);
     revalidatePath(`/series/${seriesId}`);
     return { success: true };
   } catch (error) {

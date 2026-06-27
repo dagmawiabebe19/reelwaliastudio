@@ -144,6 +144,36 @@ export async function listStarredTakesByEpisode(episodeId: string): Promise<Take
   });
 }
 
+export async function deleteTake(id: string): Promise<string | null> {
+  const take = await getTake(id);
+  if (!take) throw new Error("Take not found.");
+
+  const assetId = take.asset_id;
+  const supabase = await getDbClient();
+  const { error } = await supabase.from("takes").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+
+  return assetId;
+}
+
+export async function verifyTakeOwnership(takeId: string, episodeId: string): Promise<void> {
+  const take = await getTake(takeId);
+  if (!take) throw new Error("Take not found.");
+
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from("scenes")
+    .select("id, episode_id")
+    .eq("id", take.scene_id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data || data.episode_id !== episodeId) throw new Error("Take not found.");
+
+  const { verifyEpisodeOwnership } = await import("@/lib/db/audio-lines");
+  await verifyEpisodeOwnership(episodeId);
+}
+
 export async function listStarredTakesByScene(sceneId: string): Promise<TakeWithAsset[]> {
   const supabase = await getDbClient();
   const { data, error } = await supabase

@@ -3,10 +3,16 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  deleteCharacterSheetAction,
+  getCharacterSheetDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
+import {
   createCharacterSheetAction,
   generateCharacterAction,
   generateCostumeAction,
 } from "@/app/(app)/series/[id]/production-actions";
+import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
+import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -135,6 +141,10 @@ export function CharactersSection({
                       <h3 className="text-lg font-medium text-foreground">{character.name}</h3>
                       <RefTag tag={character.ref_tag} />
                       <GenerationBadge status={character.generationStatus} />
+                      <IngredientDeleteButton
+                        ingredientId={character.id}
+                        seriesId={seriesId}
+                      />
                     </div>
                     {character.description ? (
                       <p className="text-sm text-muted">{character.description}</p>
@@ -183,8 +193,14 @@ export function CharactersSection({
                           {costumes.map((costume) => (
                             <div
                               key={costume.id}
-                              className="w-28 overflow-hidden rounded border border-border"
+                              className="relative w-28 overflow-hidden rounded border border-border"
                             >
+                              <div className="absolute right-0 top-0 z-10">
+                                <IngredientDeleteButton
+                                  ingredientId={costume.id}
+                                  seriesId={seriesId}
+                                />
+                              </div>
                               <div className="aspect-[3/4] bg-background">
                                 {costume.assetUrl ? (
                                   // eslint-disable-next-line @next/next/no-img-element
@@ -272,19 +288,29 @@ export function CharactersSection({
                         <div className="space-y-4">
                           {sheets.map((sheet) => (
                             <div key={sheet.id} className="rounded border border-border bg-background p-3">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedSheet(expandedSheet === sheet.id ? null : sheet.id)
-                                }
-                                className="flex w-full items-center justify-between text-left text-sm"
-                              >
-                                <span>
-                                  {sheet.name}
-                                  {sheet.costume_name ? ` · ${sheet.costume_name}` : ""}
-                                </span>
-                                <GenerationBadge status={sheet.status} />
-                              </button>
+                              <div className="flex w-full items-center justify-between text-left text-sm">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedSheet(expandedSheet === sheet.id ? null : sheet.id)
+                                  }
+                                  className="flex flex-1 items-center justify-between"
+                                >
+                                  <span>
+                                    {sheet.name}
+                                    {sheet.costume_name ? ` · ${sheet.costume_name}` : ""}
+                                  </span>
+                                  <GenerationBadge status={sheet.status} />
+                                </button>
+                                <DeleteConfirmButton
+                                  ariaLabel="Delete character sheet"
+                                  fetchPreview={() =>
+                                    getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
+                                  }
+                                  onDelete={() => deleteCharacterSheetAction(sheet.id, seriesId)}
+                                  onSuccess={() => router.refresh()}
+                                />
+                              </div>
                               <GenerationStatusLine
                                 status={sheet.status}
                                 error={sheet.generation_error}

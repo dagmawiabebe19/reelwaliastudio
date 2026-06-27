@@ -10,6 +10,7 @@ import { StatusDot } from "@/components/ui/StatusDot";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { IngredientCardData } from "@/lib/production/types";
 import { IngredientCard } from "./IngredientsSection";
+import { IngredientDeleteButton } from "./IngredientDeleteButton";
 
 interface LocationsSectionProps {
   seriesId: string;
@@ -68,7 +69,7 @@ export function LocationsSection({ seriesId, locations }: LocationsSectionProps)
       ) : (
         <div className="grid grid-cols-3 gap-4">
           {locations.map((item) => (
-            <IngredientCard key={item.id} ingredient={item} />
+            <IngredientCard key={item.id} ingredient={item} seriesId={seriesId} />
           ))}
         </div>
       )}
@@ -156,7 +157,10 @@ export function VoicesSection({ seriesId, voices, characters }: VoicesSectionPro
             >
               <div className="flex items-center justify-between gap-2">
                 <h3 className="font-medium">{voice.name}</h3>
-                <RefTag tag={voice.ref_tag} />
+                <div className="flex items-center gap-1">
+                  <RefTag tag={voice.ref_tag} />
+                  <IngredientDeleteButton ingredientId={voice.id} seriesId={seriesId} />
+                </div>
               </div>
               {voice.description ? (
                 <p className="mt-2 text-sm text-muted">{voice.description}</p>

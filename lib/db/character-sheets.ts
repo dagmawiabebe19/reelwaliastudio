@@ -151,6 +151,30 @@ export async function addSheetAngle(input: {
   if (error) throw new Error(error.message);
 }
 
+export async function listCharacterSheetsByCostume(costumeId: string): Promise<CharacterSheetWithDetails[]> {
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from("character_sheets")
+    .select(
+      `*, angles:character_sheet_angles(id, angle_label, asset_id, assets:asset_id(bucket, storage_path, media_type)),
+       episodes:character_sheet_episodes(episode_id),
+       character:character_id(id, name, ref_tag),
+       costume:costume_id(id, name, ref_tag)`,
+    )
+    .eq("costume_id", costumeId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((row) => ({
+    ...(row as CharacterSheet),
+    angles: ((row as { angles?: CharacterSheetWithDetails["angles"] }).angles ?? []),
+    episode_ids: ((row as { episodes?: { episode_id: string }[] }).episodes ?? []).map((e) => e.episode_id),
+    character: (row as { character?: CharacterSheetWithDetails["character"] }).character ?? null,
+    costume: (row as { costume?: CharacterSheetWithDetails["costume"] }).costume ?? null,
+  }));
+}
+
 export async function findSheetForEpisodeCharacter(input: {
   episodeId: string;
   characterId: string;

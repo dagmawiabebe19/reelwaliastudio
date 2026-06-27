@@ -3,7 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { starTakeAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
+import {
+  deleteTakeAction,
+  getTakeDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
 import { VideoTakePlayer } from "@/components/series/generation/VideoTakePlayer";
+import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { Orientation } from "@/lib/db/types";
@@ -138,6 +143,14 @@ export function TakesStrip({
                   <span className="text-sm text-muted">
                     {activeTake.model ?? "—"}
                   </span>
+                  <DeleteConfirmButton
+                    ariaLabel="Delete take"
+                    fetchPreview={() =>
+                      getTakeDeletePreviewAction(activeTake.id, episodeId, seriesId)
+                    }
+                    onDelete={() => deleteTakeAction(activeTake.id, episodeId, seriesId)}
+                    onSuccess={() => router.refresh()}
+                  />
                 </div>
 
                 <GenerationStatusLine

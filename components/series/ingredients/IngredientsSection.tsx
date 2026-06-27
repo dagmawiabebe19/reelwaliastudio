@@ -12,6 +12,7 @@ import {
   type UploadProgress,
 } from "@/lib/storage/client-upload";
 import type { IngredientCardData } from "@/lib/production/types";
+import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
 import {
   CharactersSection,
 } from "@/components/series/ingredients/CharactersSection";
@@ -25,9 +26,10 @@ export type { IngredientCardData } from "@/lib/production/types";
 
 interface IngredientCardProps {
   ingredient: IngredientCardData;
+  seriesId: string;
 }
 
-export function IngredientCard({ ingredient }: IngredientCardProps) {
+export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
   const isAudio = ingredient.mediaType === "audio" || ingredient.kind === "voice";
 
   return (
@@ -51,7 +53,10 @@ export function IngredientCard({ ingredient }: IngredientCardProps) {
       <div className="space-y-2 p-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="truncate text-sm font-medium text-foreground">{ingredient.name}</h3>
-          <RefTag tag={ingredient.ref_tag} />
+          <div className="flex items-center gap-1">
+            <RefTag tag={ingredient.ref_tag} />
+            <IngredientDeleteButton ingredientId={ingredient.id} seriesId={seriesId} />
+          </div>
         </div>
         {ingredient.description ? (
           <p className="line-clamp-2 text-xs text-muted">{ingredient.description}</p>
@@ -251,7 +256,7 @@ export function IngredientsSection({
             ) : (
               <div className="grid grid-cols-3 gap-4">
                 {displayItems.map((item) => (
-                  <IngredientCard key={item.id} ingredient={item} />
+                  <IngredientCard key={item.id} ingredient={item} seriesId={seriesId} />
                 ))}
               </div>
             )}
