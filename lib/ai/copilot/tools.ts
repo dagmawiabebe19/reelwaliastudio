@@ -10,7 +10,7 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: "object",
       properties: {
-        episode_id: { type: "string", description: "Episode UUID" },
+        episode_id: { type: "string", description: "Episode UUID — must match the open episode. When episode context is active, the server uses that episode id." },
         segments: {
           type: "array",
           items: {
@@ -18,7 +18,11 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
             properties: {
               title: { type: "string" },
               prompt: { type: "string" },
-              act_label: { type: "string" },
+              act_label: {
+                type: "string",
+                enum: ["EP_01", "EP_02", "EP_03", "Storyboard-only"],
+                description: "Storyboard bucket in the SEGMENTS panel. Default EP_01 when omitted.",
+              },
               duration_seconds: { type: "number" },
               orientation: { type: "string", enum: ["portrait", "landscape"] },
               scene_id: { type: "string", description: "If set, update existing scene" },
@@ -182,6 +186,7 @@ If the user revises the breakdown before approving, update the TEXT proposal and
 ### Beat 2 — BUILD (only after explicit approval)
 Only when the user clearly approves ("build it", "create them", "go", "yes build", "looks good, create", etc.):
 - Call draft_storyboard once with the approved breakdown (prompts, durations, orientations, act labels).
+- Use the active Episode id from context for episode_id (shown in system prompt). Set act_label per segment to EP_01 / EP_02 / EP_03 so segments appear in the correct SEGMENTS panel bucket (default EP_01 if single-act).
 - Segments appear as ungenerated placeholders (0 takes, ready to generate). draft_storyboard auto-binds sheets, locations, and voices.
 - Then STOP. Tell the creator the shot list is on the storyboard and they can generate takes manually per segment in the New Take panel.
 - Never call draft_storyboard in the same turn as Beat 1. Never call it without prior approval in the conversation.
@@ -223,7 +228,7 @@ ${context.seriesMemoryMarkdown?.trim() || "(empty — use update_series_memory w
 ${workspaceSection}
 Series: ${context.seriesTitle} (${context.seriesId})
 Default orientation: ${context.defaultOrientation} (portrait = 9:16, landscape = 16:9)
-${context.episodeId ? `Episode id: ${context.episodeId}${workspace?.episodeTitle ? ` — ${workspace.episodeTitle}` : ""}` : ""}
+${context.episodeId ? `Active episode id (use this for draft_storyboard): ${context.episodeId}${workspace?.episodeTitle ? ` — ${workspace.episodeTitle}` : ""}` : "No active episode — open an episode studio before building segments."}
 ${context.sceneId ? `Active scene id: ${context.sceneId}` : ""}
 ${divisionOfLabor}
 ${pipelineNotes}

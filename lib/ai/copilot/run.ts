@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { revalidatePath } from "next/cache";
 import {
   executeIngredientImageGeneration,
   getIngredientRefUrl,
@@ -27,7 +28,9 @@ import {
 } from "@/lib/ai/copilot/tools";
 import { appendChatMessage, listChatMessages } from "@/lib/db/chat";
 import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
+import { getEpisode } from "@/lib/db/episodes";
 import { getSeries } from "@/lib/db/series";
+import { ACT_GROUPS } from "@/lib/storyboard/constants";
 
 export type CopilotStreamEvent =
   | { type: "text"; content: string }
@@ -49,6 +52,41 @@ export type CopilotStreamEvent =
 type ToolProgressEmitter = (detail: string, step?: number, total?: number) => void;
 type OutputEmitter = (event: CopilotOutputEvent) => void;
 
+function normalizeActLabel(raw: unknown, hasActiveEpisode: boolean): string {
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if ((ACT_GROUPS as readonly string[]).includes(trimmed)) return trimmed;
+  }
+  return hasActiveEpisode ? "EP_01" : "Storyboard-only";
+}
+
+async function resolveDraftStoryboardEpisodeId(
+  context: CopilotContext,
+  args: Record<string, unknown>,
+): Promise<{ episodeId: string } | { error: string }> {
+  const requested = args.episode_id ? String(args.episode_id).trim() : "";
+  const episodeId = context.episodeId?.trim() || requested;
+
+  if (!episodeId) {
+    return {
+      error:
+        "No active episode — open the episode studio for the episode you are planning, or pass episode_id explicitly.",
+    };
+  }
+
+  const episode = await getEpisode(episodeId);
+  if (!episode) {
+    return { error: `Episode not found: ${episodeId}` };
+  }
+  if (episode.series_id !== context.seriesId) {
+    return {
+      error: `Episode ${episodeId} does not belong to series ${context.seriesId}.`,
+    };
+  }
+
+  return { episodeId };
+}
+
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
@@ -58,7 +96,12 @@ async function executeTool(
 ): Promise<Record<string, unknown>> {
   switch (name) {
     case "draft_storyboard": {
-      const episodeId = String(args.episode_id);
+      const episodeResolution = await resolveDraftStoryboardEpisodeId(context, args);
+      if ("error" in episodeResolution) {
+        return { error: episodeResolution.error };
+      }
+      const episodeId = episodeResolution.episodeId;
+
       const segments = (args.segments as Array<Record<string, unknown>>) ?? [];
       const created: string[] = [];
       const updated: string[] = [];
@@ -77,13 +120,15 @@ async function executeTool(
         index++;
         emitProgress(`writing segment ${index}/${total || index}: ${title}…`, index, total || index);
 
+        const actLabel = normalizeActLabel(segment.act_label, Boolean(context.episodeId ?? episodeId));
+
         let targetSceneId: string;
 
         if (sceneId) {
           await updateScene(sceneId, {
             title,
             prompt,
-            act_label: segment.act_label ? String(segment.act_label) : undefined,
+            act_label: actLabel,
             duration_seconds:
               typeof segment.duration_seconds === "number" ? segment.duration_seconds : undefined,
             orientation:
@@ -96,7 +141,7 @@ async function executeTool(
         } else {
           const scene = await createScene(episodeId, {
             title,
-            actLabel: segment.act_label ? String(segment.act_label) : "Storyboard-only",
+            actLabel,
           });
           await updateScene(scene.id, {
             prompt,
@@ -122,7 +167,15 @@ async function executeTool(
         resolved.push({ scene_id: targetSceneId, references: refs });
       }
 
-      return { created, updated, count: created.length + updated.length, resolved };
+      revalidatePath(`/series/${context.seriesId}/episodes/${episodeId}`);
+
+      return {
+        episode_id: episodeId,
+        created,
+        updated,
+        count: created.length + updated.length,
+        resolved,
+      };
     }
 
     case "add_ingredient": {
@@ -335,6 +388,8 @@ export async function runCopilotStream(input: {
   userMessage: string;
   context: CopilotContext;
   modelId?: string;
+  scopeType?: "series" | "episode" | "scene";
+  scopeId?: string;
   onEvent: (event: CopilotStreamEvent) => void;
 }): Promise<void> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
@@ -345,6 +400,10 @@ export async function runCopilotStream(input: {
     });
     input.onEvent({ type: "done" });
     return;
+  }
+
+  if (input.scopeType === "episode" && input.scopeId) {
+    input.context.episodeId = input.context.episodeId ?? input.scopeId;
   }
 
   const freshSeries = await getSeries(input.context.seriesId);

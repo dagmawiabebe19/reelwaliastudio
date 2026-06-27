@@ -28,6 +28,8 @@ export async function POST(request: Request) {
         userMessage: body.message,
         context: body.context,
         modelId: body.modelId,
+        scopeType: body.scopeType,
+        scopeId: body.scopeId,
         onEvent: (event) => send(event),
       });
 

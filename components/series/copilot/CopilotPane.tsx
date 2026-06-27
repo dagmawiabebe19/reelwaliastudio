@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import {
   ANTHROPIC_MODELS,
   DEFAULT_ANTHROPIC_MODEL,
@@ -99,6 +100,7 @@ export function CopilotPane({
   messageBanner,
   className,
 }: CopilotPaneProps) {
+  const router = useRouter();
   const [internalMessages, setInternalMessages] = useState<ChatMessageData[]>(initialMessages);
   const messages = controlledMessages ?? internalMessages;
 
@@ -264,6 +266,9 @@ export function CopilotPane({
                   : m,
               ),
             );
+            if (event.name === "draft_storyboard") {
+              router.refresh();
+            }
           }
 
           if (event.type === "copilot_output" && event.payload) {

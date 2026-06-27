@@ -70,6 +70,16 @@ export function StudioShell({
     setActiveTakeIndex(0);
   }, [selectedSceneId]);
 
+  useEffect(() => {
+    if (!scenes.length) {
+      setSelectedSceneId(null);
+      return;
+    }
+    if (!selectedSceneId || !scenes.some((scene) => scene.id === selectedSceneId)) {
+      setSelectedSceneId(scenes[0].id);
+    }
+  }, [scenes, selectedSceneId]);
+
   const sceneIndex = selectedScene ? scenes.findIndex((s) => s.id === selectedScene.id) + 1 : null;
   const activeTakeSummary = activeTake
     ? `Take #${activeTake.take_number} — ${activeTake.status}${activeTake.error_message ? ` (${activeTake.error_message})` : ""}`
