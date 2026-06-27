@@ -46,7 +46,7 @@ export function SceneMetaControls({
     <div className="flex flex-wrap items-end gap-4 border-b border-border pb-4">
       <div className="min-w-0 flex-1">
         <p className="font-mono text-xs text-muted">Scene {sceneNumber}</p>
-        <h2 className="font-display text-2xl text-foreground">{scene.title}</h2>
+        <h2 className="studio-column-heading font-display text-foreground">{scene.title}</h2>
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <div>

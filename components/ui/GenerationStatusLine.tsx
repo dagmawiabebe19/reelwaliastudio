@@ -24,7 +24,7 @@ export function GenerationStatusLine({
 
   if (status === "failed") {
     return (
-      <p className="text-xs text-accent">
+      <p className="max-w-full break-words text-xs text-accent">
         Failed: {error?.trim() || "Generation failed"}
       </p>
     );

@@ -63,7 +63,7 @@ export function GenerationPanel({ sceneId, seriesId, episodeId, models }: Genera
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-surface-elevated p-4">
-      <h3 className="font-display text-lg text-foreground">New Take</h3>
+      <h3 className="studio-column-heading-sm font-display text-foreground">New Take</h3>
 
       <div className="space-y-3">
         <div>

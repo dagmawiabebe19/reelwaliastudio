@@ -111,8 +111,8 @@ export function StudioShell({
       <div
         className={`grid min-h-0 flex-1 ${
           copilotCollapsed
-            ? "grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]"
-            : "grid-cols-1 xl:grid-cols-[minmax(260px,300px)_minmax(0,1fr)_minmax(280px,360px)]"
+            ? "grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(240px,5fr)]"
+            : "grid-cols-1 xl:grid-cols-[minmax(320px,8fr)_minmax(0,7fr)_minmax(240px,5fr)]"
         }`}
       >
         {!copilotCollapsed ? (
@@ -185,13 +185,13 @@ export function StudioShell({
           </div>
         </main>
 
-        <aside className="flex min-h-0 flex-col overflow-y-auto p-4 xl:border-l xl:border-border">
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden p-4 xl:border-l xl:border-border">
           <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
             Output
           </p>
 
           {selectedScene ? (
-            <div className="space-y-6">
+            <div className="min-w-0 space-y-6">
               <TakesStrip
                 sceneId={selectedScene.id}
                 seriesId={seriesId}

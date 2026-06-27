@@ -102,9 +102,15 @@ export function TakesStrip({
 
   const showStrip = layout === "combined" || layout === "strip";
   const showPreview = layout === "combined" || layout === "preview";
+  const isOutputPreview = layout === "preview";
 
-  const previewFrameClass =
-    activeTake?.media_type === "video"
+  const previewFrameClass = isOutputPreview
+    ? activeTake?.media_type === "video"
+      ? "w-full"
+      : isPortrait
+        ? "aspect-[9/16] w-full"
+        : "aspect-video w-full"
+    : activeTake?.media_type === "video"
       ? isPortrait
         ? "w-full max-w-[min(100%,280px)]"
         : "w-full"
@@ -117,7 +123,7 @@ export function TakesStrip({
       <div className="space-y-2">
         {showStrip ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="font-display text-lg text-foreground">Takes</h3>
+            <h3 className="studio-column-heading-sm font-display text-foreground">Takes</h3>
             <a
               href={`/api/export/scene/${sceneId}`}
               className="text-xs text-accent hover:underline"
@@ -142,11 +148,11 @@ export function TakesStrip({
   }
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${isOutputPreview ? "min-w-0 max-w-full" : ""}`}>
       {showStrip ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="font-display text-lg text-foreground">Takes</h3>
+            <h3 className="studio-column-heading-sm font-display text-foreground">Takes</h3>
             <a
               href={`/api/export/scene/${sceneId}`}
               className="text-xs text-accent hover:underline"
@@ -213,7 +219,13 @@ export function TakesStrip({
       ) : null}
 
       {showPreview && activeTake ? (
-        <div className={layout === "combined" ? "grid gap-4 md:grid-cols-[1fr_auto]" : "space-y-3"}>
+        <div
+          className={
+            layout === "combined"
+              ? "grid gap-4 md:grid-cols-[1fr_auto]"
+              : "min-w-0 max-w-full space-y-3"
+          }
+        >
           {layout === "combined" ? (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
@@ -243,26 +255,30 @@ export function TakesStrip({
               />
 
               {activeTake.status === "failed" && activeTake.error_message ? (
-                <p className="rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
+                <p className="studio-contained-error rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
                   {activeTake.error_message}
                 </p>
               ) : null}
             </div>
           ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-muted">
+            <div className="flex min-w-0 max-w-full flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 text-sm text-muted">
                 Take {activeTake.take_number}
                 {activeTake.starred ? <span className="ml-2 text-amber-400">★</span> : null}
               </p>
-              <GenerationStatusLine
-                status={activeTake.status}
-                error={activeTake.error_message}
-              />
+              <div className="min-w-0 shrink">
+                <GenerationStatusLine
+                  status={activeTake.status}
+                  error={
+                    activeTake.status === "failed" ? null : activeTake.error_message
+                  }
+                />
+              </div>
             </div>
           )}
 
           <div
-            className={`mx-auto overflow-hidden rounded-lg border border-border bg-background ${previewFrameClass}`}
+            className={`mx-auto w-full max-w-full overflow-hidden rounded-lg border border-border bg-background ${previewFrameClass}`}
           >
             {activeTake.assetUrl ? (
               activeTake.media_type === "video" ? (
@@ -276,18 +292,24 @@ export function TakesStrip({
                 <img
                   src={activeTake.assetUrl}
                   alt={`${sceneTitle} take ${activeTake.take_number}`}
-                  className="h-full w-full object-contain"
+                  className={`h-full w-full ${
+                    isOutputPreview ? "object-cover" : "object-contain"
+                  }`}
                 />
               )
             ) : (
-              <div className="flex h-full min-h-[12rem] items-center justify-center text-xs text-muted">
+              <div
+                className={`flex w-full items-center justify-center text-xs text-muted ${
+                  isOutputPreview ? "h-full min-h-0" : "min-h-[12rem]"
+                }`}
+              >
                 {activeTake.status === "pending" ? "Generating…" : "No preview"}
               </div>
             )}
           </div>
 
           {layout === "preview" && activeTake.status === "failed" && activeTake.error_message ? (
-            <p className="rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
+            <p className="studio-contained-error rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
               {activeTake.error_message}
             </p>
           ) : null}
