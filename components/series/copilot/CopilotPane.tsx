@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ANTHROPIC_MODELS,
   DEFAULT_ANTHROPIC_MODEL,
@@ -77,6 +77,8 @@ interface CopilotPaneProps {
   onMessagesChange?: (messages: ChatMessageData[]) => void;
   getLiveContext?: () => CopilotContextPayload | null;
   onOutputEvent?: (event: CopilotOutputEvent) => void;
+  messageBanner?: ReactNode;
+  className?: string;
 }
 
 function toolMessageClass(message: ChatMessageData): string {
@@ -97,6 +99,8 @@ export function CopilotPane({
   onMessagesChange,
   getLiveContext,
   onOutputEvent,
+  messageBanner,
+  className,
 }: CopilotPaneProps) {
   const [internalMessages, setInternalMessages] = useState<ChatMessageData[]>(initialMessages);
   const messages = controlledMessages ?? internalMessages;
@@ -116,10 +120,12 @@ export function CopilotPane({
   const [copilotModel, setCopilotModel] = useState<string>(DEFAULT_ANTHROPIC_MODEL);
   const [imageModel, setImageModel] = useState(imageModels.find((m) => m.configured)?.id ?? "");
   const [mentionOpen, setMentionOpen] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messageLogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const log = messageLogRef.current;
+    if (!log) return;
+    log.scrollTop = log.scrollHeight;
   }, [messages, streaming]);
 
   async function handleSend() {
@@ -308,8 +314,12 @@ export function CopilotPane({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-3 overflow-y-auto pr-2">
+    <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${className ?? ""}`}>
+      <div
+        ref={messageLogRef}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1"
+      >
+        {messageBanner ? <div className="space-y-3">{messageBanner}</div> : null}
         {messages.length === 0 ? (
           <p className="text-sm text-muted">
             Your production partner — ask anything about this series, rewrite scenes, generate storyboards,
@@ -349,10 +359,9 @@ export function CopilotPane({
             </div>
           ))
         )}
-        <div ref={bottomRef} />
       </div>
 
-      <div className="mt-4 space-y-3 border-t border-border pt-4">
+      <div className="shrink-0 space-y-3 border-t border-border bg-surface pt-3">
         <div className="grid grid-cols-2 gap-2">
           <select
             value={copilotModel}

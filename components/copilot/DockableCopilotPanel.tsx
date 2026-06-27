@@ -6,7 +6,7 @@ import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvid
 import { CanonMemoryPrompt } from "@/components/copilot/CanonMemoryPrompt";
 
 function PanelChrome({
-  children,
+  body,
   onCollapse,
   dock,
   mode,
@@ -14,7 +14,7 @@ function PanelChrome({
   onModeChange,
   viewLabel,
 }: {
-  children: React.ReactNode;
+  body: React.ReactNode;
   onCollapse: () => void;
   dock: "left" | "right";
   mode: "docked" | "float";
@@ -23,7 +23,7 @@ function PanelChrome({
   viewLabel?: string;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Co-pilot</p>
@@ -60,7 +60,7 @@ function PanelChrome({
           </button>
         </div>
       </div>
-      {children}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{body}</div>
     </div>
   );
 }
@@ -123,6 +123,36 @@ export function DockableCopilotPanel() {
 
   if (!active || prefs.collapsed) return null;
 
+  const messageBanner =
+    scopeType && scopeId && context ? (
+      <>
+        {suggestions.length > 0
+          ? suggestions.map((suggestion) => (
+              <div
+                key={suggestion.id}
+                className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-xs text-amber-100/90"
+              >
+                <span className="shrink-0">💡</span>
+                <p className="min-w-0 flex-1">{suggestion.message}</p>
+                <button
+                  type="button"
+                  onClick={() => dismissSuggestion(suggestion.id)}
+                  className="shrink-0 text-muted hover:text-foreground"
+                  aria-label="Dismiss suggestion"
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          : null}
+        <CanonMemoryPrompt
+          seriesId={context.seriesId}
+          messages={messages}
+          onSaved={bumpMessages}
+        />
+      </>
+    ) : null;
+
   const panelBody = !scopeType || !scopeId || !context ? (
     <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted">
       Open a series to start working with the co-pilot.
@@ -130,35 +160,7 @@ export function DockableCopilotPanel() {
   ) : loadingHistory ? (
     <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted">Loading…</div>
   ) : (
-    <div className="flex min-h-0 flex-1 flex-col px-3 pb-3">
-      {suggestions.length > 0 ? (
-        <div className="mb-3 space-y-2">
-          {suggestions.map((suggestion) => (
-            <div
-              key={suggestion.id}
-              className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-xs text-amber-100/90"
-            >
-              <span className="shrink-0">💡</span>
-              <p className="min-w-0 flex-1">{suggestion.message}</p>
-              <button
-                type="button"
-                onClick={() => dismissSuggestion(suggestion.id)}
-                className="shrink-0 text-muted hover:text-foreground"
-                aria-label="Dismiss suggestion"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <CanonMemoryPrompt
-        seriesId={context.seriesId}
-        messages={messages}
-        onSaved={bumpMessages}
-      />
-
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3 pt-2">
       <CopilotPane
         scopeType={scopeType}
         scopeId={scopeId}
@@ -170,6 +172,8 @@ export function DockableCopilotPanel() {
         onMessagesChange={setMessages}
         getLiveContext={getLiveContext}
         onOutputEvent={handleOutputEvent}
+        messageBanner={messageBanner}
+        className="min-h-0 flex-1"
       />
     </div>
   );
@@ -182,15 +186,14 @@ export function DockableCopilotPanel() {
       onDockChange={setDock}
       onModeChange={setMode}
       viewLabel={context?.workspace?.viewLabel}
-    >
-      {panelBody}
-    </PanelChrome>
+      body={panelBody}
+    />
   );
 
   if (prefs.mode === "float") {
     return (
       <div
-        className="fixed z-50 flex max-h-[min(720px,calc(100dvh-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-2xl"
+        className="fixed z-50 flex h-[min(720px,calc(100dvh-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-2xl"
         style={{
           width: prefs.width,
           left: prefs.floatX,
@@ -198,7 +201,7 @@ export function DockableCopilotPanel() {
         }}
       >
         <div
-          className="cursor-move border-b border-border px-3 py-1 text-[10px] text-muted"
+          className="shrink-0 cursor-move border-b border-border px-3 py-1 text-[10px] text-muted"
           onPointerDown={(e) => {
             dragRef.current = {
               startX: e.clientX,
@@ -220,14 +223,14 @@ export function DockableCopilotPanel() {
         >
           Drag to move
         </div>
-        {chrome}
+        <div className="min-h-0 flex-1 overflow-hidden">{chrome}</div>
       </div>
     );
   }
 
   return (
     <aside
-      className={`relative flex min-h-0 shrink-0 flex-col border-border bg-surface ${
+      className={`relative flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-border bg-surface ${
         prefs.dock === "left" ? "border-r" : "border-l"
       }`}
       style={{ width: prefs.width }}
