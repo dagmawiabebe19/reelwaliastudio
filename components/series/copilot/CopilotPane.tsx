@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { COPILOT_MODELS } from "@/lib/ai/copilot/constants";
+import { COPILOT_MODELS, DEFAULT_COPILOT_MODEL } from "@/lib/ai/copilot/constants";
 import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 
 export type ChatMessageData = {
@@ -50,7 +50,7 @@ export function CopilotPane({
   const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [copilotModel, setCopilotModel] = useState<string>(COPILOT_MODELS[0].id);
+  const [copilotModel, setCopilotModel] = useState<string>(DEFAULT_COPILOT_MODEL);
   const [imageModel, setImageModel] = useState(imageModels.find((m) => m.configured)?.id ?? "");
   const [mentionOpen, setMentionOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);

@@ -6,7 +6,7 @@ import { getModelById, isModelConfigured } from "@/lib/ai/registry";
 import { createIngredient } from "@/lib/db/ingredients";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
 import { createScene, getScene, updateScene } from "@/lib/db/scenes";
-import { COPILOT_MODELS } from "@/lib/ai/copilot/constants";
+import { resolveCopilotModel } from "@/lib/ai/copilot/resolve-model";
 import {
   buildSystemPrompt,
   COPILOT_TOOLS,
@@ -157,10 +157,7 @@ export async function runCopilotStream(input: {
 
   const history = await listChatMessages(input.sessionId);
   const client = new Anthropic({ apiKey });
-  const model =
-    input.modelId ??
-    process.env.ANTHROPIC_MODEL?.trim() ??
-    COPILOT_MODELS[0].id;
+  const model = resolveCopilotModel(input.modelId);
 
   const messages: Anthropic.MessageParam[] = history
     .filter((m) => m.role === "user" || m.role === "assistant")
