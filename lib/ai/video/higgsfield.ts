@@ -1,14 +1,16 @@
 import "server-only";
 
+import { getEnv, notConfiguredResult, pendingIntegrationResult } from "@/lib/ai/shared";
 import type { GenerateVideoInput, GenerationResult, VideoAdapter } from "./types";
 
-const notImplemented: VideoAdapter = async () => {
-  throw new Error("higgsfield adapter: not implemented — TODO wire Higgsfield API");
+export const generateVideo: VideoAdapter = async (input) => {
+  void input;
+  if (!getEnv("HIGGSFIELD_API_KEY")) {
+    return notConfiguredResult("Higgsfield", "HIGGSFIELD_API_KEY");
+  }
+  return pendingIntegrationResult("Higgsfield");
 };
 
-export const generateVideo: VideoAdapter = notImplemented;
-
 export async function runHiggsfield(input: GenerateVideoInput): Promise<GenerationResult> {
-  void process.env.HIGGSFIELD_API_KEY;
   return generateVideo(input);
 }

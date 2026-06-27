@@ -1,14 +1,16 @@
 import "server-only";
 
+import { getEnv, notConfiguredResult, pendingIntegrationResult } from "@/lib/ai/shared";
 import type { GenerateVideoInput, GenerationResult, VideoAdapter } from "./types";
 
-const notImplemented: VideoAdapter = async () => {
-  throw new Error("seedance adapter: not implemented — TODO wire Seedance API");
+export const generateVideo: VideoAdapter = async (input) => {
+  void input;
+  if (!getEnv("FAL_KEY")) {
+    return notConfiguredResult("Seedance", "FAL_KEY");
+  }
+  return pendingIntegrationResult("Seedance");
 };
 
-export const generateVideo: VideoAdapter = notImplemented;
-
 export async function runSeedance(input: GenerateVideoInput): Promise<GenerationResult> {
-  void process.env.FAL_KEY;
   return generateVideo(input);
 }

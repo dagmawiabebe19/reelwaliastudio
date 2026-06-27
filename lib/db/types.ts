@@ -20,4 +20,10 @@ export type {
   TablesInsert,
   TablesUpdate,
   Take,
+  TakeMediaType,
+  TakeStatus,
+  ChatMessage,
+  ChatSession,
+  ChatScopeType,
+  EpisodeExport,
 } from "@/lib/db/database.types";

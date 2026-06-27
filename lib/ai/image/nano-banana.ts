@@ -1,14 +1,16 @@
 import "server-only";
 
+import { getEnv, notConfiguredResult, pendingIntegrationResult } from "@/lib/ai/shared";
 import type { GenerateImageInput, GenerationResult, ImageAdapter } from "./types";
 
-const notImplemented: ImageAdapter = async () => {
-  throw new Error("nano-banana adapter: not implemented — TODO wire Nano Banana API");
+export const generateImage: ImageAdapter = async (input) => {
+  void input;
+  if (!getEnv("FAL_KEY")) {
+    return notConfiguredResult("Nano Banana", "FAL_KEY");
+  }
+  return pendingIntegrationResult("Nano Banana");
 };
 
-export const generateImage: ImageAdapter = notImplemented;
-
 export async function runNanoBanana(input: GenerateImageInput): Promise<GenerationResult> {
-  void process.env.REPLICATE_API_TOKEN;
   return generateImage(input);
 }

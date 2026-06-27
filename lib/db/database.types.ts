@@ -178,6 +178,51 @@ export type Database = {
         };
         Relationships: [];
       };
+      episode_exports: {
+        Row: {
+          id: string;
+          episode_id: string;
+          asset_id: string | null;
+          status: string;
+          error_message: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          episode_id: string;
+          asset_id?: string | null;
+          status?: string;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          episode_id?: string;
+          asset_id?: string | null;
+          status?: string;
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "episode_exports_episode_id_fkey";
+            columns: ["episode_id"];
+            isOneToOne: false;
+            referencedRelation: "episodes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "episode_exports_asset_id_fkey";
+            columns: ["asset_id"];
+            isOneToOne: false;
+            referencedRelation: "assets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       episodes: {
         Row: {
           id: string;
@@ -493,6 +538,7 @@ export type Database = {
           duration_seconds: number | null;
           starred: boolean;
           status: Database["public"]["Enums"]["take_status"];
+          error_message: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -507,6 +553,7 @@ export type Database = {
           duration_seconds?: number | null;
           starred?: boolean;
           status?: Database["public"]["Enums"]["take_status"];
+          error_message?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -521,6 +568,7 @@ export type Database = {
           duration_seconds?: number | null;
           starred?: boolean;
           status?: Database["public"]["Enums"]["take_status"];
+          error_message?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -556,7 +604,7 @@ export type Database = {
       scene_status: "storyboard" | "active" | "archived";
       series_status: "in_progress" | "validated" | "released";
       take_media_type: "image" | "video";
-      take_status: "draft" | "ready" | "archived";
+      take_status: "draft" | "ready" | "archived" | "pending" | "failed";
     };
     CompositeTypes: Record<string, never>;
   };
@@ -577,6 +625,12 @@ export type Series = Tables<"series">;
 export type Episode = Tables<"episodes">;
 export type Scene = Tables<"scenes">;
 export type Take = Tables<"takes">;
+export type ChatMessage = Tables<"chat_messages">;
+export type ChatSession = Tables<"chat_sessions">;
+export type EpisodeExport = Tables<"episode_exports">;
+export type ChatScopeType = Enums<"chat_scope_type">;
+export type TakeStatus = Enums<"take_status">;
+export type TakeMediaType = Enums<"take_media_type">;
 export type Ingredient = Tables<"ingredients">;
 export type AudioLine = Tables<"audio_lines">;
 export type Asset = Tables<"assets">;

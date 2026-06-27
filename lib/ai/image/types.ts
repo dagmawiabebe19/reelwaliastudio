@@ -1,4 +1,5 @@
 import type { AspectRatio, SafetyTag } from "@/lib/ai/registry";
+import type { GenerationResult } from "@/lib/ai/shared";
 
 export interface GenerateImageInput {
   prompt: string;
@@ -9,10 +10,6 @@ export interface GenerateImageInput {
   safety: SafetyTag;
 }
 
-export interface GenerationResult {
-  assetUrls: string[];
-  providerJobId: string | null;
-  costEstimate: number | null;
-}
+export type { GenerationResult };
 
 export type ImageAdapter = (input: GenerateImageInput) => Promise<GenerationResult>;

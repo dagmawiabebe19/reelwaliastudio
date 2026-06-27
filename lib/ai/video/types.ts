@@ -1,4 +1,5 @@
 import type { AspectRatio } from "@/lib/ai/registry";
+import type { GenerationResult } from "@/lib/ai/shared";
 
 export interface GenerateVideoInput {
   prompt: string;
@@ -8,10 +9,6 @@ export interface GenerateVideoInput {
   resolution: string;
 }
 
-export interface GenerationResult {
-  assetUrls: string[];
-  providerJobId: string | null;
-  costEstimate: number | null;
-}
+export type { GenerationResult };
 
 export type VideoAdapter = (input: GenerateVideoInput) => Promise<GenerationResult>;

@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { SeriesWorkspace } from "@/components/series/SeriesWorkspace";
+import { getPublicModelCatalog } from "@/lib/ai/registry";
+import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
 import { getIngredientCounts, listIngredientsBySeries } from "@/lib/db/ingredients";
 import { listEpisodesBySeries } from "@/lib/db/episodes";
 import { getSeries, getSeriesStats } from "@/lib/db/series";
@@ -12,7 +14,7 @@ interface SeriesPageProps {
 export default async function SeriesPage({ params }: SeriesPageProps) {
   const { id } = await params;
 
-  const [series, stats, ingredientsRaw, counts, activeEpisodes, archivedEpisodes] =
+  const [series, stats, ingredientsRaw, counts, activeEpisodes, archivedEpisodes, chatSession] =
     await Promise.all([
       getSeries(id),
       getSeriesStats(id),
@@ -20,9 +22,13 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       getIngredientCounts(id),
       listEpisodesBySeries(id, "active"),
       listEpisodesBySeries(id, "archived"),
+      getOrCreateChatSession("series", id),
     ]);
 
   if (!series) notFound();
+
+  const chatMessages = await listChatMessages(chatSession.id);
+  const models = getPublicModelCatalog();
 
   const ingredientsWithUrls = await resolveAssetUrls(
     ingredientsRaw.map((i) => ({
@@ -56,6 +62,15 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       ingredients={ingredients}
       activeEpisodes={activeEpisodes}
       archivedEpisodes={archivedEpisodes}
+      models={models}
+      chatMessages={chatMessages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        tool_name: m.tool_name,
+        tool_args: m.tool_args as Record<string, unknown> | null,
+        tool_result: m.tool_result as Record<string, unknown> | null,
+      }))}
     />
   );
 }

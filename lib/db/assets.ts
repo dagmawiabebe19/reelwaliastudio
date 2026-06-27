@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "crypto";
 import { getActiveUserId } from "@/lib/auth/active-user";
 import { getDbClient } from "@/lib/db/client";
 import type { Asset, AssetMediaType, TablesInsert } from "@/lib/db/database.types";
@@ -11,6 +12,9 @@ export async function createAsset(input: {
   width?: number | null;
   height?: number | null;
   durationMs?: number | null;
+  source?: "uploaded" | "generated";
+  model?: string | null;
+  prompt?: string | null;
 }): Promise<Asset> {
   const supabase = await getDbClient();
   const ownerId = await getActiveUserId();
@@ -22,7 +26,9 @@ export async function createAsset(input: {
     width: input.width ?? null,
     height: input.height ?? null,
     duration_ms: input.durationMs ?? null,
-    source: "uploaded",
+    source: input.source ?? "uploaded",
+    model: input.model ?? null,
+    prompt: input.prompt ?? null,
   };
 
   const { data, error } = await supabase.from("assets").insert(payload).select().single();
@@ -42,4 +48,13 @@ export async function getAsset(id: string): Promise<Asset | null> {
 
   if (error) throw new Error(error.message);
   return data;
+}
+
+export function buildGeneratedAssetPath(
+  ownerId: string,
+  sceneId: string,
+  ext: string,
+  uuid: string = randomUUID(),
+): string {
+  return `${ownerId}/generated/${sceneId}/${uuid}.${ext}`;
 }

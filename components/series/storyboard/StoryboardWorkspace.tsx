@@ -10,10 +10,13 @@ import {
   updateSceneAction,
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/actions";
 import { ScenePromptEditor, type MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
+import { GenerationPanel, type ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
+import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { Button } from "@/components/ui/Button";
 import type { Orientation } from "@/lib/db/types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 import { ACT_GROUPS } from "@/lib/storyboard/constants";
+import { effectiveOrientation } from "@/lib/storyboard/orientation";
 
 interface StoryboardWorkspaceProps {
   seriesId: string;
@@ -21,6 +24,8 @@ interface StoryboardWorkspaceProps {
   defaultOrientation: Orientation;
   scenes: SceneWithBindings[];
   ingredients: MentionIngredient[];
+  models: ModelCatalogEntry[];
+  takesByScene: Record<string, TakeCardData[]>;
 }
 
 export function StoryboardWorkspace({
@@ -29,6 +34,8 @@ export function StoryboardWorkspace({
   defaultOrientation,
   scenes,
   ingredients,
+  models,
+  takesByScene,
 }: StoryboardWorkspaceProps) {
   const router = useRouter();
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
@@ -216,6 +223,8 @@ export function StoryboardWorkspace({
             episodeId={episodeId}
             defaultOrientation={defaultOrientation}
             ingredients={ingredients}
+            models={models}
+            takes={takesByScene[selectedScene.id] ?? []}
           />
         ) : (
           <p className="text-sm text-muted">Select a scene to edit.</p>
@@ -231,12 +240,16 @@ function SceneDetailPanel({
   episodeId,
   defaultOrientation,
   ingredients,
+  models,
+  takes,
 }: {
   scene: SceneWithBindings;
   seriesId: string;
   episodeId: string;
   defaultOrientation: Orientation;
   ingredients: MentionIngredient[];
+  models: ModelCatalogEntry[];
+  takes: TakeCardData[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -300,6 +313,22 @@ function SceneDetailPanel({
         initialPrompt={scene.prompt ?? ""}
         ingredients={ingredients}
         boundIngredientIds={boundIds}
+      />
+
+      <GenerationPanel
+        sceneId={scene.id}
+        seriesId={seriesId}
+        episodeId={episodeId}
+        models={models}
+      />
+
+      <TakesStrip
+        sceneId={scene.id}
+        seriesId={seriesId}
+        episodeId={episodeId}
+        sceneTitle={scene.title}
+        orientation={effectiveOrientation(scene.orientation, defaultOrientation)}
+        takes={takes}
       />
     </div>
   );

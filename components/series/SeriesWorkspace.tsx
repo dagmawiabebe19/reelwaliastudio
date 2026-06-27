@@ -6,7 +6,7 @@ import { SeriesBriefEditor } from "@/components/series/SeriesBriefEditor";
 import { StatTiles } from "@/components/series/StatTiles";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { ViewToggle } from "@/components/series/ViewToggle";
-import { StudioShell } from "@/components/series/StudioShell";
+import { SeriesStudioShell } from "@/components/series/SeriesStudioShell";
 import {
   IngredientsSection,
   type IngredientCardData,
@@ -16,6 +16,8 @@ import {
   type EpisodeCardData,
 } from "@/components/series/episodes/EpisodesSection";
 import type { Orientation, SeriesStatus } from "@/lib/db/types";
+import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
+import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 
 type Tab = "ingredients" | "episodes" | "brief";
 
@@ -50,6 +52,8 @@ interface SeriesWorkspaceProps {
   ingredients: IngredientCardData[];
   activeEpisodes: EpisodeCardData[];
   archivedEpisodes: EpisodeCardData[];
+  models: ModelCatalogEntry[];
+  chatMessages: ChatMessageData[];
 }
 
 export function SeriesWorkspace({
@@ -59,6 +63,8 @@ export function SeriesWorkspace({
   ingredients,
   activeEpisodes,
   archivedEpisodes,
+  models,
+  chatMessages,
 }: SeriesWorkspaceProps) {
   const [view, setView] = useState<"classic" | "studio">("classic");
   const [tab, setTab] = useState<Tab>("ingredients");
@@ -92,7 +98,19 @@ export function SeriesWorkspace({
       </header>
 
       {view === "studio" ? (
-        <StudioShell />
+        <SeriesStudioShell
+          seriesId={series.id}
+          seriesTitle={series.title}
+          defaultOrientation={series.default_orientation}
+          briefMarkdown={series.brief_markdown}
+          ingredients={ingredients.map((i) => ({
+            id: i.id,
+            ref_tag: i.ref_tag,
+            name: i.name,
+          }))}
+          models={models}
+          chatMessages={chatMessages}
+        />
       ) : (
         <>
           <nav className="flex gap-1 border-b border-border">
