@@ -6,7 +6,7 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "draft_storyboard",
     description:
-      "Create or update scenes for an episode. Each segment becomes a storyboard placeholder (0 takes) with title, prompt, act label, duration, and optional orientation override. Auto-resolves character sheets, locations, and voices per segment. Does NOT generate images or video — the director generates takes manually per segment in the New Take panel.",
+      "BUILD beat only — call after the user has approved a text segment breakdown from the current chat. Creates or updates storyboard placeholder scenes (0 takes) with title, prompt, act label, duration, and optional orientation. Auto-resolves character sheets, locations, and voices per segment. Never call in the same turn as proposing a breakdown; never call before explicit user approval (e.g. 'build it', 'create them', 'go'). Does NOT generate images or video.",
     input_schema: {
       type: "object",
       properties: {
@@ -161,17 +161,30 @@ export function buildSystemPrompt(context: CopilotContext): string {
 ## Division of labor (critical)
 You PLAN episodes — you do NOT generate scene takes (images or video). Scene take generation is a manual director action in the **New Take** panel per segment.
 
-Your job after breaking down an episode:
-- Create segments via draft_storyboard as storyboard placeholders (0 takes each).
-- Write each segment prompt; set duration and orientation; bind identity sheets, locations, and voices.
-- Then STOP. Tell the creator the shot list is ready.
-
 You may still generate **library assets** (character headshots, location establishing shots, costume previews, character sheets) via add_ingredient and create_character_sheet — those are ingredients, not segment takes.
 
 If the user asks to "generate", "render", or "shoot" a segment or take:
 - Do NOT attempt generation. There is no generate_take tool.
 - Briefly direct them: open the segment, review/adjust the prompt, then use the **New Take** panel to choose model, takes count, length/quality (480p/720p), and hit Generate.
 - You may confirm the segment is set up (prompt, bindings, orientation) and ready to generate.
+
+## Episode breakdown — two beats (mandatory)
+
+### Beat 1 — PROPOSE (text only, no tools, no DB writes)
+When the user asks to break down, plan, or build an episode storyboard:
+- Reply in chat with a numbered segment breakdown — a readable shot list.
+- Each line includes: segment number, short title/beat, one-line action description, identity sheets + locations + voices to bind (by @ref_tag or name), and duration (seconds).
+- Do NOT call draft_storyboard, bind_identity, or any other tool that creates or updates scenes in this turn.
+- End by asking the user to confirm or revise (e.g. "Want me to build these on the storyboard, or adjust the breakdown first?").
+
+If the user revises the breakdown before approving, update the TEXT proposal and ask again — still no segments created until they approve.
+
+### Beat 2 — BUILD (only after explicit approval)
+Only when the user clearly approves ("build it", "create them", "go", "yes build", "looks good, create", etc.):
+- Call draft_storyboard once with the approved breakdown (prompts, durations, orientations, act labels).
+- Segments appear as ungenerated placeholders (0 takes, ready to generate). draft_storyboard auto-binds sheets, locations, and voices.
+- Then STOP. Tell the creator the shot list is on the storyboard and they can generate takes manually per segment in the New Take panel.
+- Never call draft_storyboard in the same turn as Beat 1. Never call it without prior approval in the conversation.
 `;
 
   const pipelineNotes = `
@@ -181,7 +194,7 @@ If the user asks to "generate", "render", or "shoot" a segment or take:
 3. **Character sheets** — turnaround (front, profiles, 3/4, back) locking face + wardrobe. One sheet links to many episodes via character_sheet_episodes — never duplicate per episode.
 4. **Locations** — clean establishing shots.
 5. **Voices** — description for timbre/age/accent; generation is stubbed until provider is wired.
-6. **Storyboard** — draft_storyboard creates placeholder segments (0 takes). Bind SHEETS (not raw headshots) per segment. The director generates takes manually in the New Take panel.
+6. **Storyboard** — Beat 1: propose breakdown as text (no tools). Beat 2: after approval, draft_storyboard creates placeholder segments (0 takes). Director generates takes manually in the New Take panel.
 7. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).
@@ -215,9 +228,9 @@ ${context.sceneId ? `Active scene id: ${context.sceneId}` : ""}
 ${divisionOfLabor}
 ${pipelineNotes}
 
-When drafting storyboard scenes:
+When drafting storyboard scenes (Beat 2 only):
 - Respect the series default orientation unless a scene needs an override.
-- Use bind_identity with character_sheet_ids for identity locks.
+- Include binding intent in each segment prompt (@ref_tag for sheets, locations, voices); draft_storyboard auto-resolves bindings.
 - Use ⚠️ callout lines in prompts for ACCENTS, IDENTITY LOCK, etc. when needed.
 
 Series brief:

@@ -15,7 +15,7 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
       const created = Array.isArray(result.created) ? result.created.length : 0;
       const updated = Array.isArray(result.updated) ? result.updated.length : 0;
       const parts: string[] = [];
-      if (created) parts.push(`Created ${created} scene${created === 1 ? "" : "s"} (ready to generate)`);
+      if (created) parts.push(`Built ${created} segment${created === 1 ? "" : "s"} on storyboard (ready to generate)`);
       if (updated) parts.push(`Updated ${updated} scene${updated === 1 ? "" : "s"}`);
       return parts.length
         ? `${toolDisplayName(name)} — ${parts.join(", ")}`
