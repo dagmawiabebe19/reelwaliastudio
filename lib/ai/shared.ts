@@ -18,6 +18,8 @@ export interface GenerationResult {
   costEstimate: number | null;
   configured: boolean;
   error?: string;
+  /** Populated by video adapters when duration is inferred from output (e.g. Higgsfield DoP). */
+  videoDurationSeconds?: number | null;
 }
 
 export function notConfiguredResult(provider: string, envVar: string): GenerationResult {
@@ -60,6 +62,7 @@ export function successResult(input: {
   persistedAssets?: PersistedAssetRef[];
   providerJobId?: string | null;
   costEstimate?: number | null;
+  videoDurationSeconds?: number | null;
 }): GenerationResult {
   return {
     assetUrls: input.assetUrls,
@@ -67,5 +70,6 @@ export function successResult(input: {
     providerJobId: input.providerJobId ?? null,
     costEstimate: input.costEstimate ?? null,
     configured: true,
+    videoDurationSeconds: input.videoDurationSeconds,
   };
 }

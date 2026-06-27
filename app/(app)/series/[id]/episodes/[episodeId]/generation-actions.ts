@@ -5,12 +5,22 @@ import { revalidatePath } from "next/cache";
 import { logGenerationError } from "@/lib/ai/generation/errors";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
 import { getPublicModelCatalog } from "@/lib/ai/registry";
+import { listHiggsfieldMotions } from "@/lib/ai/video/higgsfield";
 import { listTakesByScene, setTakeStarred } from "@/lib/db/takes";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { resolveAssetUrl } from "@/lib/storage/resolve-urls";
 
 export async function getModelCatalogAction(kind?: "image" | "video") {
   return getPublicModelCatalog(kind);
+}
+
+export async function listHiggsfieldMotionsAction() {
+  try {
+    const motions = await listHiggsfieldMotions();
+    return { motions };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to load Higgsfield motions." };
+  }
 }
 
 export async function listTakesAction(sceneId: string) {
@@ -44,6 +54,9 @@ export async function generateTakesAction(input: {
   count: number;
   resolution: string;
   durationSeconds?: number;
+  dopModel?: string;
+  motionId?: string | null;
+  motionStrength?: number;
 }) {
   try {
     const takeIds = await createPendingTakes(input);

@@ -311,6 +311,8 @@ async function executeTool(
       let count = typeof args.count === "number" ? args.count : 1;
       const resolution = String(args.resolution ?? "720p");
       const durationSeconds = typeof args.duration === "number" ? args.duration : 6;
+      const dopModel = args.dop_model != null ? String(args.dop_model) : undefined;
+      const motionId = args.motion_id != null ? String(args.motion_id) : undefined;
 
       const resolved = resolveGenerationModelId({
         requested: args.model != null ? String(args.model) : null,
@@ -347,7 +349,9 @@ async function executeTool(
         modelId,
         count,
         resolution,
-        durationSeconds,
+        durationSeconds: modelId === "higgsfield" ? undefined : durationSeconds,
+        dopModel,
+        motionId,
       });
 
       const onProgress: GenerationProgressCallback = (message, step, total) => {
@@ -360,7 +364,17 @@ async function executeTool(
       };
 
       const outcome = await executeGenerationJob(
-        { sceneId, seriesId, episodeId, modelId, count, resolution, durationSeconds },
+        {
+          sceneId,
+          seriesId,
+          episodeId,
+          modelId,
+          count,
+          resolution,
+          durationSeconds: modelId === "higgsfield" ? undefined : durationSeconds,
+          dopModel,
+          motionId,
+        },
         takeIds,
         onProgress,
       );

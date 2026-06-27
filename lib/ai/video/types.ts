@@ -4,10 +4,15 @@ import type { GenerationResult } from "@/lib/ai/shared";
 export interface GenerateVideoInput {
   prompt: string;
   startImageUrl: string | null;
+  startImageBucket?: string | null;
+  startImageStoragePath?: string | null;
   durationSeconds: number;
   aspectRatio: AspectRatio;
   resolution: string;
   sceneId: string;
+  dopModel?: string;
+  motionId?: string | null;
+  motionStrength?: number;
 }
 
 export type { GenerationResult };

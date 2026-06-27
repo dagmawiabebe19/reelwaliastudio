@@ -1,10 +1,14 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { generateTakesAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
+import {
+  generateTakesAction,
+  listHiggsfieldMotionsAction,
+} from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import { Button } from "@/components/ui/Button";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
+import { DOP_MODEL_OPTIONS } from "@/lib/ai/video/higgsfield-constants";
 
 export type ModelCatalogEntry = {
   id: string;
@@ -12,6 +16,12 @@ export type ModelCatalogEntry = {
   kind: "image" | "video" | "voice";
   safety: "sfw" | "nsfw";
   configured: boolean;
+};
+
+type HiggsfieldMotion = {
+  id: string;
+  name: string;
+  description: string | null;
 };
 
 interface GenerationPanelProps {
@@ -47,12 +57,37 @@ export function GenerationPanel({
   const [count, setCount] = useState(1);
   const [resolution, setResolution] = useState<"480p" | "720p">("720p");
   const [duration, setDuration] = useState<6 | 7 | 8>(6);
+  const [dopModel, setDopModel] = useState<string>(DOP_MODEL_OPTIONS[0].id);
+  const [motionId, setMotionId] = useState<string>("");
+  const [motions, setMotions] = useState<HiggsfieldMotion[]>([]);
+  const [motionsError, setMotionsError] = useState<string | null>(null);
   const [startedMessage, setStartedMessage] = useState<string | null>(null);
 
   const selected = allModels.find((m) => m.id === modelId);
   const isVideo = selected?.kind === "video";
+  const isHiggsfield = modelId === "higgsfield";
   const videoSourceTake = useMemo(() => resolveVideoSourceTake(takes), [takes]);
   const canGenerateVideo = Boolean(videoSourceTake?.assetUrl);
+
+  useEffect(() => {
+    if (!isHiggsfield) return;
+
+    let cancelled = false;
+    void listHiggsfieldMotionsAction().then((result) => {
+      if (cancelled) return;
+      if ("error" in result && result.error) {
+        setMotions([]);
+        setMotionsError(result.error);
+        return;
+      }
+      setMotionsError(null);
+      setMotions(result.motions ?? []);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isHiggsfield]);
 
   function handleGenerate() {
     if (!modelId || !selected?.configured) return;
@@ -67,7 +102,10 @@ export function GenerationPanel({
         modelId,
         count: isVideo ? 1 : count,
         resolution,
-        durationSeconds: isVideo ? duration : undefined,
+        durationSeconds: isVideo && !isHiggsfield ? duration : undefined,
+        dopModel: isHiggsfield ? dopModel : undefined,
+        motionId: isHiggsfield && motionId ? motionId : undefined,
+        motionStrength: isHiggsfield && motionId ? 1 : undefined,
       });
 
       if ("error" in result && result.error) {
@@ -122,18 +160,56 @@ export function GenerationPanel({
               )}
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs text-muted">Duration</label>
-              <select
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value) as 6 | 7 | 8)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-              >
-                <option value={6}>6s</option>
-                <option value={7}>7s</option>
-                <option value={8}>8s</option>
-              </select>
-            </div>
+            {isHiggsfield ? (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-muted">DoP variant</label>
+                  <select
+                    value={dopModel}
+                    onChange={(e) => setDopModel(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    {DOP_MODEL_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-muted">Camera motion (optional)</label>
+                  <select
+                    value={motionId}
+                    onChange={(e) => setMotionId(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">None</option>
+                    {motions.map((motion) => (
+                      <option key={motion.id} value={motion.id}>
+                        {motion.name}
+                      </option>
+                    ))}
+                  </select>
+                  {motionsError ? (
+                    <p className="mt-1 text-xs text-muted">{motionsError}</p>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="mb-1 block text-xs text-muted">Duration</label>
+                <select
+                  value={duration}
+                  onChange={(e) => setDuration(Number(e.target.value) as 6 | 7 | 8)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value={6}>6s</option>
+                  <option value={7}>7s</option>
+                  <option value={8}>8s</option>
+                </select>
+              </div>
+            )}
           </>
         ) : (
           <div>
@@ -149,17 +225,19 @@ export function GenerationPanel({
           </div>
         )}
 
-        <div>
-          <label className="mb-1 block text-xs text-muted">Resolution</label>
-          <select
-            value={resolution}
-            onChange={(e) => setResolution(e.target.value as "480p" | "720p")}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-          >
-            <option value="480p">480p</option>
-            <option value="720p">720p</option>
-          </select>
-        </div>
+        {!isHiggsfield ? (
+          <div>
+            <label className="mb-1 block text-xs text-muted">Resolution</label>
+            <select
+              value={resolution}
+              onChange={(e) => setResolution(e.target.value as "480p" | "720p")}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            >
+              <option value="480p">480p</option>
+              <option value="720p">720p</option>
+            </select>
+          </div>
+        ) : null}
       </div>
 
       <Button

@@ -92,7 +92,7 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "generate_take",
     description:
-      "Trigger image or video generation for a scene. Image models use identity-lock references. Video models (higgsfield, seedance) animate a ready storyboard image take — star a take or use the latest ready image. Pass duration (6/7/8) for video.",
+      "Trigger image or video generation for a scene. Image models use identity-lock references. Video models animate a ready storyboard image take — star a take or use the latest ready image. For seedance pass duration (6/7/8). For higgsfield (DoP) optional dop_model (dop-turbo, dop-lite, dop-standard) and motion_id from list motions — duration is not configurable.",
     input_schema: {
       type: "object",
       properties: {
@@ -104,7 +104,20 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
         },
         count: { type: "number", description: "Image takes only (1–5). Video always generates 1 take." },
         resolution: { type: "string", enum: ["480p", "720p"] },
-        duration: { type: "number", enum: [6, 7, 8], description: "Required for video models." },
+        duration: {
+          type: "number",
+          enum: [6, 7, 8],
+          description: "Seedance only — not used for higgsfield DoP.",
+        },
+        dop_model: {
+          type: "string",
+          enum: ["dop-turbo", "dop-lite", "dop-standard"],
+          description: "Higgsfield DoP variant. Defaults to dop-turbo.",
+        },
+        motion_id: {
+          type: "string",
+          description: "Optional Higgsfield camera motion id (from getMotions).",
+        },
       },
       required: ["scene_id"],
     },

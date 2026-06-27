@@ -28,6 +28,9 @@ export interface GenerateTakeParams {
   count: number;
   resolution: string;
   durationSeconds?: number;
+  dopModel?: string;
+  motionId?: string | null;
+  motionStrength?: number;
 }
 
 export interface TakeGenerationOutcome {
@@ -109,6 +112,7 @@ export async function createPendingTakes(params: GenerateTakeParams): Promise<st
   if (params.count < 1 || params.count > 5) throw new Error("Take count must be between 1 and 5.");
 
   const isVideo = model.kind === "video";
+  const isHiggsfield = params.modelId === "higgsfield";
   if (isVideo) {
     if (params.count > 1) {
       throw new Error("Video generation supports one take at a time.");
@@ -127,7 +131,8 @@ export async function createPendingTakes(params: GenerateTakeParams): Promise<st
       mediaType: isVideo ? "video" : "image",
       model: params.modelId,
       resolution: params.resolution,
-      durationSeconds: isVideo ? (params.durationSeconds ?? 6) : null,
+      durationSeconds:
+        isVideo && !isHiggsfield ? (params.durationSeconds ?? 6) : isVideo ? null : null,
       status: "pending",
     });
     takeIds.push(take.id);
@@ -167,11 +172,15 @@ export async function executeGenerationJob(
 
     const refImageUrls = await resolveIdentityLockUrlsFromScene(scene);
     const isVideo = model.kind === "video";
+    const isHiggsfield = params.modelId === "higgsfield";
     const total = takeIds.length;
-    const durationSeconds = isVideo ? (params.durationSeconds ?? 6) : null;
+    const durationSeconds =
+      isVideo && !isHiggsfield ? (params.durationSeconds ?? 6) : null;
     const durationMs = durationSeconds != null ? durationSeconds * 1000 : null;
 
     let startImageUrl: string | null = null;
+    let startImageBucket: string | null = null;
+    let startImageStoragePath: string | null = null;
     if (isVideo) {
       const videoCheck = await validateVideoGeneration(params.sceneId);
       if (!videoCheck.ok) {
@@ -179,6 +188,8 @@ export async function executeGenerationJob(
         return buildOutcome(takeIds);
       }
       startImageUrl = videoCheck.startImageUrl;
+      startImageBucket = videoCheck.sourceTake.bucket;
+      startImageStoragePath = videoCheck.sourceTake.storagePath;
     }
 
     onProgress?.(
@@ -193,10 +204,15 @@ export async function executeGenerationJob(
         ? await runVideoModel(params.modelId, {
             prompt,
             startImageUrl,
+            startImageBucket,
+            startImageStoragePath,
             durationSeconds: params.durationSeconds ?? 6,
             aspectRatio,
             resolution: params.resolution,
             sceneId: params.sceneId,
+            dopModel: params.dopModel,
+            motionId: params.motionId,
+            motionStrength: params.motionStrength,
           })
         : await runImageModel(params.modelId, {
             prompt,
@@ -239,6 +255,10 @@ export async function executeGenerationJob(
       );
       const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
       const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
+      const takeDurationSeconds =
+        result.videoDurationSeconds ?? durationSeconds ?? null;
+      const takeDurationMs =
+        takeDurationSeconds != null ? takeDurationSeconds * 1000 : durationMs;
 
       try {
         if (persisted) {
@@ -248,13 +268,13 @@ export async function executeGenerationJob(
             mediaType: persisted.mediaType,
             width: persisted.width ?? null,
             height: persisted.height ?? null,
-            durationMs: isVideo ? durationMs : null,
+            durationMs: isVideo ? takeDurationMs : null,
             source: "generated",
             model: params.modelId,
             prompt,
           });
 
-          await markTakeReady(takeId, asset.id, { duration_seconds: durationSeconds });
+          await markTakeReady(takeId, asset.id, { duration_seconds: takeDurationSeconds });
           continue;
         }
 
@@ -276,13 +296,13 @@ export async function executeGenerationJob(
         bucket: stored.bucket,
         storagePath: stored.storagePath,
         mediaType: stored.mediaType,
-        durationMs: isVideo ? durationMs : null,
+        durationMs: isVideo ? takeDurationMs : null,
         source: "generated",
         model: params.modelId,
         prompt,
       });
 
-        await markTakeReady(takeId, asset.id, { duration_seconds: durationSeconds });
+        await markTakeReady(takeId, asset.id, { duration_seconds: takeDurationSeconds });
       } catch (error) {
         const message = formatGenerationError(error, "Failed to persist generated asset.");
         logGenerationError("persist", error, {
