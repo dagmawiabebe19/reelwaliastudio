@@ -7,6 +7,8 @@ import {
 } from "@/lib/ai/anthropic-models";
 import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 
+import type { CopilotOutputEvent } from "@/lib/copilot/output";
+
 export type ChatMessageData = {
   id: string;
   role: "user" | "assistant" | "tool" | "system";
@@ -59,6 +61,7 @@ interface CopilotPaneProps {
   imageModels: ModelCatalogEntry[];
   ingredients: MentionIngredient[];
   initialMessages?: ChatMessageData[];
+  onOutputEvent?: (event: CopilotOutputEvent) => void;
 }
 
 function toolMessageClass(message: ChatMessageData): string {
@@ -75,6 +78,7 @@ export function CopilotPane({
   imageModels,
   ingredients,
   initialMessages = [],
+  onOutputEvent,
 }: CopilotPaneProps) {
   const [messages, setMessages] = useState<ChatMessageData[]>(initialMessages);
   const [input, setInput] = useState("");
@@ -147,6 +151,7 @@ export function CopilotPane({
             total?: number;
             result?: Record<string, unknown>;
             summary?: string;
+            payload?: CopilotOutputEvent;
           };
 
           if (event.type === "text" && event.content) {
@@ -210,6 +215,10 @@ export function CopilotPane({
                   : m,
               ),
             );
+          }
+
+          if (event.type === "copilot_output" && event.payload) {
+            onOutputEvent?.(event.payload);
           }
 
           if (event.type === "turn_complete" && event.summary) {

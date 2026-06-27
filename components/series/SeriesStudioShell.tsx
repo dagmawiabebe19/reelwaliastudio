@@ -1,8 +1,13 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { CopilotPane, type ChatMessageData } from "@/components/series/copilot/CopilotPane";
+import { CopilotOutputPreview } from "@/components/series/copilot/CopilotOutputPreview";
 import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
+import type { CopilotOutputItem } from "@/lib/copilot/output";
+import { applyCopilotOutputEvent } from "@/lib/copilot/output-state";
+import type { CopilotOutputEvent } from "@/lib/copilot/output";
 
 interface SeriesStudioShellProps {
   seriesId: string;
@@ -28,6 +33,7 @@ interface SeriesStudioShellProps {
   }>;
   models: ModelCatalogEntry[];
   chatMessages: ChatMessageData[];
+  onOpenInLibrary: (item: CopilotOutputItem) => void;
 }
 
 export function SeriesStudioShell({
@@ -39,7 +45,21 @@ export function SeriesStudioShell({
   characterSheets,
   models,
   chatMessages,
+  onOpenInLibrary,
 }: SeriesStudioShellProps) {
+  const [outputItems, setOutputItems] = useState<CopilotOutputItem[]>([]);
+
+  const handleOutputEvent = useCallback((event: CopilotOutputEvent) => {
+    setOutputItems((prev) => applyCopilotOutputEvent(prev, event));
+  }, []);
+
+  const handleItemsUpdate = useCallback(
+    (updater: (prev: CopilotOutputItem[]) => CopilotOutputItem[]) => {
+      setOutputItems(updater);
+    },
+    [],
+  );
+
   return (
     <div className="grid h-[calc(100vh-12rem)] grid-cols-2 gap-4 rounded-lg border border-border bg-surface">
       <div className="flex min-h-0 flex-col border-r border-border p-4">
@@ -65,17 +85,19 @@ export function SeriesStudioShell({
           imageModels={models.filter((m) => m.kind === "image")}
           ingredients={ingredients}
           initialMessages={chatMessages}
+          onOutputEvent={handleOutputEvent}
         />
       </div>
-      <div className="flex flex-col items-center justify-center p-6 text-center">
-        <p className="font-display text-xl text-foreground">Open an episode for generation</p>
-        <p className="mt-2 max-w-sm text-sm text-muted">
-          Scene takes and multi-model generation live on the episode storyboard. Switch to Studio view
-          on any episode page.
-        </p>
+      <div className="flex min-h-0 flex-col p-4">
+        <CopilotOutputPreview
+          seriesId={seriesId}
+          items={outputItems}
+          onOpenInLibrary={onOpenInLibrary}
+          onItemsUpdate={handleItemsUpdate}
+        />
         <Link
           href={`/series/${seriesId}`}
-          className="mt-6 text-sm text-accent hover:underline"
+          className="mt-4 text-center text-sm text-accent hover:underline"
         >
           ← Back to episodes
         </Link>

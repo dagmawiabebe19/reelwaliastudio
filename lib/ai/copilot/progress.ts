@@ -56,6 +56,15 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
         ? `Queued ${ids} take${ids === 1 ? "" : "s"} — generating`
         : "Take generation started";
     }
+    case "create_character_sheet": {
+      if (result.error && typeof result.error === "string") {
+        return `Character sheet — failed: ${result.error}`;
+      }
+      const label = result.character_name ? String(result.character_name) : "Character";
+      return result.status === "ready"
+        ? `Generated 5-angle sheet for ${label} — ready`
+        : `Character sheet for ${label} — ${result.status ?? "pending"}`;
+    }
     default:
       return `${toolDisplayName(name)} — done`;
   }
@@ -71,6 +80,8 @@ function toolDisplayName(name: string): string {
       return "bind_identity";
     case "generate_take":
       return "generate_take";
+    case "create_character_sheet":
+      return "create_character_sheet";
     default:
       return name;
   }

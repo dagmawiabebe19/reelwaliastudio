@@ -15,6 +15,7 @@ import {
 import type { Orientation, SeriesStatus } from "@/lib/db/types";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
+import type { CopilotOutputItem, LibraryHighlight } from "@/lib/copilot/output";
 import type { CharacterSheetCardData, EpisodeOption, IngredientCardData } from "@/lib/production/types";
 
 type Tab = "ingredients" | "episodes" | "brief";
@@ -82,6 +83,16 @@ export function SeriesWorkspace({
 }: SeriesWorkspaceProps) {
   const [view, setView] = useState<"classic" | "studio">("classic");
   const [tab, setTab] = useState<Tab>("ingredients");
+  const [libraryHighlight, setLibraryHighlight] = useState<LibraryHighlight>(null);
+
+  function handleOpenInLibrary(item: CopilotOutputItem) {
+    setView("classic");
+    setTab("ingredients");
+    setLibraryHighlight({
+      type: item.type === "sheet" ? "sheet" : "ingredient",
+      id: item.id,
+    });
+  }
 
   return (
     <section className="space-y-10">
@@ -128,6 +139,7 @@ export function SeriesWorkspace({
           characterSheets={characterSheets}
           models={models}
           chatMessages={chatMessages}
+          onOpenInLibrary={handleOpenInLibrary}
         />
       ) : (
         <>
@@ -162,6 +174,8 @@ export function SeriesWorkspace({
               costumesByCharacter={costumesByCharacter}
               sheetsByCharacter={sheetsByCharacter}
               episodes={episodes}
+              highlightTarget={libraryHighlight}
+              onHighlightConsumed={() => setLibraryHighlight(null)}
             />
           ) : null}
 

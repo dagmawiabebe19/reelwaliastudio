@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
@@ -16,6 +16,7 @@ import { IngredientDeleteButton } from "@/components/series/ingredients/Ingredie
 import {
   CharactersSection,
 } from "@/components/series/ingredients/CharactersSection";
+import type { LibraryHighlight } from "@/lib/copilot/output";
 import type { CharacterSheetCardData, EpisodeOption } from "@/lib/production/types";
 import {
   LocationsSection,
@@ -33,7 +34,10 @@ export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
   const isAudio = ingredient.mediaType === "audio" || ingredient.kind === "voice";
 
   return (
-    <article className="overflow-hidden rounded-lg border border-border bg-surface-elevated">
+    <article
+      id={`ingredient-${ingredient.id}`}
+      className="overflow-hidden rounded-lg border border-border bg-surface-elevated scroll-mt-24"
+    >
       <div className="aspect-video bg-background">
         {isAudio ? (
           <div className="flex h-full items-center p-4">
@@ -84,6 +88,8 @@ interface IngredientsSectionProps {
   costumesByCharacter: Record<string, IngredientCardData[]>;
   sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
   episodes: EpisodeOption[];
+  highlightTarget?: LibraryHighlight;
+  onHighlightConsumed?: () => void;
 }
 
 const SECTIONS: { label: string; kinds: IngredientKind[]; countKey: keyof IngredientsSectionProps["counts"] }[] = [
@@ -105,6 +111,8 @@ export function IngredientsSection({
   costumesByCharacter,
   sheetsByCharacter,
   episodes,
+  highlightTarget,
+  onHighlightConsumed,
 }: IngredientsSectionProps) {
   const router = useRouter();
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
@@ -114,6 +122,24 @@ export function IngredientsSection({
 
   const hasPending = ingredients.some((i) => i.generationStatus === "pending");
   usePollWhilePending(hasPending);
+
+  useEffect(() => {
+    if (!highlightTarget) return;
+    const elementId =
+      highlightTarget.type === "sheet"
+        ? `sheet-${highlightTarget.id}`
+        : `ingredient-${highlightTarget.id}`;
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(elementId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-accent");
+        window.setTimeout(() => el.classList.remove("ring-2", "ring-accent"), 2000);
+      }
+      onHighlightConsumed?.();
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [highlightTarget, onHighlightConsumed]);
 
   const uploadFiles = useCallback(
     async (files: FileList | File[], kind: IngredientKind = "reference") => {
@@ -197,6 +223,9 @@ export function IngredientsSection({
         costumesByCharacter={costumesByCharacter}
         sheetsByCharacter={sheetsByCharacter}
         episodes={episodes}
+        highlightSheetId={
+          highlightTarget?.type === "sheet" ? highlightTarget.id : undefined
+        }
       />
 
       <VoicesSection

@@ -51,6 +51,26 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "create_character_sheet",
+    description:
+      "Create and generate a character turnaround sheet (5 angles). Links to episodes via character_sheet_episodes. Requires character headshot; optional costume.",
+    input_schema: {
+      type: "object",
+      properties: {
+        series_id: { type: "string" },
+        character_id: { type: "string" },
+        name: { type: "string", description: "Sheet label, e.g. 'Ep 1 default'" },
+        costume_id: { type: "string", description: "Optional costume ingredient id" },
+        episode_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Episodes this sheet applies to",
+        },
+      },
+      required: ["series_id", "character_id", "name"],
+    },
+  },
+  {
     name: "bind_identity",
     description:
       "Bind character SHEETS (identity lock) to a scene. Prefer character_sheet_ids over raw ingredient_ids. Sheets lock face + wardrobe across angles.",

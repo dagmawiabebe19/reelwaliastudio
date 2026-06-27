@@ -12,6 +12,9 @@ import {
   LOCATION_ESTABLISHING_PREFIX,
   costumePreviewPrompt,
 } from "@/lib/production/prompts";
+import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
+import { createCharacterSheet } from "@/lib/db/character-sheets";
+import type { CopilotOutputEvent } from "@/lib/copilot/output";
 import { resolveSceneReferences } from "@/lib/production/resolve-references";
 import { createIngredient, getIngredient } from "@/lib/db/ingredients";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
@@ -39,17 +42,20 @@ export type CopilotStreamEvent =
       total?: number;
     }
   | { type: "tool_done"; toolId: string; name: string; result: Record<string, unknown>; summary: string }
+  | { type: "copilot_output"; payload: CopilotOutputEvent }
   | { type: "turn_complete"; summary: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
 type ToolProgressEmitter = (detail: string, step?: number, total?: number) => void;
+type OutputEmitter = (event: CopilotOutputEvent) => void;
 
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
   context: CopilotContext,
   emitProgress: ToolProgressEmitter,
+  emitOutput: OutputEmitter,
 ): Promise<Record<string, unknown>> {
   switch (name) {
     case "draft_storyboard": {
@@ -146,6 +152,16 @@ async function executeTool(
         generationStatus: generate ? "pending" : "ready",
       });
 
+      emitOutput({
+        type: "ingredient_created",
+        toolId: "",
+        ingredientId: ingredient.id,
+        name: ingredient.name,
+        ingredientKind: kind,
+        refTag: ingredient.ref_tag,
+        status: generate ? "pending" : "ready",
+      });
+
       if (generate && description) {
         let prompt = description;
         let refImageUrls: string[] | undefined;
@@ -175,6 +191,13 @@ async function executeTool(
           prompt,
           refImageUrls,
           onProgress: (msg, step, total) => emitProgress(msg, step, total),
+        });
+
+        emitOutput({
+          type: "ingredient_updated",
+          ingredientId: ingredient.id,
+          status: genResult.status,
+          generationError: genResult.error ?? null,
         });
 
         return {
@@ -222,6 +245,62 @@ async function executeTool(
       }
 
       return { bound_sheets: sheetIds.length, bound_ingredients: ingredientIds.length };
+    }
+
+    case "create_character_sheet": {
+      const seriesId = String(args.series_id);
+      const characterId = String(args.character_id);
+      const name = String(args.name ?? "").trim();
+      const costumeId = args.costume_id ? String(args.costume_id) : null;
+      const episodeIds = (args.episode_ids as string[]) ?? [];
+
+      if (!name) return { error: "name is required." };
+
+      emitProgress("creating character sheet…", 0, 5);
+
+      const character = await getIngredient(characterId);
+      const costume = costumeId ? await getIngredient(costumeId) : null;
+
+      const sheet = await createCharacterSheet({
+        seriesId,
+        characterId,
+        costumeId,
+        name,
+        episodeIds,
+      });
+
+      emitOutput({
+        type: "sheet_created",
+        toolId: "",
+        sheetId: sheet.id,
+        name: sheet.name,
+        characterName: character?.name ?? null,
+        costumeName: costume?.name ?? null,
+        status: "pending",
+      });
+
+      const genResult = await executeSheetGeneration(sheet.id, (msg, step, total) => {
+        emitProgress(msg, step, total);
+        if (step && total) {
+          emitOutput({ type: "sheet_progress", sheetId: sheet.id, step, total });
+        }
+      });
+
+      emitOutput({
+        type: "sheet_updated",
+        sheetId: sheet.id,
+        status: genResult.status,
+        generationError: genResult.error ?? null,
+      });
+
+      return {
+        sheet_id: sheet.id,
+        name: sheet.name,
+        character_name: character?.name ?? null,
+        costume_name: costume?.name ?? null,
+        status: genResult.status,
+        error: genResult.error,
+      };
     }
 
     case "generate_take": {
@@ -373,7 +452,20 @@ export async function runCopilotStream(input: {
           });
         };
 
-        const result = await executeTool(tool.name, args, input.context, emitProgress);
+        const emitOutput: OutputEmitter = (payload) => {
+          if (payload.type === "ingredient_created" || payload.type === "sheet_created") {
+            payload.toolId = toolId;
+          }
+          input.onEvent({ type: "copilot_output", payload });
+        };
+
+        const result = await executeTool(
+          tool.name,
+          args,
+          input.context,
+          emitProgress,
+          emitOutput,
+        );
         const summary = formatToolDoneSummary(tool.name, result);
         turnSummaries.push(summary);
 

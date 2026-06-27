@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteCharacterSheetAction,
@@ -26,6 +26,7 @@ interface CharactersSectionProps {
   costumesByCharacter: Record<string, IngredientCardData[]>;
   sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
   episodes: EpisodeOption[];
+  highlightSheetId?: string;
 }
 
 function GenerationBadge({ status }: { status?: string | null }) {
@@ -41,11 +42,16 @@ export function CharactersSection({
   costumesByCharacter,
   sheetsByCharacter,
   episodes,
+  highlightSheetId,
 }: CharactersSectionProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [expandedSheet, setExpandedSheet] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (highlightSheetId) setExpandedSheet(highlightSheetId);
+  }, [highlightSheetId]);
 
   const hasPending =
     characters.some((c) => c.generationStatus === "pending") ||
@@ -119,7 +125,8 @@ export function CharactersSection({
             return (
               <article
                 key={character.id}
-                className="overflow-hidden rounded-lg border border-border bg-surface-elevated"
+                id={`ingredient-${character.id}`}
+                className="scroll-mt-24 overflow-hidden rounded-lg border border-border bg-surface-elevated"
               >
                 <div className="grid gap-4 p-4 md:grid-cols-[10rem_1fr]">
                   <div className="aspect-[3/4] overflow-hidden rounded-md bg-background">
@@ -193,7 +200,8 @@ export function CharactersSection({
                           {costumes.map((costume) => (
                             <div
                               key={costume.id}
-                              className="relative w-28 overflow-hidden rounded border border-border"
+                              id={`ingredient-${costume.id}`}
+                              className="relative w-28 scroll-mt-24 overflow-hidden rounded border border-border"
                             >
                               <div className="absolute right-0 top-0 z-10">
                                 <IngredientDeleteButton
@@ -287,7 +295,11 @@ export function CharactersSection({
                       ) : (
                         <div className="space-y-4">
                           {sheets.map((sheet) => (
-                            <div key={sheet.id} className="rounded border border-border bg-background p-3">
+                            <div
+                              key={sheet.id}
+                              id={`sheet-${sheet.id}`}
+                              className="scroll-mt-24 rounded border border-border bg-background p-3"
+                            >
                               <div className="flex w-full items-center justify-between text-left text-sm">
                                 <button
                                   type="button"
