@@ -14,7 +14,7 @@ export interface GenerateVideoInput {
   motionId?: string | null;
   motionStrength?: number;
   seedanceTier?: "standard" | "fast";
-  generateAudio?: boolean;
+  seedanceAudioMode?: "off" | "full" | "ambient";
 }
 
 export type { GenerationResult };

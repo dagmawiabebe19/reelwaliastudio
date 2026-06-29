@@ -8,6 +8,10 @@ import {
   successResult,
 } from "@/lib/ai/shared";
 import {
+  seedanceGenerateAudio,
+  type SeedanceAudioMode,
+} from "@/lib/ai/video/seedance-constants";
+import {
   falCredentialsConfigured,
   formatFalError,
   submitSeedanceJob,
@@ -68,13 +72,16 @@ export const generateVideo: VideoAdapter = async (input) => {
 
     const imageUrl = await uploadSeedanceSourceImage(buffer, contentType);
 
+    const audioMode: SeedanceAudioMode = input.seedanceAudioMode ?? "off";
+    const generate_audio = seedanceGenerateAudio(audioMode);
+
     const { videoUrl, requestId } = await submitSeedanceJob(input.seedanceTier, {
       prompt: input.prompt,
       image_url: imageUrl,
       resolution: normalizeResolution(input.resolution),
       duration: normalizeDurationSeconds(input.durationSeconds),
       aspect_ratio: input.aspectRatio,
-      generate_audio: input.generateAudio ?? false,
+      generate_audio,
     });
 
     const videoResponse = await fetch(videoUrl);

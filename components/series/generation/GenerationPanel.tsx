@@ -11,8 +11,10 @@ import { Button } from "@/components/ui/Button";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import { DOP_MODEL_OPTIONS } from "@/lib/ai/video/higgsfield-constants";
 import {
+  SEEDANCE_AUDIO_MODE_OPTIONS,
   SEEDANCE_DURATION_OPTIONS,
   SEEDANCE_TIER_OPTIONS,
+  type SeedanceAudioMode,
 } from "@/lib/ai/video/seedance-constants";
 import {
   SHOT_INTENTS,
@@ -121,6 +123,7 @@ export function GenerationPanel({
   const [resolution, setResolution] = useState<"480p" | "720p">("720p");
   const [duration, setDuration] = useState(8);
   const [seedanceTier, setSeedanceTier] = useState<string>(SEEDANCE_TIER_OPTIONS[0].id);
+  const [seedanceAudioMode, setSeedanceAudioMode] = useState<SeedanceAudioMode>("off");
   const [dopModel, setDopModel] = useState<string>(DOP_MODEL_OPTIONS[0].id);
   const [motionId, setMotionId] = useState<string>("");
   const [motions, setMotions] = useState<HiggsfieldMotion[]>([]);
@@ -185,6 +188,7 @@ export function GenerationPanel({
         motionId: isHiggsfield && motionId ? motionId : undefined,
         motionStrength: isHiggsfield && motionId ? 1 : undefined,
         seedanceTier: isSeedance ? (seedanceTier as "standard" | "fast") : undefined,
+        seedanceAudioMode: isSeedance ? seedanceAudioMode : undefined,
         shotIntent: isVideo ? shotIntent : undefined,
       });
 
@@ -314,6 +318,50 @@ export function GenerationPanel({
             ))}
           </select>
         </div>
+
+        {isSeedance ? (
+          <div className="space-y-2 rounded-md border border-border/40 bg-background/20 p-3">
+            <FieldLabel>Native audio</FieldLabel>
+            <select
+              value={seedanceAudioMode}
+              onChange={(e) => setSeedanceAudioMode(e.target.value as SeedanceAudioMode)}
+              className={selectClass}
+            >
+              {SEEDANCE_AUDIO_MODE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] leading-relaxed text-muted">
+              {seedanceAudioMode === "off"
+                ? "Silent clip — generate_audio=false."
+                : seedanceAudioMode === "ambient"
+                  ? "fal has no SFX-only flag — this enables full native audio; describe ambient sound and SFX in the shot prompt and avoid quoted dialogue."
+                  : "Full native audio — dialogue, SFX, and ambient in one pass."}
+            </p>
+            {seedanceAudioMode !== "off" ? (
+              <>
+                <p className="text-[10px] leading-relaxed text-muted">
+                  For spoken lines, put dialogue in double quotes in the shot description — Seedance
+                  will lip-sync it.
+                </p>
+                <p className="text-[10px] leading-relaxed text-muted">
+                  Native voices are model-generated and may vary between shots — for a consistent
+                  character voice across episodes, keep dialogue audio off here and use a dedicated
+                  voice pass.
+                </p>
+              </>
+            ) : null}
+          </div>
+        ) : (
+          <div className={!isVideo ? "studio-field-inactive" : ""}>
+            <FieldLabel hint="Seedance 2.0 only">Native audio</FieldLabel>
+            <select disabled className={selectClass}>
+              <option>Audio: Off</option>
+            </select>
+          </div>
+        )}
 
         <div>
           <FieldLabel hint={!isHiggsfield ? "Higgsfield DoP only" : undefined}>Camera motion</FieldLabel>

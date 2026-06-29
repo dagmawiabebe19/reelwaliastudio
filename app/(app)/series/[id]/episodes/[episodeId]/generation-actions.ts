@@ -44,6 +44,7 @@ export async function listTakesAction(sceneId: string) {
         status: take.status,
         error_message: take.error_message,
         assetUrl: await resolveAssetUrl(take.assets),
+        has_audio: take.has_audio ?? false,
       })),
     );
     return { takes: enriched };
@@ -64,6 +65,7 @@ export async function generateTakesAction(input: {
   motionId?: string | null;
   motionStrength?: number;
   seedanceTier?: "standard" | "fast";
+  seedanceAudioMode?: "off" | "full" | "ambient";
   shotIntent?: string | null;
 }) {
   try {

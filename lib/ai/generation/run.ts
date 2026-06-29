@@ -15,6 +15,7 @@ import {
 } from "@/lib/db/takes";
 import { validateVideoGeneration } from "@/lib/ai/generation/video-source";
 import { composeVideoPrompt } from "@/lib/production/prompts";
+import { seedanceGenerateAudio } from "@/lib/ai/video/seedance-constants";
 import { collectGenerationRefUrls, resolveSceneReferences } from "@/lib/production/resolve-references";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { persistRemoteAsset } from "@/lib/storage/persist-generated";
@@ -33,6 +34,7 @@ export interface GenerateTakeParams {
   motionId?: string | null;
   motionStrength?: number;
   seedanceTier?: "standard" | "fast";
+  seedanceAudioMode?: "off" | "full" | "ambient";
   shotIntent?: string | null;
 }
 
@@ -182,6 +184,8 @@ export async function executeGenerationJob(
 
     const refImageUrls = await resolveIdentityLockUrlsFromScene(scene);
     const isHiggsfield = params.modelId === "higgsfield";
+    const isSeedance = params.modelId === "seedance";
+    const seedanceAudioMode = isSeedance ? (params.seedanceAudioMode ?? "off") : undefined;
     const total = takeIds.length;
     const durationSeconds =
       isVideo && !isHiggsfield ? (params.durationSeconds ?? 6) : null;
@@ -223,7 +227,7 @@ export async function executeGenerationJob(
             motionId: params.motionId,
             motionStrength: params.motionStrength,
             seedanceTier: params.seedanceTier,
-            generateAudio: false,
+            seedanceAudioMode,
           })
         : await runImageModel(params.modelId, {
             prompt,
@@ -271,6 +275,11 @@ export async function executeGenerationJob(
       const takeDurationMs =
         takeDurationSeconds != null ? takeDurationSeconds * 1000 : durationMs;
 
+      const takeHasAudio =
+        isSeedance && seedanceAudioMode
+          ? seedanceGenerateAudio(seedanceAudioMode)
+          : false;
+
       try {
         if (persisted) {
           const asset = await createAsset({
@@ -285,7 +294,10 @@ export async function executeGenerationJob(
             prompt,
           });
 
-          await markTakeReady(takeId, asset.id, { duration_seconds: takeDurationSeconds });
+          await markTakeReady(takeId, asset.id, {
+            duration_seconds: takeDurationSeconds,
+            has_audio: isVideo ? takeHasAudio : null,
+          });
           continue;
         }
 
@@ -303,17 +315,20 @@ export async function executeGenerationJob(
           prompt,
         });
 
-      const asset = await createAsset({
-        bucket: stored.bucket,
-        storagePath: stored.storagePath,
-        mediaType: stored.mediaType,
-        durationMs: isVideo ? takeDurationMs : null,
-        source: "generated",
-        model: params.modelId,
-        prompt,
-      });
+        const asset = await createAsset({
+          bucket: stored.bucket,
+          storagePath: stored.storagePath,
+          mediaType: stored.mediaType,
+          durationMs: isVideo ? takeDurationMs : null,
+          source: "generated",
+          model: params.modelId,
+          prompt,
+        });
 
-        await markTakeReady(takeId, asset.id, { duration_seconds: takeDurationSeconds });
+        await markTakeReady(takeId, asset.id, {
+          duration_seconds: takeDurationSeconds,
+          has_audio: isVideo ? takeHasAudio : null,
+        });
       } catch (error) {
         const message = formatGenerationError(error, "Failed to persist generated asset.");
         logGenerationError("persist", error, {

@@ -75,6 +75,7 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
       error_message: string | null;
       assetUrl: string | null;
       model: string | null;
+      has_audio: boolean;
     }>
   > = {};
 
@@ -89,6 +90,7 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
         error_message: take.error_message,
         assetUrl: await resolveAssetUrl(take.assets),
         model: take.model,
+        has_audio: take.has_audio ?? false,
       })),
     );
   }

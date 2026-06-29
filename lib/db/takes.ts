@@ -92,7 +92,17 @@ export async function createTake(input: {
 export async function updateTake(
   id: string,
   patch: Partial<
-    Pick<Take, "asset_id" | "status" | "starred" | "error_message" | "model" | "resolution" | "duration_seconds">
+    Pick<
+      Take,
+      | "asset_id"
+      | "status"
+      | "starred"
+      | "error_message"
+      | "model"
+      | "resolution"
+      | "duration_seconds"
+      | "has_audio"
+    >
   >,
 ): Promise<Take> {
   const supabase = await getDbClient();
@@ -112,7 +122,7 @@ export async function markTakeFailed(id: string, errorMessage: string): Promise<
 export async function markTakeReady(
   id: string,
   assetId: string,
-  patch?: Pick<Take, "duration_seconds">,
+  patch?: Pick<Take, "duration_seconds" | "has_audio">,
 ): Promise<Take> {
   return updateTake(id, {
     status: "ready",

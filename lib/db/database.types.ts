@@ -659,6 +659,7 @@ export type Database = {
           starred: boolean;
           status: Database["public"]["Enums"]["take_status"];
           error_message: string | null;
+          has_audio: boolean | null;
           created_at: string;
           updated_at: string;
         };
@@ -674,6 +675,7 @@ export type Database = {
           starred?: boolean;
           status?: Database["public"]["Enums"]["take_status"];
           error_message?: string | null;
+          has_audio?: boolean | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -689,6 +691,7 @@ export type Database = {
           starred?: boolean;
           status?: Database["public"]["Enums"]["take_status"];
           error_message?: string | null;
+          has_audio?: boolean | null;
           created_at?: string;
           updated_at?: string;
         };

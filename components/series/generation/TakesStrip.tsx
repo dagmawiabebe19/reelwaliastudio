@@ -29,6 +29,7 @@ export type TakeCardData = {
   error_message: string | null;
   assetUrl: string | null;
   model: string | null;
+  has_audio?: boolean;
 };
 
 type TakesStripLayout = "combined" | "strip" | "preview";
@@ -324,6 +325,7 @@ export function TakesStrip({
                   src={activeTake.assetUrl}
                   isPortrait={isPortrait}
                   fullWidth
+                  hasAudio={Boolean(activeTake.has_audio)}
                 />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
