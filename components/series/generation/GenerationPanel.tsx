@@ -11,6 +11,10 @@ import { Button } from "@/components/ui/Button";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import { DOP_MODEL_OPTIONS } from "@/lib/ai/video/higgsfield-constants";
 import {
+  SEEDANCE_DURATION_OPTIONS,
+  SEEDANCE_TIER_OPTIONS,
+} from "@/lib/ai/video/seedance-constants";
+import {
   SHOT_INTENTS,
   SHOT_INTENT_LABELS,
   inferDefaultShotIntent,
@@ -37,7 +41,7 @@ const MODEL_HELPERS: Record<string, string> = {
   seedream: "Seedream — image stills via Fal.",
   "nano-banana": "Nano Banana — image stills via Fal.",
   grok: "Grok Image — NSFW-capable still generation.",
-  seedance: "Seedance — animates a source still; set clip length below.",
+  seedance: "Seedance 2.0 — premium cinematic clip, longer duration, native physics (higher cost).",
   higgsfield: "Higgsfield DoP — animates your source still into a short cinematic clip.",
 };
 
@@ -115,7 +119,8 @@ export function GenerationPanel({
   const [modelId, setModelId] = useState(allModels.find((m) => m.configured)?.id ?? allModels[0]?.id ?? "");
   const [count, setCount] = useState(1);
   const [resolution, setResolution] = useState<"480p" | "720p">("720p");
-  const [duration, setDuration] = useState<6 | 7 | 8>(6);
+  const [duration, setDuration] = useState(8);
+  const [seedanceTier, setSeedanceTier] = useState<string>(SEEDANCE_TIER_OPTIONS[0].id);
   const [dopModel, setDopModel] = useState<string>(DOP_MODEL_OPTIONS[0].id);
   const [motionId, setMotionId] = useState<string>("");
   const [motions, setMotions] = useState<HiggsfieldMotion[]>([]);
@@ -131,6 +136,8 @@ export function GenerationPanel({
   const isVideo = selected?.kind === "video";
   const isImage = selected?.kind === "image";
   const isHiggsfield = modelId === "higgsfield";
+  const isSeedance = modelId === "seedance";
+  const usesClipLength = isVideo && isSeedance;
   const videoSourceTake = useMemo(() => resolveVideoSourceTake(takes), [takes]);
   const canGenerateVideo = Boolean(videoSourceTake?.assetUrl);
   const modelHelper = MODEL_HELPERS[modelId] ?? `${selected?.label ?? "Model"} — generate for this segment.`;
@@ -173,10 +180,11 @@ export function GenerationPanel({
         modelId,
         count: isVideo ? 1 : count,
         resolution,
-        durationSeconds: isVideo && !isHiggsfield ? duration : undefined,
+        durationSeconds: usesClipLength ? duration : undefined,
         dopModel: isHiggsfield ? dopModel : undefined,
         motionId: isHiggsfield && motionId ? motionId : undefined,
         motionStrength: isHiggsfield && motionId ? 1 : undefined,
+        seedanceTier: isSeedance ? (seedanceTier as "standard" | "fast") : undefined,
         shotIntent: isVideo ? shotIntent : undefined,
       });
 
@@ -292,6 +300,22 @@ export function GenerationPanel({
         </div>
 
         <div>
+          <FieldLabel hint={!isSeedance ? "Seedance 2.0 only" : undefined}>Tier</FieldLabel>
+          <select
+            value={seedanceTier}
+            disabled={!isVideo || !isSeedance}
+            onChange={(e) => setSeedanceTier(e.target.value)}
+            className={selectClass}
+          >
+            {SEEDANCE_TIER_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
           <FieldLabel hint={!isHiggsfield ? "Higgsfield DoP only" : undefined}>Camera motion</FieldLabel>
           <select
             value={motionId}
@@ -312,18 +336,20 @@ export function GenerationPanel({
         </div>
 
         <div>
-          <FieldLabel hint={isHiggsfield ? "Seedance only — DoP uses model quality" : undefined}>
+          <FieldLabel hint={!usesClipLength ? "Seedance 2.0 only — DoP uses fixed clip length" : undefined}>
             Clip length
           </FieldLabel>
           <select
             value={String(duration)}
-            disabled={!isVideo || isHiggsfield}
-            onChange={(e) => setDuration(Number(e.target.value) as 6 | 7 | 8)}
+            disabled={!usesClipLength}
+            onChange={(e) => setDuration(Number(e.target.value))}
             className={selectClass}
           >
-            <option value="6">6 seconds</option>
-            <option value="7">7 seconds</option>
-            <option value="8">8 seconds</option>
+            {SEEDANCE_DURATION_OPTIONS.map((seconds) => (
+              <option key={seconds} value={String(seconds)}>
+                {seconds} seconds
+              </option>
+            ))}
           </select>
         </div>
       </ControlGroup>

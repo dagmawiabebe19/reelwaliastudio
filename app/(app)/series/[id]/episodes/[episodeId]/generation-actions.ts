@@ -63,6 +63,7 @@ export async function generateTakesAction(input: {
   dopModel?: string;
   motionId?: string | null;
   motionStrength?: number;
+  seedanceTier?: "standard" | "fast";
   shotIntent?: string | null;
 }) {
   try {

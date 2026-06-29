@@ -13,6 +13,8 @@ export interface GenerateVideoInput {
   dopModel?: string;
   motionId?: string | null;
   motionStrength?: number;
+  seedanceTier?: "standard" | "fast";
+  generateAudio?: boolean;
 }
 
 export type { GenerationResult };

@@ -32,6 +32,7 @@ export interface GenerateTakeParams {
   dopModel?: string;
   motionId?: string | null;
   motionStrength?: number;
+  seedanceTier?: "standard" | "fast";
   shotIntent?: string | null;
 }
 
@@ -221,6 +222,8 @@ export async function executeGenerationJob(
             dopModel: params.dopModel,
             motionId: params.motionId,
             motionStrength: params.motionStrength,
+            seedanceTier: params.seedanceTier,
+            generateAudio: false,
           })
         : await runImageModel(params.modelId, {
             prompt,
