@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@source "./**/*.{ts,tsx}";
+@source "../components/**/*.{ts,tsx}";
 
 /* -------------------------------------------------------------------------- */
 /* ReelWalia Studio — brand tokens (dark-first)                               */
