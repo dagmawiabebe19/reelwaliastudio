@@ -4,6 +4,8 @@ import {
   AuthenticationError,
   BadInputError,
   NotEnoughCreditsError,
+  ValidationError,
+  APIError,
   InputImage,
   inputMotion,
   higgsfield,
@@ -65,8 +67,11 @@ function formatHiggsfieldError(error: unknown): string {
   if (error instanceof NotEnoughCreditsError) {
     return error.message || "Higgsfield: not enough credits.";
   }
-  if (error instanceof BadInputError) {
+  if (error instanceof BadInputError || error instanceof ValidationError) {
     return error.message || "Higgsfield: invalid input.";
+  }
+  if (error instanceof APIError) {
+    return error.message || `Higgsfield API error (${error.statusCode}).`;
   }
   return formatGenerationError(error, "Higgsfield video generation failed.");
 }
