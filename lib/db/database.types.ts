@@ -530,6 +530,7 @@ export type Database = {
           episode_id: string;
           title: string;
           prompt: string | null;
+          shot_intent: string | null;
           orientation: Database["public"]["Enums"]["orientation"] | null;
           duration_seconds: number | null;
           act_label: string | null;
@@ -546,6 +547,7 @@ export type Database = {
           episode_id: string;
           title: string;
           prompt?: string | null;
+          shot_intent?: string | null;
           orientation?: Database["public"]["Enums"]["orientation"] | null;
           duration_seconds?: number | null;
           act_label?: string | null;
@@ -562,6 +564,7 @@ export type Database = {
           episode_id?: string;
           title?: string;
           prompt?: string | null;
+          shot_intent?: string | null;
           orientation?: Database["public"]["Enums"]["orientation"] | null;
           duration_seconds?: number | null;
           act_label?: string | null;

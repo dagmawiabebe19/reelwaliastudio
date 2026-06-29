@@ -75,6 +75,7 @@ export async function updateScene(
       Scene,
       | "title"
       | "prompt"
+      | "shot_intent"
       | "orientation"
       | "duration_seconds"
       | "act_label"

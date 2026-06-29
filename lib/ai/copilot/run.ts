@@ -10,6 +10,7 @@ import {
   CHARACTER_HEADSHOT_PREFIX,
   LOCATION_ESTABLISHING_PREFIX,
   costumePreviewPrompt,
+  normalizeShotIntent,
 } from "@/lib/production/prompts";
 import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
 import { createCharacterSheet } from "@/lib/db/character-sheets";
@@ -121,6 +122,9 @@ async function executeTool(
         emitProgress(`writing segment ${index}/${total || index}: ${title}…`, index, total || index);
 
         const actLabel = normalizeActLabel(segment.act_label, Boolean(context.episodeId ?? episodeId));
+        const shotIntent = normalizeShotIntent(
+          typeof segment.shot_intent === "string" ? segment.shot_intent : null,
+        );
 
         let targetSceneId: string;
 
@@ -129,6 +133,7 @@ async function executeTool(
             title,
             prompt,
             act_label: actLabel,
+            shot_intent: shotIntent,
             duration_seconds:
               typeof segment.duration_seconds === "number" ? segment.duration_seconds : undefined,
             orientation:
@@ -145,6 +150,7 @@ async function executeTool(
           });
           await updateScene(scene.id, {
             prompt,
+            shot_intent: shotIntent,
             duration_seconds:
               typeof segment.duration_seconds === "number" ? segment.duration_seconds : null,
             orientation:

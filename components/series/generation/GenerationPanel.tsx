@@ -9,6 +9,13 @@ import {
 import { Button } from "@/components/ui/Button";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import { DOP_MODEL_OPTIONS } from "@/lib/ai/video/higgsfield-constants";
+import {
+  SHOT_INTENTS,
+  SHOT_INTENT_LABELS,
+  inferDefaultShotIntent,
+  normalizeShotIntent,
+  type ShotIntent,
+} from "@/lib/production/prompts";
 
 export type ModelCatalogEntry = {
   id: string;
@@ -30,6 +37,8 @@ interface GenerationPanelProps {
   episodeId: string;
   models: ModelCatalogEntry[];
   takes?: TakeCardData[];
+  scenePrompt?: string | null;
+  shotIntent?: string | null;
 }
 
 function resolveVideoSourceTake(takes: TakeCardData[]): TakeCardData | null {
@@ -46,6 +55,8 @@ export function GenerationPanel({
   episodeId,
   models,
   takes = [],
+  scenePrompt = "",
+  shotIntent: initialShotIntent = null,
 }: GenerationPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -61,6 +72,11 @@ export function GenerationPanel({
   const [motionId, setMotionId] = useState<string>("");
   const [motions, setMotions] = useState<HiggsfieldMotion[]>([]);
   const [motionsError, setMotionsError] = useState<string | null>(null);
+  const [shotIntent, setShotIntent] = useState<ShotIntent>(
+    () =>
+      normalizeShotIntent(initialShotIntent) ??
+      inferDefaultShotIntent(scenePrompt ?? ""),
+  );
   const [startedMessage, setStartedMessage] = useState<string | null>(null);
 
   const selected = allModels.find((m) => m.id === modelId);
@@ -68,6 +84,13 @@ export function GenerationPanel({
   const isHiggsfield = modelId === "higgsfield";
   const videoSourceTake = useMemo(() => resolveVideoSourceTake(takes), [takes]);
   const canGenerateVideo = Boolean(videoSourceTake?.assetUrl);
+
+  useEffect(() => {
+    setShotIntent(
+      normalizeShotIntent(initialShotIntent) ??
+        inferDefaultShotIntent(scenePrompt ?? ""),
+    );
+  }, [sceneId, initialShotIntent, scenePrompt]);
 
   useEffect(() => {
     if (!isHiggsfield) return;
@@ -106,6 +129,7 @@ export function GenerationPanel({
         dopModel: isHiggsfield ? dopModel : undefined,
         motionId: isHiggsfield && motionId ? motionId : undefined,
         motionStrength: isHiggsfield && motionId ? 1 : undefined,
+        shotIntent: isVideo ? shotIntent : undefined,
       });
 
       if ("error" in result && result.error) {
@@ -158,6 +182,24 @@ export function GenerationPanel({
                   source frame.
                 </p>
               )}
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-muted">Shot intent</label>
+              <select
+                value={shotIntent}
+                onChange={(e) => setShotIntent(e.target.value as ShotIntent)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+              >
+                {SHOT_INTENTS.map((intent) => (
+                  <option key={intent} value={intent}>
+                    {SHOT_INTENT_LABELS[intent]}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted">
+                Camera grammar appended to the scene prompt for video models.
+              </p>
             </div>
 
             {isHiggsfield ? (

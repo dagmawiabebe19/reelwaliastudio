@@ -6,6 +6,7 @@ import { logGenerationError } from "@/lib/ai/generation/errors";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
 import { getPublicModelCatalog } from "@/lib/ai/registry";
 import { listHiggsfieldMotions } from "@/lib/ai/video/higgsfield";
+import { updateScene } from "@/lib/db/scenes";
 import { listTakesByScene, setTakeStarred } from "@/lib/db/takes";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { resolveAssetUrl } from "@/lib/storage/resolve-urls";
@@ -57,8 +58,13 @@ export async function generateTakesAction(input: {
   dopModel?: string;
   motionId?: string | null;
   motionStrength?: number;
+  shotIntent?: string | null;
 }) {
   try {
+    if (input.shotIntent != null) {
+      await updateScene(input.sceneId, { shot_intent: input.shotIntent });
+    }
+
     const takeIds = await createPendingTakes(input);
     const path = `/series/${input.seriesId}/episodes/${input.episodeId}`;
 

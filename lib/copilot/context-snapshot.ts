@@ -68,6 +68,7 @@ export async function buildCopilotContextSnapshot(input: {
       title: s.title,
       prompt: s.prompt,
       act_label: s.act_label,
+      shot_intent: s.shot_intent,
     })),
     ingredients: ingredientsRaw.map((i) => ({
       id: i.id,

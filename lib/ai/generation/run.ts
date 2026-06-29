@@ -14,6 +14,7 @@ import {
   markTakeReady,
 } from "@/lib/db/takes";
 import { validateVideoGeneration } from "@/lib/ai/generation/video-source";
+import { composeVideoPrompt } from "@/lib/production/prompts";
 import { collectGenerationRefUrls, resolveSceneReferences } from "@/lib/production/resolve-references";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { persistRemoteAsset } from "@/lib/storage/persist-generated";
@@ -31,6 +32,7 @@ export interface GenerateTakeParams {
   dopModel?: string;
   motionId?: string | null;
   motionStrength?: number;
+  shotIntent?: string | null;
 }
 
 export interface TakeGenerationOutcome {
@@ -161,7 +163,14 @@ export async function executeGenerationJob(
     const aspectRatio = orientationToAspectRatio(
       effectiveOrientation(scene.orientation, series.default_orientation),
     );
-    const prompt = scene.prompt?.trim() || scene.title;
+    const isVideo = model.kind === "video";
+    const scenePrompt = scene.prompt?.trim() || scene.title;
+    const prompt = isVideo
+      ? composeVideoPrompt({
+          scenePrompt,
+          shotIntent: scene.shot_intent,
+        })
+      : scenePrompt;
 
     await resolveSceneReferences({
       sceneId: params.sceneId,
@@ -171,7 +180,6 @@ export async function executeGenerationJob(
     });
 
     const refImageUrls = await resolveIdentityLockUrlsFromScene(scene);
-    const isVideo = model.kind === "video";
     const isHiggsfield = params.modelId === "higgsfield";
     const total = takeIds.length;
     const durationSeconds =

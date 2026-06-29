@@ -25,6 +25,12 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
               },
               duration_seconds: { type: "number" },
               orientation: { type: "string", enum: ["portrait", "landscape"] },
+              shot_intent: {
+                type: "string",
+                enum: ["static", "push_in", "pull_back", "orbit", "follow", "rise", "descend"],
+                description:
+                  "DoP camera motion intent. Use pull_back when the subject moves toward camera; static for locked frames.",
+              },
               scene_id: { type: "string", description: "If set, update existing scene" },
             },
             required: ["title", "prompt"],
@@ -124,7 +130,13 @@ export type CopilotContext = {
   defaultOrientation: string;
   briefMarkdown?: string;
   seriesMemoryMarkdown?: string;
-  scenes?: Array<{ id: string; title: string; prompt: string | null; act_label: string | null }>;
+  scenes?: Array<{
+    id: string;
+    title: string;
+    prompt: string | null;
+    act_label: string | null;
+    shot_intent: string | null;
+  }>;
   ingredients?: Array<{
     id: string;
     ref_tag: string;
@@ -177,7 +189,7 @@ If the user asks to "generate", "render", or "shoot" a segment or take:
 ### Beat 1 — PROPOSE (text only, no tools, no DB writes)
 When the user asks to break down, plan, or build an episode storyboard:
 - Reply in chat with a numbered segment breakdown — a readable shot list.
-- Each line includes: segment number, short title/beat, one-line action description, identity sheets + locations + voices to bind (by @ref_tag or name), and duration (seconds).
+- Each line includes: segment number, short title/beat, one-line action description, identity sheets + locations + voices to bind (by @ref_tag or name), duration (seconds), and suggested shot_intent (static, push_in, pull_back, orbit, follow, rise, descend).
 - Do NOT call draft_storyboard, bind_identity, or any other tool that creates or updates scenes in this turn.
 - End by asking the user to confirm or revise (e.g. "Want me to build these on the storyboard, or adjust the breakdown first?").
 
@@ -200,6 +212,13 @@ Only when the user clearly approves ("build it", "create them", "go", "yes build
 4. **Locations** — clean establishing shots.
 5. **Voices** — description for timbre/age/accent; generation is stubbed until provider is wired.
 6. **Storyboard** — Beat 1: propose breakdown as text (no tools). Beat 2: after approval, draft_storyboard creates placeholder segments (0 takes). Director generates takes manually in the New Take panel.
+
+## Camera grammar (video / DoP)
+When a segment will become video, pair subject motion with explicit camera motion so DoP does not guess direction:
+- **pull_back** when the subject advances toward camera/us — camera dollies away while they approach (never let "walks toward us" render as walking backward).
+- **push_in** when the camera should move toward the subject.
+- **static** for locked frames; **orbit** to arc around; **follow** to track lateral movement; **rise** / **descend** for crane moves.
+Include shot_intent per segment in Beat 1 proposals and set shot_intent on each segment in draft_storyboard. Segment prompts describe the action; shot_intent drives the appended camera clause at generation time.
 7. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).
@@ -236,6 +255,7 @@ ${pipelineNotes}
 When drafting storyboard scenes (Beat 2 only):
 - Respect the series default orientation unless a scene needs an override.
 - Include binding intent in each segment prompt (@ref_tag for sheets, locations, voices); draft_storyboard auto-resolves bindings.
+- Set shot_intent per segment (pull_back when subject moves toward camera; static for locked frames).
 - Use ⚠️ callout lines in prompts for ACCENTS, IDENTITY LOCK, etc. when needed.
 
 Series brief:

@@ -102,6 +102,7 @@ export function StudioShell({
           title: s.title,
           prompt: s.prompt,
           act_label: s.act_label,
+          shot_intent: s.shot_intent,
         })),
         ingredients: ingredients.map((i) => ({
           id: i.id,
@@ -230,6 +231,8 @@ export function StudioShell({
                 episodeId={episodeId}
                 models={models}
                 takes={sceneTakes}
+                scenePrompt={selectedScene.prompt}
+                shotIntent={selectedScene.shot_intent}
               />
             </div>
           ) : (
