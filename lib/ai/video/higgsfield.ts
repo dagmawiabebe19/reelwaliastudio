@@ -84,6 +84,18 @@ export const generateVideo: VideoAdapter = async (input) => {
 
   try {
     const { credentials, endpoint } = assertHiggsfieldVideoConfig();
+
+    console.log('[higgsfield-cred-debug]', JSON.stringify({
+      hasHF_CREDENTIALS: !!process.env.HF_CREDENTIALS,
+      credLen: process.env.HF_CREDENTIALS?.length ?? 0,
+      colonCount: (process.env.HF_CREDENTIALS?.match(/:/g) || []).length,
+      startsOrEndsWithQuote: /^["']|["']$/.test(process.env.HF_CREDENTIALS ?? ''),
+      hasHF_KEY: !!process.env.HF_KEY,
+      hasHF_API_KEY: !!process.env.HF_API_KEY,
+      hasHF_API_SECRET: !!process.env.HF_API_SECRET,
+      hasHIGGSFIELD_API_KEY: !!process.env.HIGGSFIELD_API_KEY,
+    }));
+
     configureHiggsfieldSdk(credentials);
 
     const { buffer, contentType } = await downloadVideoSourceImage({
