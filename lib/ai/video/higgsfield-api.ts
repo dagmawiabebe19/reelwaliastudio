@@ -1,8 +1,8 @@
 import "server-only";
 
-import { HiggsfieldClient } from "@higgsfield/client";
+import { HiggsfieldClient, JobSet } from "@higgsfield/client";
+import type { Job, JobSetData } from "@higgsfield/client";
 import { config as configureV2 } from "@higgsfield/client/v2";
-import type { V2Response } from "@higgsfield/client/v2";
 import { getEnv } from "@/lib/ai/shared";
 import { DEFAULT_DOP_MODEL, DEFAULT_VIDEO_ENDPOINT } from "@/lib/ai/video/higgsfield-constants";
 
@@ -160,25 +160,71 @@ export function createHiggsfieldUploadClient(credentials: string): HiggsfieldCli
   });
 }
 
-export function extractVideoUrl(response: V2Response): string | null {
-  if (response.video?.url) return response.video.url;
-  return null;
+/** Normalize v2 subscribe() payload (JobSet JSON or flat V2 status response) to JobSet. */
+export function normalizeHiggsfieldJobResult(raw: unknown): JobSet {
+  if (raw instanceof JobSet) return raw;
+
+  const data = raw as Record<string, unknown>;
+
+  if (Array.isArray(data.jobs)) {
+    return new JobSet({
+      id: String(data.id ?? data.request_id ?? (data.jobs[0] as Job | undefined)?.id ?? ""),
+      jobs: data.jobs as JobSetData["jobs"],
+    });
+  }
+
+  const status = typeof data.status === "string" ? data.status : undefined;
+  const requestId = typeof data.request_id === "string" ? data.request_id : undefined;
+  if (requestId && status) {
+    let results: Job["results"] = null;
+    const video = data.video as { url?: string } | undefined;
+    if (video?.url) {
+      results = {
+        raw: { url: video.url, type: "video" },
+        min: { url: video.url, type: "video" },
+      };
+    } else {
+      const images = data.images as Array<{ url?: string }> | undefined;
+      const imageUrl = images?.[0]?.url;
+      if (imageUrl) {
+        results = {
+          raw: { url: imageUrl, type: "image" },
+          min: { url: imageUrl, type: "image" },
+        };
+      }
+    }
+
+    return new JobSet({
+      id: requestId,
+      jobs: [{ id: requestId, status, results }],
+    });
+  }
+
+  throw new Error("Higgsfield: unrecognized job response shape.");
 }
 
-export function assertCompletedVideoResponse(response: V2Response): string {
-  if (response.status === "nsfw") {
+export function assertCompletedHiggsfieldJobSet(jobSet: JobSet): {
+  videoUrl: string;
+  jobSetId: string;
+} {
+  if (jobSet.isNsfw) {
     throw new Error("Higgsfield: content blocked by moderation (nsfw).");
   }
-  if (response.status === "failed") {
+  if (jobSet.isFailed) {
     throw new Error("Higgsfield video generation failed.");
   }
-  if (response.status !== "completed") {
-    throw new Error(`Higgsfield: unexpected job status "${response.status}".`);
+  if (jobSet.isCanceled) {
+    throw new Error("Higgsfield: video generation was canceled.");
+  }
+  if (!jobSet.isCompleted) {
+    const jobStatus = jobSet.jobs[0]?.status ?? "unknown";
+    throw new Error(`Higgsfield: job did not complete (status: ${jobStatus}).`);
   }
 
-  const url = extractVideoUrl(response);
-  if (!url) {
+  const videoUrl = jobSet.jobs[0]?.results?.raw?.url;
+  if (!videoUrl) {
     throw new Error("Higgsfield: completed job did not include a video URL.");
   }
-  return url;
+
+  return { videoUrl, jobSetId: jobSet.id };
 }

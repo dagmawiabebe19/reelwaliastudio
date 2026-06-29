@@ -13,13 +13,14 @@ import {
 import { formatGenerationError, logGenerationError } from "@/lib/ai/generation/errors";
 import { downloadVideoSourceImage } from "@/lib/ai/generation/video-source";
 import {
-  assertCompletedVideoResponse,
+  assertCompletedHiggsfieldJobSet,
   assertHiggsfieldVideoConfig,
   configureHiggsfieldSdk,
   createHiggsfieldUploadClient,
   higgsfieldCredentials,
   higgsfieldCredentialsConfigured,
   higgsfieldDopModel,
+  normalizeHiggsfieldJobResult,
 } from "@/lib/ai/video/higgsfield-api";
 import {
   errorResult,
@@ -117,22 +118,45 @@ export const generateVideo: VideoAdapter = async (input) => {
       imageUploadFormat(contentType),
     );
 
-    const dopInput: Record<string, unknown> = {
+    const dopParams: Record<string, unknown> = {
       model: higgsfieldDopModel(input.dopModel),
       prompt: input.prompt,
       input_images: [InputImage.fromUrl(cdnImageUrl)],
     };
 
     if (input.motionId) {
-      dopInput.motions = [inputMotion(input.motionId, input.motionStrength ?? 1)];
+      dopParams.motions = [inputMotion(input.motionId, input.motionStrength ?? 1)];
     }
 
-    const response = await higgsfield.subscribe(endpoint, {
-      input: dopInput,
+    const result = await higgsfield.subscribe(endpoint, {
+      input: { params: dopParams },
       withPolling: true,
     });
 
-    const remoteUrl = assertCompletedVideoResponse(response);
+    const rawResult = result as unknown as Record<string, unknown>;
+    const rawJobs = rawResult.jobs as Array<Record<string, unknown>> | undefined;
+    console.log(
+      "[higgsfield-job-debug]",
+      JSON.stringify(
+        {
+          topLevelKeys: result && typeof result === "object" ? Object.keys(result) : typeof result,
+          status: rawResult.status,
+          isCompleted: rawResult.isCompleted,
+          isFailed: rawResult.isFailed,
+          jobsLen: rawJobs?.length,
+          firstJobKeys: rawJobs?.[0] ? Object.keys(rawJobs[0]) : null,
+          firstJobStatus: rawJobs?.[0]?.status,
+          hasVideo:
+            !!(rawResult.video as { url?: string } | undefined) ||
+            !!(rawJobs?.[0]?.results as { raw?: { url?: string } } | undefined)?.raw?.url,
+        },
+        null,
+        2,
+      ),
+    );
+
+    const jobSet = normalizeHiggsfieldJobResult(result);
+    const { videoUrl: remoteUrl, jobSetId } = assertCompletedHiggsfieldJobSet(jobSet);
 
     const videoResponse = await fetch(remoteUrl);
     if (!videoResponse.ok) {
@@ -158,7 +182,7 @@ export const generateVideo: VideoAdapter = async (input) => {
           mediaType: "video",
         },
       ],
-      providerJobId: response.request_id ?? `higgsfield-${Date.now()}`,
+      providerJobId: jobSetId || `higgsfield-${Date.now()}`,
       costEstimate: null,
       videoDurationSeconds: durationSeconds,
     });
