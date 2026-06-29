@@ -90,6 +90,41 @@ export async function deleteTakeWithCleanup(takeId: string, episodeId: string): 
   if (assetId) await deleteAssetsByIds([assetId]);
 }
 
+export async function clearFailedTakesWithCleanup(
+  sceneId: string,
+  episodeId: string,
+): Promise<number> {
+  const { verifyEpisodeOwnership } = await import("@/lib/db/audio-lines");
+  await verifyEpisodeOwnership(episodeId);
+
+  const supabase = await getDbClient();
+  const { data: scene, error: sceneError } = await supabase
+    .from("scenes")
+    .select("id")
+    .eq("id", sceneId)
+    .eq("episode_id", episodeId)
+    .maybeSingle();
+
+  if (sceneError) throw new Error(sceneError.message);
+  if (!scene) throw new Error("Scene not found.");
+
+  const { listTakesByScene, deleteTake } = await import("@/lib/db/takes");
+  const takes = await listTakesByScene(sceneId);
+  const failedTakes = takes.filter((take) => take.status === "failed");
+
+  const assetIds: string[] = [];
+  for (const take of failedTakes) {
+    const assetId = await deleteTake(take.id);
+    if (assetId) assetIds.push(assetId);
+  }
+
+  if (assetIds.length) {
+    await deleteAssetsByIds(assetIds);
+  }
+
+  return failedTakes.length;
+}
+
 export async function deleteAudioLineWithCleanup(
   lineId: string,
   episodeId: string,

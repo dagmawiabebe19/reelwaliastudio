@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { starTakeAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
+import { starTakeAction, clearFailedTakesAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import {
   deleteTakeAction,
   getTakeDeletePreviewAction,
 } from "@/app/(app)/series/[id]/delete-actions";
 import { VideoTakePlayer } from "@/components/series/generation/VideoTakePlayer";
+import { Button } from "@/components/ui/Button";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
@@ -85,6 +86,7 @@ export function TakesStrip({
   const activeTake = takes[activeIndex] ?? null;
   const isPortrait = orientation === "portrait";
   const hasPending = takes.some((t) => t.status === "pending");
+  const failedCount = takes.filter((t) => t.status === "failed").length;
   usePollWhilePending(hasPending);
 
   useEffect(() => {
@@ -96,6 +98,24 @@ export function TakesStrip({
   function toggleStar(takeId: string, starred: boolean) {
     startTransition(async () => {
       await starTakeAction(takeId, !starred, seriesId, episodeId);
+      router.refresh();
+    });
+  }
+
+  function handleClearFailed() {
+    if (failedCount < 1) return;
+    const confirmed = window.confirm(
+      `Remove ${failedCount} failed take${failedCount === 1 ? "" : "s"} from this scene? Ready and pending takes are not affected.`,
+    );
+    if (!confirmed) return;
+
+    startTransition(async () => {
+      const result = await clearFailedTakesAction(sceneId, seriesId, episodeId);
+      if ("error" in result && result.error) {
+        alert(result.error);
+        return;
+      }
+      setActiveIndex(0);
       router.refresh();
     });
   }
@@ -153,12 +173,25 @@ export function TakesStrip({
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="studio-column-heading-sm font-display text-foreground">Takes</h3>
-            <a
-              href={`/api/export/scene/${sceneId}`}
-              className="text-xs text-accent hover:underline"
-            >
-              Download starred takes
-            </a>
+            <div className="flex flex-wrap items-center gap-3">
+              {failedCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-auto px-2 py-1 text-xs text-accent"
+                  disabled={pending}
+                  onClick={handleClearFailed}
+                >
+                  Clear failed ({failedCount})
+                </Button>
+              ) : null}
+              <a
+                href={`/api/export/scene/${sceneId}`}
+                className="text-xs text-accent hover:underline"
+              >
+                Download starred takes
+              </a>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -266,7 +299,18 @@ export function TakesStrip({
                 Take {activeTake.take_number}
                 {activeTake.starred ? <span className="ml-2 text-amber-400">★</span> : null}
               </p>
-              <div className="min-w-0 shrink">
+              <div className="flex min-w-0 shrink flex-wrap items-center gap-2">
+                {failedCount > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-auto px-2 py-1 text-xs text-accent"
+                    disabled={pending}
+                    onClick={handleClearFailed}
+                  >
+                    Clear failed ({failedCount})
+                  </Button>
+                ) : null}
                 <GenerationStatusLine
                   status={activeTake.status}
                   error={

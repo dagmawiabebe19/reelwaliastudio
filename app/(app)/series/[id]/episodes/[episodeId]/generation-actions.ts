@@ -10,6 +10,7 @@ import {
 import { createPendingTakes, executeGenerationJob, type GenerateTakeParams } from "@/lib/ai/generation/run";
 import { getModelById, getPublicModelCatalog, isModelConfigured } from "@/lib/ai/registry";
 import { listHiggsfieldMotions } from "@/lib/ai/video/higgsfield";
+import { clearFailedTakesWithCleanup } from "@/lib/db/delete";
 import { listScenesByEpisode, updateScene } from "@/lib/db/scenes";
 import { listTakesByScene, listTakesForScenes, setTakeStarred } from "@/lib/db/takes";
 import { getSignedUrl } from "@/lib/storage/signed-url";
@@ -172,6 +173,20 @@ export async function generateEpisodeStillsAction(input: {
     return { queued: jobs.length };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Batch still generation failed to start." };
+  }
+}
+
+export async function clearFailedTakesAction(
+  sceneId: string,
+  seriesId: string,
+  episodeId: string,
+) {
+  try {
+    const deleted = await clearFailedTakesWithCleanup(sceneId, episodeId);
+    revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
+    return { deleted };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to clear failed takes." };
   }
 }
 
