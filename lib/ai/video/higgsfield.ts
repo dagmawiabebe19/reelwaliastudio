@@ -20,7 +20,7 @@ import {
   higgsfieldCredentials,
   higgsfieldCredentialsConfigured,
   higgsfieldDopModel,
-  normalizeHiggsfieldJobResult,
+  pollHiggsfieldJobToTerminal,
 } from "@/lib/ai/video/higgsfield-api";
 import {
   errorResult,
@@ -155,7 +155,7 @@ export const generateVideo: VideoAdapter = async (input) => {
       ),
     );
 
-    const jobSet = normalizeHiggsfieldJobResult(result);
+    const jobSet = await pollHiggsfieldJobToTerminal(credentials, result);
     const { videoUrl: remoteUrl, jobSetId } = assertCompletedHiggsfieldJobSet(jobSet);
 
     const videoResponse = await fetch(remoteUrl);
