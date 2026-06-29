@@ -14,6 +14,7 @@ import {
 import {
   falCredentialsConfigured,
   formatFalError,
+  isPublicFalImageUrl,
   submitSeedanceJob,
   uploadSeedanceSourceImage,
 } from "@/lib/ai/video/seedance-api";
@@ -65,12 +66,16 @@ export const generateVideo: VideoAdapter = async (input) => {
   }
 
   try {
-    const { buffer, contentType } = await downloadVideoSourceImage({
-      bucket: input.startImageBucket,
-      storagePath: input.startImageStoragePath,
-    });
-
-    const imageUrl = await uploadSeedanceSourceImage(buffer, contentType);
+    let imageUrl: string;
+    if (isPublicFalImageUrl(input.startImageUrl)) {
+      imageUrl = input.startImageUrl!;
+    } else {
+      const { buffer, contentType } = await downloadVideoSourceImage({
+        bucket: input.startImageBucket,
+        storagePath: input.startImageStoragePath,
+      });
+      imageUrl = await uploadSeedanceSourceImage(buffer, contentType);
+    }
 
     const audioMode: SeedanceAudioMode = input.seedanceAudioMode ?? "off";
     const generate_audio = seedanceGenerateAudio(audioMode);

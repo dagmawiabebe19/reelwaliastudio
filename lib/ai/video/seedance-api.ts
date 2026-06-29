@@ -1,5 +1,6 @@
 import "server-only";
 
+import { ApiError, ValidationError, fal } from "@fal-ai/client";
 import { getEnv } from "@/lib/ai/shared";
 import {
   DEFAULT_SEEDANCE_FAST_MODEL,
@@ -22,21 +23,16 @@ export function seedanceModelId(tier?: string | null): string {
   return getEnv("SEEDANCE_MODEL") ?? DEFAULT_SEEDANCE_MODEL;
 }
 
-const FAL_QUEUE_BASE = "https://queue.fal.run";
-const FAL_STORAGE_UPLOAD = "https://rest.alpha.fal.ai/storage/upload";
-const FAL_POLL_INTERVAL_MS = 3_000;
-const FAL_MAX_POLL_MS = 15 * 60 * 1_000;
-
 export function falCredentialsConfigured(): boolean {
   return Boolean(getEnv("FAL_KEY"));
 }
 
-function falAuthHeaders(): Record<string, string> {
+export function configureFalClient(): void {
   const key = getEnv("FAL_KEY");
   if (!key) {
     throw new Error("Seedance: FAL_KEY is not configured.");
   }
-  return { Authorization: `Key ${key}` };
+  fal.config({ credentials: key });
 }
 
 function imageExtension(contentType: string): string {
@@ -46,63 +42,33 @@ function imageExtension(contentType: string): string {
   return "jpg";
 }
 
-function queueUrl(modelId: string, suffix = ""): string {
-  const path = suffix ? `/${modelId}/requests/${suffix}` : `/${modelId}`;
-  return `${FAL_QUEUE_BASE}${path}`;
-}
-
-async function readFalError(response: Response): Promise<string> {
-  const text = await response.text();
+/** True when fal can fetch the URL directly (not a private/expiring Supabase signed URL). */
+export function isPublicFalImageUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
   try {
-    const json = JSON.parse(text) as {
-      detail?: string | Array<{ msg?: string; loc?: string[] }>;
-      error?: string;
-      message?: string;
-    };
-    if (typeof json.detail === "string") return json.detail;
-    if (Array.isArray(json.detail)) {
-      return json.detail.map((item) => item.msg).filter(Boolean).join("; ");
-    }
-    if (json.error) return json.error;
-    if (json.message) return json.message;
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes("supabase")) return false;
+    if (parsed.searchParams.has("token")) return false;
+    return true;
   } catch {
-    // fall through
+    return false;
   }
-  return text || `HTTP ${response.status}`;
 }
 
-/** Upload source take bytes to fal CDN — avoids expiring Supabase signed URLs. */
+/** Upload source take bytes via fal SDK storage — avoids stale hand-rolled REST endpoints. */
 export async function uploadSeedanceSourceImage(
   buffer: Buffer,
   contentType: string,
 ): Promise<string> {
+  configureFalClient();
   const ext = imageExtension(contentType);
-  const filename = `source.${ext}`;
-  const form = new FormData();
-  form.append(
-    "file",
-    new Blob([new Uint8Array(buffer)], { type: contentType || "image/jpeg" }),
-    filename,
-  );
-
-  const response = await fetch(FAL_STORAGE_UPLOAD, {
-    method: "POST",
-    headers: falAuthHeaders(),
-    body: form,
+  const blob = new Blob([new Uint8Array(buffer)], {
+    type: contentType || "image/jpeg",
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Seedance: fal storage upload failed (${response.status}): ${await readFalError(response)}`,
-    );
-  }
-
-  const payload = (await response.json()) as { url?: string };
-  if (!payload.url) {
-    throw new Error("Seedance: fal storage upload returned no URL.");
-  }
-
-  return payload.url;
+  const file = new File([blob], `source.${ext}`, { type: blob.type });
+  return fal.storage.upload(file);
 }
 
 export type SeedanceQueueResult = {
@@ -120,114 +86,50 @@ export type SeedanceFalInput = {
   generate_audio: boolean;
 };
 
-type FalQueueStatus = "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED";
+type SeedanceFalOutput = {
+  video?: { url?: string };
+  seed?: number;
+};
 
-async function submitFalQueue(modelId: string, input: SeedanceFalInput): Promise<string> {
-  const response = await fetch(queueUrl(modelId), {
-    method: "POST",
-    headers: {
-      ...falAuthHeaders(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  });
+function formatApiErrorBody(body: unknown): string {
+  if (!body) return "";
+  if (typeof body === "string") return body;
+  if (typeof body !== "object") return String(body);
 
-  if (!response.ok) {
-    throw new Error(
-      `Seedance: submit failed (${response.status}): ${await readFalError(response)}`,
-    );
-  }
-
-  const payload = (await response.json()) as { request_id?: string };
-  if (!payload.request_id) {
-    throw new Error("Seedance: fal queue submit returned no request_id.");
-  }
-
-  return payload.request_id;
-}
-
-async function pollFalQueueToTerminal(
-  modelId: string,
-  requestId: string,
-): Promise<void> {
-  const started = Date.now();
-
-  while (Date.now() - started < FAL_MAX_POLL_MS) {
-    const response = await fetch(queueUrl(modelId, `${requestId}/status`), {
-      headers: falAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Seedance: status poll failed (${response.status}): ${await readFalError(response)}`,
-      );
-    }
-
-    const statusPayload = (await response.json()) as {
-      status?: FalQueueStatus;
-      error?: string;
-    };
-
-    if (statusPayload.status === "COMPLETED") return;
-
-    if (statusPayload.status === "FAILED") {
-      throw new Error(
-        statusPayload.error
-          ? `Seedance: job failed — ${statusPayload.error}`
-          : "Seedance: job failed.",
-      );
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, FAL_POLL_INTERVAL_MS));
-  }
-
-  throw new Error("Seedance: timed out waiting for fal job to complete.");
-}
-
-async function fetchFalQueueResult(
-  modelId: string,
-  requestId: string,
-): Promise<{ videoUrl: string; seed: number | null }> {
-  const response = await fetch(queueUrl(modelId, requestId), {
-    headers: falAuthHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Seedance: result fetch failed (${response.status}): ${await readFalError(response)}`,
-    );
-  }
-
-  const payload = (await response.json()) as {
-    video?: { url?: string };
-    seed?: number;
+  const record = body as {
+    detail?: string | Array<{ msg?: string }>;
+    error?: string;
+    message?: string;
   };
 
-  const videoUrl = payload.video?.url;
-  if (!videoUrl) {
-    throw new Error("Seedance: job completed but no video URL in fal response.");
+  if (typeof record.detail === "string") return record.detail;
+  if (Array.isArray(record.detail)) {
+    return record.detail.map((item) => item.msg).filter(Boolean).join("; ");
   }
+  if (record.error) return record.error;
+  if (record.message) return record.message;
 
-  return { videoUrl, seed: payload.seed ?? null };
-}
-
-export async function submitSeedanceJob(
-  tier: string | null | undefined,
-  input: SeedanceFalInput,
-): Promise<SeedanceQueueResult> {
-  const endpoint = seedanceModelId(tier);
-  const requestId = await submitFalQueue(endpoint, input);
-  await pollFalQueueToTerminal(endpoint, requestId);
-  const { videoUrl, seed } = await fetchFalQueueResult(endpoint, requestId);
-
-  return {
-    videoUrl,
-    requestId,
-    seed,
-  };
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return String(body);
+  }
 }
 
 export function formatFalError(error: unknown): string {
+  if (error instanceof ValidationError) {
+    const fields = error.fieldErrors.map((item) => item.msg).filter(Boolean).join("; ");
+    const detail = fields || formatApiErrorBody(error.body) || error.message;
+    const request = error.requestId ? ` [request ${error.requestId}]` : "";
+    return `Seedance: (${error.status}) ${detail}${request}`;
+  }
+
+  if (error instanceof ApiError) {
+    const detail = formatApiErrorBody(error.body) || error.message;
+    const request = error.requestId ? ` [request ${error.requestId}]` : "";
+    return `Seedance: (${error.status}) ${detail}${request}`;
+  }
+
   if (error instanceof Error) {
     return error.message.startsWith("Seedance:")
       ? error.message
@@ -235,4 +137,34 @@ export function formatFalError(error: unknown): string {
   }
 
   return `Seedance: ${String(error)}`;
+}
+
+export async function submitSeedanceJob(
+  tier: string | null | undefined,
+  input: SeedanceFalInput,
+): Promise<SeedanceQueueResult> {
+  configureFalClient();
+  const endpoint = seedanceModelId(tier);
+
+  const result = await fal.subscribe(endpoint, {
+    input,
+    logs: true,
+  });
+
+  const data = result.data as SeedanceFalOutput;
+  const videoUrl = data.video?.url;
+  if (!videoUrl) {
+    throw new ApiError({
+      message: "Seedance job completed but no video URL in fal response.",
+      status: 500,
+      body: data,
+      requestId: result.requestId,
+    });
+  }
+
+  return {
+    videoUrl,
+    requestId: result.requestId ?? null,
+    seed: data.seed ?? null,
+  };
 }
