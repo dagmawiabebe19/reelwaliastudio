@@ -42,22 +42,36 @@ function imageExtension(contentType: string): string {
   return "jpg";
 }
 
-/** True when fal can fetch the URL directly (not a private/expiring Supabase signed URL). */
-export function isPublicFalImageUrl(url: string | null | undefined): boolean {
-  if (!url) return false;
+/** True when a URL is hosted on fal's CDN/storage (stable for Seedance image_urls). */
+export function isFalHostedStorageUrl(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:") return false;
-    const host = parsed.hostname.toLowerCase();
-    if (host.includes("supabase")) return false;
-    if (parsed.searchParams.has("token")) return false;
-    return true;
+    const host = new URL(url).hostname.toLowerCase();
+    return host.includes("fal.media") || host.includes("fal.ai") || host.includes("fal.run");
   } catch {
     return false;
   }
 }
 
-/** Upload source take bytes via fal SDK storage — avoids stale hand-rolled REST endpoints. */
+function assertUsableFalUploadUrl(url: string | null | undefined, label: string): string {
+  const trimmed = url?.trim();
+  if (!trimmed) {
+    throw new Error(`Seedance: fal upload for reference "${label}" returned an empty URL.`);
+  }
+  if (!isFalHostedStorageUrl(trimmed)) {
+    throw new Error(
+      `Seedance: fal upload for reference "${label}" did not return a fal-hosted URL (got ${trimmed}).`,
+    );
+  }
+  return trimmed;
+}
+
+/** @deprecated Never pass third-party signed URLs to Seedance — always upload via fal.storage. */
+export function isPublicFalImageUrl(url: string | null | undefined): boolean {
+  return isFalHostedStorageUrl(url);
+}
+
+/** Upload image bytes via fal SDK storage — returns a stable fal-hosted URL. */
 export async function uploadSeedanceSourceImage(
   buffer: Buffer,
   contentType: string,
@@ -67,8 +81,82 @@ export async function uploadSeedanceSourceImage(
   const blob = new Blob([new Uint8Array(buffer)], {
     type: contentType || "image/jpeg",
   });
-  const file = new File([blob], `source.${ext}`, { type: blob.type });
-  return fal.storage.upload(file);
+  const file = new File([blob], `reference.${ext}`, { type: blob.type });
+  const url = await fal.storage.upload(file);
+  return assertUsableFalUploadUrl(url, "uploaded image");
+}
+
+export type SeedanceReferenceUpload = {
+  label: string;
+  bucket: string;
+  storagePath: string;
+};
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Download from Supabase storage and upload to fal.storage for one reference.
+ * Retries the fal upload once on transient failure.
+ */
+export async function uploadSeedanceReferenceImage(
+  ref: SeedanceReferenceUpload,
+  download: (
+    source: Pick<SeedanceReferenceUpload, "bucket" | "storagePath">,
+  ) => Promise<{ buffer: Buffer; contentType: string }>,
+): Promise<string> {
+  let buffer: Buffer;
+  let contentType: string;
+  try {
+    const downloaded = await download({
+      bucket: ref.bucket,
+      storagePath: ref.storagePath,
+    });
+    buffer = downloaded.buffer;
+    contentType = downloaded.contentType;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Seedance: could not read reference "${ref.label}" from storage (${ref.bucket}/${ref.storagePath}) — ${detail}`,
+    );
+  }
+
+  if (!buffer.length) {
+    throw new Error(`Seedance: reference "${ref.label}" has no image bytes in storage.`);
+  }
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const url = await uploadSeedanceSourceImage(buffer, contentType);
+      return assertUsableFalUploadUrl(url, ref.label);
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) {
+        await sleep(400);
+      }
+    }
+  }
+
+  const detail = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(
+    `Seedance: failed to upload reference "${ref.label}" to fal storage after retry — ${detail}`,
+  );
+}
+
+/** Upload every bound reference to fal.storage; never pass Supabase signed URLs to Seedance. */
+export async function uploadAllSeedanceReferenceImages(
+  references: SeedanceReferenceUpload[],
+  download: (
+    source: Pick<SeedanceReferenceUpload, "bucket" | "storagePath">,
+  ) => Promise<{ buffer: Buffer; contentType: string }>,
+): Promise<string[]> {
+  const image_urls: string[] = [];
+  for (const ref of references) {
+    image_urls.push(await uploadSeedanceReferenceImage(ref, download));
+  }
+  return image_urls;
 }
 
 export type SeedanceQueueResult = {
@@ -106,14 +194,20 @@ function formatApiErrorBody(body: unknown): string {
   if (typeof body !== "object") return String(body);
 
   const record = body as {
-    detail?: string | Array<{ msg?: string }>;
+    detail?: string | Array<{ msg?: string; loc?: unknown; type?: string }>;
     error?: string;
     message?: string;
   };
 
   if (typeof record.detail === "string") return record.detail;
   if (Array.isArray(record.detail)) {
-    return record.detail.map((item) => item.msg).filter(Boolean).join("; ");
+    return record.detail
+      .map((item) => {
+        const loc = item.loc ? ` (${JSON.stringify(item.loc)})` : "";
+        return [item.msg, loc].filter(Boolean).join("");
+      })
+      .filter(Boolean)
+      .join("; ");
   }
   if (record.error) return record.error;
   if (record.message) return record.message;
@@ -125,18 +219,34 @@ function formatApiErrorBody(body: unknown): string {
   }
 }
 
+function fullApiErrorBody(body: unknown): string {
+  if (body == null) return "";
+  if (typeof body === "string") return body;
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return String(body);
+  }
+}
+
 export function formatFalError(error: unknown): string {
   if (error instanceof ValidationError) {
     const fields = error.fieldErrors.map((item) => item.msg).filter(Boolean).join("; ");
     const detail = fields || formatApiErrorBody(error.body) || error.message;
+    const fullBody = fullApiErrorBody(error.body);
     const request = error.requestId ? ` [request ${error.requestId}]` : "";
-    return `Seedance: (${error.status}) ${detail}${request}`;
+    const bodySuffix =
+      fullBody && fullBody !== detail ? ` Full response: ${fullBody}` : "";
+    return `Seedance: (${error.status}) ${detail}${bodySuffix}${request}`;
   }
 
   if (error instanceof ApiError) {
     const detail = formatApiErrorBody(error.body) || error.message;
+    const fullBody = fullApiErrorBody(error.body);
     const request = error.requestId ? ` [request ${error.requestId}]` : "";
-    return `Seedance: (${error.status}) ${detail}${request}`;
+    const bodySuffix =
+      fullBody && fullBody !== detail ? ` Full response: ${fullBody}` : fullBody ? ` Full response: ${fullBody}` : "";
+    return `Seedance: (${error.status}) ${detail}${bodySuffix}${request}`;
   }
 
   if (error instanceof Error) {
@@ -154,6 +264,26 @@ export async function submitSeedanceJob(
 ): Promise<SeedanceQueueResult> {
   configureFalClient();
   const endpoint = seedanceModelId(tier);
+
+  console.log(
+    "[seedance-submit]",
+    JSON.stringify(
+      {
+        endpoint,
+        image_urls: input.image_urls,
+        image_url_hosts: input.image_urls.map((url) => {
+          try {
+            return new URL(url).hostname;
+          } catch {
+            return url;
+          }
+        }),
+        reference_count: input.image_urls.length,
+      },
+      null,
+      2,
+    ),
+  );
 
   const result = await fal.subscribe(endpoint, {
     input,

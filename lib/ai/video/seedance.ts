@@ -15,11 +15,9 @@ import {
   buildSeedancePromptWithImageRefs,
   falCredentialsConfigured,
   formatFalError,
-  isPublicFalImageUrl,
   submitSeedanceJob,
-  uploadSeedanceSourceImage,
+  uploadAllSeedanceReferenceImages,
 } from "@/lib/ai/video/seedance-api";
-import type { VideoReferenceImage } from "@/lib/ai/video/types";
 import { persistGeneratedBuffer } from "@/lib/storage/persist-generated";
 import type { GenerateVideoInput, VideoAdapter } from "./types";
 
@@ -56,18 +54,6 @@ function normalizeDurationSeconds(durationSeconds: number): string {
   return String(clamped);
 }
 
-async function uploadReferenceImage(ref: VideoReferenceImage): Promise<string> {
-  if (isPublicFalImageUrl(ref.signedUrl)) {
-    return ref.signedUrl!;
-  }
-
-  const { buffer, contentType } = await downloadVideoSourceImage({
-    bucket: ref.bucket,
-    storagePath: ref.storagePath,
-  });
-  return uploadSeedanceSourceImage(buffer, contentType);
-}
-
 export const generateVideo: VideoAdapter = async (input) => {
   if (!falCredentialsConfigured()) {
     return notConfiguredResult("Seedance 2.0", "FAL_KEY");
@@ -81,7 +67,31 @@ export const generateVideo: VideoAdapter = async (input) => {
   }
 
   try {
-    const image_urls = await Promise.all(references.map((ref) => uploadReferenceImage(ref)));
+    const image_urls = await uploadAllSeedanceReferenceImages(
+      references.map((ref) => ({
+        label: ref.label,
+        bucket: ref.bucket,
+        storagePath: ref.storagePath,
+      })),
+      downloadVideoSourceImage,
+    );
+
+    console.log(
+      "[seedance-reference-upload]",
+      JSON.stringify(
+        {
+          sceneId: input.sceneId,
+          references: references.map((ref, index) => ({
+            label: ref.label,
+            falUrl: image_urls[index],
+          })),
+          image_urls,
+        },
+        null,
+        2,
+      ),
+    );
+
     const prompt = buildSeedancePromptWithImageRefs(
       input.prompt,
       references.map((ref) => ref.label),
