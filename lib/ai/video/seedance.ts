@@ -15,8 +15,7 @@ import {
   buildSeedancePromptWithImageRefs,
   falCredentialsConfigured,
   formatFalError,
-  submitSeedanceJob,
-  uploadAllSeedanceReferenceImages,
+  submitSeedanceJobWithReferenceRetries,
 } from "@/lib/ai/video/seedance-api";
 import { persistGeneratedBuffer } from "@/lib/storage/persist-generated";
 import type { GenerateVideoInput, VideoAdapter } from "./types";
@@ -67,30 +66,11 @@ export const generateVideo: VideoAdapter = async (input) => {
   }
 
   try {
-    const image_urls = await uploadAllSeedanceReferenceImages(
-      references.map((ref) => ({
-        label: ref.label,
-        bucket: ref.bucket,
-        storagePath: ref.storagePath,
-      })),
-      downloadVideoSourceImage,
-    );
-
-    console.log(
-      "[seedance-reference-upload]",
-      JSON.stringify(
-        {
-          sceneId: input.sceneId,
-          references: references.map((ref, index) => ({
-            label: ref.label,
-            falUrl: image_urls[index],
-          })),
-          image_urls,
-        },
-        null,
-        2,
-      ),
-    );
+    const referenceSources = references.map((ref) => ({
+      label: ref.label,
+      bucket: ref.bucket,
+      storagePath: ref.storagePath,
+    }));
 
     const prompt = buildSeedancePromptWithImageRefs(
       input.prompt,
@@ -100,14 +80,21 @@ export const generateVideo: VideoAdapter = async (input) => {
     const audioMode: SeedanceAudioMode = input.seedanceAudioMode ?? "off";
     const generate_audio = seedanceGenerateAudio(audioMode);
 
-    const { videoUrl, requestId } = await submitSeedanceJob(input.seedanceTier, {
-      prompt,
-      image_urls,
-      resolution: normalizeResolution(input.resolution),
-      duration: normalizeDurationSeconds(input.durationSeconds),
-      aspect_ratio: input.aspectRatio,
-      generate_audio,
-    });
+    const { videoUrl, requestId } = await submitSeedanceJobWithReferenceRetries(
+      input.seedanceTier,
+      {
+        sceneId: input.sceneId,
+        references: referenceSources,
+        download: downloadVideoSourceImage,
+        falInput: {
+          prompt,
+          resolution: normalizeResolution(input.resolution),
+          duration: normalizeDurationSeconds(input.durationSeconds),
+          aspect_ratio: input.aspectRatio,
+          generate_audio,
+        },
+      },
+    );
 
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) {

@@ -229,6 +229,29 @@ function fullApiErrorBody(body: unknown): string {
   }
 }
 
+function falErrorText(error: unknown): string {
+  if (error instanceof ApiError || error instanceof ValidationError) {
+    return [formatApiErrorBody(error.body), error.message].filter(Boolean).join(" ");
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+/** fal/Seedance sometimes cannot fetch its own freshly-uploaded storage URL (transient 422). */
+export function isTransientSeedanceReferenceDownloadError(error: unknown): boolean {
+  if (!(error instanceof ApiError) && !(error instanceof ValidationError)) {
+    return false;
+  }
+  if (error.status !== 422) return false;
+
+  const haystack = falErrorText(error).toLowerCase();
+  return (
+    haystack.includes("failed to download") ||
+    haystack.includes("download the file") ||
+    haystack.includes("url is accessible")
+  );
+}
+
 export function formatFalError(error: unknown): string {
   if (error instanceof ValidationError) {
     const fields = error.fieldErrors.map((item) => item.msg).filter(Boolean).join("; ");
@@ -306,4 +329,91 @@ export async function submitSeedanceJob(
     requestId: result.requestId ?? null,
     seed: data.seed ?? null,
   };
+}
+
+const SEEDANCE_SUBMIT_RETRY_BACKOFF_MS = [1000, 2000] as const;
+
+export type SeedanceReferenceDownloadFn = (
+  source: Pick<SeedanceReferenceUpload, "bucket" | "storagePath">,
+) => Promise<{ buffer: Buffer; contentType: string }>;
+
+function logSeedanceReferenceUpload(
+  sceneId: string,
+  references: SeedanceReferenceUpload[],
+  image_urls: string[],
+  submitAttempt: number,
+): void {
+  console.log(
+    "[seedance-reference-upload]",
+    JSON.stringify(
+      {
+        sceneId,
+        submitAttempt,
+        references: references.map((ref, index) => ({
+          label: ref.label,
+          falUrl: image_urls[index],
+        })),
+        image_urls,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+/**
+ * Upload all references to fal.storage and submit Seedance reference-to-video.
+ * On transient 422 download-fetch failures, re-upload fresh URLs and retry (up to 2 retries).
+ */
+export async function submitSeedanceJobWithReferenceRetries(
+  tier: string | null | undefined,
+  options: {
+    sceneId: string;
+    references: SeedanceReferenceUpload[];
+    download: SeedanceReferenceDownloadFn;
+    falInput: Omit<SeedanceFalInput, "image_urls">;
+  },
+): Promise<SeedanceQueueResult> {
+  const maxAttempts = 1 + SEEDANCE_SUBMIT_RETRY_BACKOFF_MS.length;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      const backoffMs = SEEDANCE_SUBMIT_RETRY_BACKOFF_MS[attempt - 1];
+      console.log(
+        "[seedance-retry]",
+        JSON.stringify({
+          sceneId: options.sceneId,
+          submitAttempt: attempt + 1,
+          maxAttempts,
+          reason: "transient_422_reference_download",
+          backoffMs,
+          previousError: lastError instanceof Error ? lastError.message : String(lastError),
+        }),
+      );
+      await sleep(backoffMs);
+    }
+
+    const image_urls = await uploadAllSeedanceReferenceImages(
+      options.references,
+      options.download,
+    );
+    logSeedanceReferenceUpload(options.sceneId, options.references, image_urls, attempt + 1);
+
+    try {
+      return await submitSeedanceJob(tier, {
+        ...options.falInput,
+        image_urls,
+      });
+    } catch (error) {
+      lastError = error;
+      const canRetry =
+        isTransientSeedanceReferenceDownloadError(error) && attempt < maxAttempts - 1;
+      if (!canRetry) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Seedance: reference-to-video submit failed after retries.");
 }
