@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { starTakeAction, clearFailedTakesAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
+import {
+  starTakeAction,
+  clearFailedTakesAction,
+} from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import {
   deleteTakeAction,
   getTakeDeletePreviewAction,
@@ -10,9 +13,12 @@ import {
 import { VideoTakePlayer } from "@/components/series/generation/VideoTakePlayer";
 import { Button } from "@/components/ui/Button";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
-import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { Orientation } from "@/lib/db/types";
+import {
+  orientationAspectClass,
+  takeStatusRingClass,
+} from "@/lib/storyboard/studio-visuals";
 
 export type TakeCardData = {
   id: string;
@@ -39,30 +45,75 @@ interface TakesStripProps {
   onActiveIndexChange?: (index: number) => void;
 }
 
-function statusLabel(status: string) {
-  switch (status) {
-    case "pending":
-      return "Pending";
-    case "failed":
-      return "Failed";
-    case "ready":
-      return "Done";
-    default:
-      return status;
+function TakeThumbMedia({ take }: { take: TakeCardData }) {
+  if (take.status === "pending") {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-background">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-status-progress" />
+      </div>
+    );
   }
+
+  if (!take.assetUrl) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-background text-[9px] text-muted">
+        —
+      </div>
+    );
+  }
+
+  if (take.media_type === "video") {
+    return (
+      <video
+        src={take.assetUrl}
+        muted
+        playsInline
+        preload="metadata"
+        className="h-full w-full object-cover"
+      />
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={take.assetUrl} alt="" className="h-full w-full object-cover" />
+  );
 }
 
-function statusColor(status: string) {
-  switch (status) {
-    case "pending":
-      return "text-amber-400";
-    case "failed":
-      return "text-accent";
-    case "ready":
-      return "text-emerald-400";
-    default:
-      return "text-muted";
-  }
+function ContactSheetThumb({
+  take,
+  active,
+  orientation,
+  onSelect,
+}: {
+  take: TakeCardData;
+  active: boolean;
+  orientation: Orientation;
+  onSelect: () => void;
+}) {
+  const thumbWidth = orientation === "portrait" ? "w-[3.25rem]" : "w-[5rem]";
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`studio-contact-thumb ${thumbWidth} ${takeStatusRingClass(take.status, active)}`}
+      aria-label={`Take ${take.take_number}`}
+    >
+      <div className={`${orientationAspectClass(orientation)} w-full`}>
+        <TakeThumbMedia take={take} />
+      </div>
+      {take.starred ? (
+        <span className="absolute left-1 top-1 text-[10px] text-amber-400">★</span>
+      ) : null}
+      {take.status === "failed" ? (
+        <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-accent" />
+      ) : null}
+      <span className="absolute bottom-1 left-1 rounded bg-background/80 px-1 text-[9px] text-muted">
+        {take.take_number}
+      </span>
+    </button>
+  );
 }
 
 export function TakesStrip({
@@ -125,44 +176,37 @@ export function TakesStrip({
   const isOutputPreview = layout === "preview";
 
   const previewFrameClass = isOutputPreview
-    ? activeTake?.media_type === "video"
-      ? "w-full"
-      : isPortrait
-        ? "aspect-[9/16] w-full"
-        : "aspect-video w-full"
-    : activeTake?.media_type === "video"
-      ? isPortrait
-        ? "w-full max-w-[min(100%,280px)]"
-        : "w-full"
-      : isPortrait
-        ? "aspect-[9/16] w-full max-w-[min(100%,280px)]"
-        : "aspect-video w-full";
+    ? isPortrait
+      ? "mx-auto aspect-[9/16] max-h-[min(72vh,42rem)] w-full max-w-[min(100%,22rem)]"
+      : "mx-auto aspect-video w-full max-w-full"
+    : isPortrait
+      ? "aspect-[9/16] w-full max-w-[min(100%,280px)]"
+      : "aspect-video w-full";
 
   if (takes.length === 0 && layout !== "preview") {
     return (
-      <div className="space-y-2">
+      <div className="space-y-3">
         {showStrip ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="studio-column-heading-sm font-display text-foreground">Takes</h3>
+            <p className="studio-section-label">Takes</p>
             <a
               href={`/api/export/scene/${sceneId}`}
-              className="text-xs text-accent hover:underline"
+              className="text-[10px] tracking-wide text-accent hover:underline"
             >
-              Download starred takes
+              Export starred
             </a>
           </div>
         ) : null}
-        <p className="text-sm text-muted">No takes yet. Generate one in the output panel.</p>
+        <p className="text-sm text-muted">No takes yet — generate in the output panel.</p>
       </div>
     );
   }
 
   if (takes.length === 0 && layout === "preview") {
     return (
-      <div
-        className={`flex items-center justify-center rounded-lg border border-dashed border-border bg-background text-sm text-muted ${previewFrameClass}`}
-      >
-        No take selected
+      <div className={`studio-empty-preview ${previewFrameClass}`}>
+        <p className="font-display text-xs tracking-widest text-muted">Output</p>
+        <p className="text-sm">Ready to generate</p>
       </div>
     );
   }
@@ -172,13 +216,13 @@ export function TakesStrip({
       {showStrip ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="studio-column-heading-sm font-display text-foreground">Takes</h3>
+            <p className="studio-section-label">Contact sheet</p>
             <div className="flex flex-wrap items-center gap-3">
               {failedCount > 0 ? (
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-auto px-2 py-1 text-xs text-accent"
+                  className="h-auto px-2 py-1 text-[10px] text-muted hover:text-accent"
                   disabled={pending}
                   onClick={handleClearFailed}
                 >
@@ -187,43 +231,27 @@ export function TakesStrip({
               ) : null}
               <a
                 href={`/api/export/scene/${sceneId}`}
-                className="text-xs text-accent hover:underline"
+                className="text-[10px] tracking-wide text-accent hover:underline"
               >
-                Download starred takes
+                Export starred
               </a>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="studio-contact-scroll">
             {takes.map((take, index) => (
-              <button
+              <ContactSheetThumb
                 key={take.id}
-                type="button"
-                onClick={() => setActiveIndex(index)}
-                className={`rounded-md border px-3 py-1.5 text-xs ${
-                  activeIndex === index
-                    ? "border-accent bg-accent-muted text-accent"
-                    : "border-border text-muted hover:text-accent"
-                }`}
-              >
-                Take {take.take_number}
-                {take.status === "pending" ? (
-                  <span className="ml-2 text-amber-400">…</span>
-                ) : take.status === "ready" ? (
-                  <span className="ml-2 text-emerald-400">✓</span>
-                ) : take.status === "failed" ? (
-                  <span className="ml-2 text-accent">✗</span>
-                ) : (
-                  <span className={`ml-2 ${statusColor(take.status)}`}>
-                    {statusLabel(take.status)}
-                  </span>
-                )}
-              </button>
+                take={take}
+                active={activeIndex === index}
+                orientation={orientation}
+                onSelect={() => setActiveIndex(index)}
+              />
             ))}
           </div>
 
           {activeTake && layout === "strip" ? (
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 border-t border-border/60 pt-3">
               <button
                 type="button"
                 disabled={pending}
@@ -233,7 +261,7 @@ export function TakesStrip({
               >
                 {activeTake.starred ? "★" : "☆"}
               </button>
-              <span className="text-sm text-muted">{activeTake.model ?? "—"}</span>
+              <span className="text-xs text-muted">{activeTake.model ?? "—"}</span>
               <DeleteConfirmButton
                 ariaLabel="Delete take"
                 fetchPreview={() =>
@@ -242,87 +270,53 @@ export function TakesStrip({
                 onDelete={() => deleteTakeAction(activeTake.id, episodeId, seriesId)}
                 onSuccess={() => router.refresh()}
               />
-              <GenerationStatusLine
-                status={activeTake.status}
-                error={activeTake.error_message}
-              />
+              {activeTake.status === "pending" ? (
+                <span className="text-xs text-status-progress">Generating…</span>
+              ) : activeTake.status === "failed" ? (
+                <span className="max-w-md truncate text-xs text-muted" title={activeTake.error_message ?? undefined}>
+                  {activeTake.error_message ?? "Failed"}
+                </span>
+              ) : null}
             </div>
           ) : null}
         </>
       ) : null}
 
       {showPreview && activeTake ? (
-        <div
-          className={
-            layout === "combined"
-              ? "grid gap-4 md:grid-cols-[1fr_auto]"
-              : "min-w-0 max-w-full space-y-3"
-          }
-        >
-          {layout === "combined" ? (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
+        <div className={isOutputPreview ? "min-w-0 max-w-full space-y-4" : "grid gap-4 md:grid-cols-[1fr_auto]"}>
+          {isOutputPreview ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="studio-section-label">
+                Take {activeTake.take_number}
+                {activeTake.starred ? <span className="ml-2 text-amber-400">★</span> : null}
+              </p>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   disabled={pending}
                   onClick={() => toggleStar(activeTake.id, activeTake.starred)}
-                  className={`text-lg ${activeTake.starred ? "text-amber-400" : "text-muted"}`}
+                  className={`text-base ${activeTake.starred ? "text-amber-400" : "text-muted"}`}
                   aria-label={activeTake.starred ? "Unstar take" : "Star take"}
                 >
                   {activeTake.starred ? "★" : "☆"}
                 </button>
-                <span className="text-sm text-muted">{activeTake.model ?? "—"}</span>
-                <DeleteConfirmButton
-                  ariaLabel="Delete take"
-                  fetchPreview={() =>
-                    getTakeDeletePreviewAction(activeTake.id, episodeId, seriesId)
-                  }
-                  onDelete={() => deleteTakeAction(activeTake.id, episodeId, seriesId)}
-                  onSuccess={() => router.refresh()}
-                />
-              </div>
-
-              <GenerationStatusLine
-                status={activeTake.status}
-                error={activeTake.error_message}
-              />
-
-              {activeTake.status === "failed" && activeTake.error_message ? (
-                <p className="studio-contained-error rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
-                  {activeTake.error_message}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <div className="flex min-w-0 max-w-full flex-wrap items-center justify-between gap-2">
-              <p className="min-w-0 text-sm text-muted">
-                Take {activeTake.take_number}
-                {activeTake.starred ? <span className="ml-2 text-amber-400">★</span> : null}
-              </p>
-              <div className="flex min-w-0 shrink flex-wrap items-center gap-2">
                 {failedCount > 0 ? (
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-auto px-2 py-1 text-xs text-accent"
+                    className="h-auto px-2 py-1 text-[10px] text-muted"
                     disabled={pending}
                     onClick={handleClearFailed}
                   >
                     Clear failed ({failedCount})
                   </Button>
                 ) : null}
-                <GenerationStatusLine
-                  status={activeTake.status}
-                  error={
-                    activeTake.status === "failed" ? null : activeTake.error_message
-                  }
-                />
               </div>
             </div>
-          )}
+          ) : null}
 
           <div
-            className={`mx-auto w-full max-w-full overflow-hidden rounded-lg border border-border bg-background ${previewFrameClass}`}
+            className={`overflow-hidden rounded-lg border border-border/80 bg-background ${previewFrameClass}`}
           >
             {activeTake.assetUrl ? (
               activeTake.media_type === "video" ? (
@@ -336,26 +330,25 @@ export function TakesStrip({
                 <img
                   src={activeTake.assetUrl}
                   alt={`${sceneTitle} take ${activeTake.take_number}`}
-                  className={`h-full w-full ${
-                    isOutputPreview ? "object-cover" : "object-contain"
-                  }`}
+                  className="h-full w-full object-contain"
                 />
               )
             ) : (
-              <div
-                className={`flex w-full items-center justify-center text-xs text-muted ${
-                  isOutputPreview ? "h-full min-h-0" : "min-h-[12rem]"
-                }`}
-              >
-                {activeTake.status === "pending" ? "Generating…" : "No preview"}
+              <div className="studio-empty-preview h-full min-h-[12rem] border-0">
+                {activeTake.status === "pending" ? (
+                  <>
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-status-progress" />
+                    <p className="text-sm">Generating…</p>
+                  </>
+                ) : (
+                  <p className="text-sm">Ready to generate</p>
+                )}
               </div>
             )}
           </div>
 
-          {layout === "preview" && activeTake.status === "failed" && activeTake.error_message ? (
-            <p className="studio-contained-error rounded-md border border-accent/30 bg-accent-muted/20 px-3 py-2 text-sm text-accent">
-              {activeTake.error_message}
-            </p>
+          {activeTake.status === "failed" && activeTake.error_message ? (
+            <p className="text-center text-xs leading-relaxed text-muted">{activeTake.error_message}</p>
           ) : null}
         </div>
       ) : null}

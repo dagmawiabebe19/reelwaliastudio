@@ -25,27 +25,37 @@ export function parsePromptCallouts(prompt: string) {
   return blocks;
 }
 
+export function ProductionNoteChips({ prompt }: { prompt: string }) {
+  const callouts = parsePromptCallouts(prompt).filter((block) => block.type === "callout");
+  if (!callouts.length) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {callouts.map((block, index) => (
+        <span key={index} className="studio-production-chip" title={block.label}>
+          {block.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function SceneCalloutPreview({ prompt }: { prompt: string }) {
   const blocks = parsePromptCallouts(prompt);
   if (!prompt.trim()) return <p className="text-sm text-muted">No prompt yet.</p>;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {blocks.map((block, index) =>
         block.type === "callout" ? (
-          <div
-            key={index}
-            className="rounded-md border border-accent/40 bg-accent-muted/30 px-4 py-3"
-          >
-            <p className="text-xs font-semibold uppercase tracking-wider text-accent">
-              {block.label}
-            </p>
-          </div>
-        ) : (
-          <p key={index} className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+          <span key={index} className="studio-production-chip">
+            {block.label}
+          </span>
+        ) : block.content.trim() ? (
+          <p key={index} className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
             {block.content}
           </p>
-        ),
+        ) : null,
       )}
     </div>
   );

@@ -8,10 +8,8 @@ import {
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/actions";
 import { bindSheetAction } from "@/app/(app)/series/[id]/production-actions";
 import { RefTag } from "@/components/ui/RefTag";
-import { SceneCalloutPreview } from "@/components/series/storyboard/SceneCalloutPreview";
-import {
-  SceneReferencesPanel,
-} from "@/components/series/storyboard/SceneReferencesPanel";
+import { ProductionNoteChips } from "@/components/series/storyboard/SceneCalloutPreview";
+import { SceneReferencesPanel } from "@/components/series/storyboard/SceneReferencesPanel";
 import type { MentionSheet } from "@/lib/production/types";
 import type { ResolvedReference } from "@/lib/production/types";
 
@@ -119,7 +117,12 @@ export function ScenePromptEditor({
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      <SceneReferencesPanel
+        resolvedReferences={resolvedReferences}
+        boundSheetIds={boundSheetIds}
+      />
+
       {boundChips.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {boundChips.map((chip) => (
@@ -128,76 +131,73 @@ export function ScenePromptEditor({
         </div>
       ) : null}
 
-      <SceneReferencesPanel
-        resolvedReferences={resolvedReferences}
-        boundSheetIds={boundSheetIds}
-      />
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="studio-section-label">Shot description</p>
+          <button
+            type="button"
+            onClick={savePrompt}
+            disabled={pending}
+            className="rounded-md bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {pending ? "Saving…" : "Save prompt"}
+          </button>
+        </div>
 
-      <div className="relative">
-        <textarea
-          ref={textareaRef}
-          value={prompt}
-          onChange={(e) => handleChange(e.target.value)}
-          rows={10}
-          placeholder="Scene prompt… Type @ to bind a character sheet or ingredient."
-          className="w-full rounded-lg border border-border bg-surface-elevated px-4 py-3 font-mono text-sm leading-relaxed focus-ring focus:ring-2 focus:ring-ring"
-        />
-        {showPicker ? (
-          <div className="absolute left-0 top-full z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-surface-elevated shadow-lg">
-            <input
-              autoFocus
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Search sheets & ingredients…"
-              className="w-full border-b border-border bg-transparent px-3 py-2 text-sm focus:outline-none"
-            />
-            {filteredSheets.length > 0 ? (
-              <p className="px-3 py-1 text-[10px] uppercase tracking-widest text-muted">Character sheets</p>
-            ) : null}
-            {filteredSheets.map((sheet) => (
-              <button
-                key={sheet.id}
-                type="button"
-                onClick={() => selectSheet(sheet)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent-muted"
-              >
-                <span>
-                  {sheet.character_name}
-                  {sheet.costume_name ? ` · ${sheet.costume_name}` : ""} — {sheet.label}
-                </span>
-                <span className="text-xs text-muted">sheet</span>
-              </button>
-            ))}
-            {filteredIngredients.length > 0 ? (
-              <p className="px-3 py-1 text-[10px] uppercase tracking-widest text-muted">Ingredients</p>
-            ) : null}
-            {filteredIngredients.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => selectMention(item)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent-muted"
-              >
-                <span>{item.name}</span>
-                <RefTag tag={item.ref_tag} />
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+        <ProductionNoteChips prompt={prompt} />
 
-      <button
-        type="button"
-        onClick={savePrompt}
-        disabled={pending}
-        className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-      >
-        {pending ? "Saving…" : "Save prompt"}
-      </button>
-
-      <div className="rounded-lg border border-border bg-surface p-4">
-        <p className="mb-3 text-xs uppercase tracking-widest text-muted">Preview</p>
-        <SceneCalloutPreview prompt={prompt} />
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) => handleChange(e.target.value)}
+            rows={8}
+            placeholder="Describe the shot… Type @ to bind a character sheet or ingredient."
+            className="studio-prompt-editor w-full px-4 py-3 focus-ring"
+          />
+          {showPicker ? (
+            <div className="absolute left-0 top-full z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-surface-elevated shadow-lg">
+              <input
+                autoFocus
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Search sheets & ingredients…"
+                className="w-full border-b border-border bg-transparent px-3 py-2 text-sm focus:outline-none"
+              />
+              {filteredSheets.length > 0 ? (
+                <p className="px-3 py-1 studio-section-label">Character sheets</p>
+              ) : null}
+              {filteredSheets.map((sheet) => (
+                <button
+                  key={sheet.id}
+                  type="button"
+                  onClick={() => selectSheet(sheet)}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent-muted/20"
+                >
+                  <span>
+                    {sheet.character_name}
+                    {sheet.costume_name ? ` · ${sheet.costume_name}` : ""} — {sheet.label}
+                  </span>
+                  <span className="text-xs text-muted">sheet</span>
+                </button>
+              ))}
+              {filteredIngredients.length > 0 ? (
+                <p className="px-3 py-1 studio-section-label">Ingredients</p>
+              ) : null}
+              {filteredIngredients.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => selectMention(item)}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent-muted/20"
+                >
+                  <span>{item.name}</span>
+                  <RefTag tag={item.ref_tag} />
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

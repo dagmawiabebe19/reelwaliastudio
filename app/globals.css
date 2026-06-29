@@ -214,3 +214,186 @@ body {
   padding-left: 1rem;
   color: var(--muted);
 }
+
+/* -------------------------------------------------------------------------- */
+/* Episode Studio — filmmaker editing bay                                     */
+/* -------------------------------------------------------------------------- */
+
+.studio-editing-bay {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--background) 100%);
+}
+
+.studio-section-label {
+  font-family: var(--font-barlow-condensed), system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.studio-prompt-editor {
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: var(--foreground);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  resize: vertical;
+}
+
+.studio-prompt-editor:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.studio-production-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--muted) 35%, var(--border));
+  background: color-mix(in srgb, var(--surface-elevated) 90%, var(--background));
+  padding: 0.25rem 0.65rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.studio-production-chip::before {
+  content: "";
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background: var(--accent);
+  opacity: 0.65;
+}
+
+.studio-timeline-scroll {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.studio-timeline-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.studio-timeline-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+
+.studio-segment-card {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.studio-segment-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.studio-segment-card--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.studio-segment-card--ungenerated {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.studio-contact-scroll {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scroll-snap-type: x proximity;
+}
+
+.studio-contact-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.studio-contact-thumb:hover {
+  transform: translateY(-1px);
+}
+
+.studio-empty-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--muted);
+  text-align: center;
+  padding: 2rem 1.5rem;
+}
+
+.studio-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+  font-size: 0.75rem;
+  color: var(--foreground);
+}
+
+.studio-ref-chip img,
+.studio-ref-chip video {
+  border-radius: calc(var(--radius-sm) - 1px);
+  object-fit: cover;
+}
+
+.studio-panel-calm {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  padding: 1.25rem;
+}
+
+.studio-scene-title {
+  font-family: var(--font-barlow-condensed), system-ui, sans-serif;
+  font-weight: 600;
+  font-size: clamp(1.375rem, 1.8vw, 2rem);
+  letter-spacing: 0.01em;
+  text-transform: none;
+  line-height: 1.15;
+  color: var(--foreground);
+}
+
+.studio-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}

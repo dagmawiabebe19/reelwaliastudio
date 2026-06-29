@@ -150,10 +150,10 @@ export function StudioShell({
   useRegisterCopilotContext(copilotRegistration);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface">
+    <div className="studio-editing-bay flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(240px,5fr)]">
         <main className="flex min-h-0 min-w-0 flex-col border-b border-border xl:border-b-0">
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-5 py-6">
             {selectedScene ? (
               <>
                 <SceneMetaControls
@@ -190,11 +190,14 @@ export function StudioShell({
                 />
               </>
             ) : (
-              <p className="text-sm text-muted">Select a scene below to edit and generate.</p>
+              <div className="studio-empty-preview">
+                <p className="font-display text-xs tracking-widest text-muted">Episode studio</p>
+                <p className="text-sm">Select a segment below to begin.</p>
+              </div>
             )}
           </div>
 
-          <div className="shrink-0 border-t border-border bg-surface-elevated/30 p-4">
+          <div className="shrink-0 border-t border-border/80 bg-surface/80 px-5 py-4 backdrop-blur-sm">
             <SceneRail
               seriesId={seriesId}
               episodeId={episodeId}
@@ -208,10 +211,8 @@ export function StudioShell({
           </div>
         </main>
 
-        <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden p-4 xl:border-l xl:border-border">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
-            Output
-          </p>
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden px-5 py-6 xl:border-l xl:border-border/80">
+          <p className="mb-4 studio-section-label">Output</p>
 
           {selectedScene ? (
             <div className="min-w-0 space-y-6">
@@ -238,7 +239,9 @@ export function StudioShell({
               />
             </div>
           ) : (
-            <p className="text-sm text-muted">Select a scene to preview takes and generate.</p>
+            <div className="studio-empty-preview">
+              <p className="text-sm">Select a segment to preview and generate.</p>
+            </div>
           )}
         </aside>
       </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -47,6 +48,30 @@ function resolveVideoSourceTake(takes: TakeCardData[]): TakeCardData | null {
   );
   if (!readyImages.length) return null;
   return readyImages.find((take) => take.starred) ?? readyImages[readyImages.length - 1];
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return <label className="mb-1.5 block studio-section-label">{children}</label>;
+}
+
+function FieldSelect({
+  value,
+  onChange,
+  children,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+    >
+      {children}
+    </select>
+  );
 }
 
 export function GenerationPanel({
@@ -139,7 +164,7 @@ export function GenerationPanel({
         setStartedMessage(
           isVideo
             ? `Generating video from take #${videoSourceTake?.take_number}… may take several minutes`
-            : `Generating ${n} take${n === 1 ? "" : "s"}… ~30–90s — refresh automatically`,
+            : `Generating ${n} take${n === 1 ? "" : "s"}… ~30–90s`,
         );
         router.refresh();
       }
@@ -147,92 +172,74 @@ export function GenerationPanel({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-surface-elevated p-4">
-      <h3 className="studio-column-heading-sm font-display text-foreground">New Take</h3>
+    <div className="studio-panel-calm space-y-5">
+      <div>
+        <h3 className="studio-section-label">New take</h3>
+        <p className="mt-1 text-xs text-muted">Choose model and settings, then generate.</p>
+      </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div>
-          <label className="mb-1 block text-xs text-muted">Model</label>
-          <select
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-          >
+          <FieldLabel>Model</FieldLabel>
+          <FieldSelect value={modelId} onChange={setModelId}>
             {allModels.map((model) => (
               <option key={model.id} value={model.id} disabled={!model.configured}>
-                {model.label} ({model.kind.toUpperCase()}, {model.safety.toUpperCase()})
-                {!model.configured ? " — not configured" : ""}
+                {model.label} · {model.kind} · {model.safety.toUpperCase()}
+                {!model.configured ? " (not configured)" : ""}
               </option>
             ))}
-          </select>
+          </FieldSelect>
         </div>
 
         {isVideo ? (
-          <>
+          <div className="space-y-4 rounded-md border border-border/60 bg-background/40 p-3">
             <div>
-              <label className="mb-1 block text-xs text-muted">Source image</label>
+              <FieldLabel>Source frame</FieldLabel>
               {videoSourceTake ? (
-                <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
+                <p className="text-sm text-foreground">
                   Take #{videoSourceTake.take_number}
-                  {videoSourceTake.starred ? " ★ starred" : " (latest ready)"}
+                  {videoSourceTake.starred ? " ★" : ""}
                 </p>
               ) : (
-                <p className="rounded-md border border-accent/30 bg-accent-muted/10 px-3 py-2 text-xs text-accent">
-                  Generate a storyboard image first, then star it (or use the latest ready take) as the
-                  source frame.
+                <p className="text-xs leading-relaxed text-muted">
+                  Generate a storyboard still first, then star it (or use the latest ready image).
                 </p>
               )}
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-muted">Shot intent</label>
-              <select
-                value={shotIntent}
-                onChange={(e) => setShotIntent(e.target.value as ShotIntent)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-              >
+              <FieldLabel>Shot intent</FieldLabel>
+              <FieldSelect value={shotIntent} onChange={(v) => setShotIntent(v as ShotIntent)}>
                 {SHOT_INTENTS.map((intent) => (
                   <option key={intent} value={intent}>
                     {SHOT_INTENT_LABELS[intent]}
                   </option>
                 ))}
-              </select>
-              <p className="mt-1 text-xs text-muted">
-                Camera grammar appended to the scene prompt for video models.
-              </p>
+              </FieldSelect>
             </div>
 
             {isHiggsfield ? (
               <>
                 <div>
-                  <label className="mb-1 block text-xs text-muted">DoP variant</label>
-                  <select
-                    value={dopModel}
-                    onChange={(e) => setDopModel(e.target.value)}
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                  >
+                  <FieldLabel>DoP variant</FieldLabel>
+                  <FieldSelect value={dopModel} onChange={setDopModel}>
                     {DOP_MODEL_OPTIONS.map((option) => (
                       <option key={option.id} value={option.id}>
                         {option.label}
                       </option>
                     ))}
-                  </select>
+                  </FieldSelect>
                 </div>
-
                 <div>
-                  <label className="mb-1 block text-xs text-muted">Camera motion (optional)</label>
-                  <select
-                    value={motionId}
-                    onChange={(e) => setMotionId(e.target.value)}
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                  >
+                  <FieldLabel>Camera motion</FieldLabel>
+                  <FieldSelect value={motionId} onChange={setMotionId}>
                     <option value="">None</option>
                     {motions.map((motion) => (
                       <option key={motion.id} value={motion.id}>
                         {motion.name}
                       </option>
                     ))}
-                  </select>
+                  </FieldSelect>
                   {motionsError ? (
                     <p className="mt-1 text-xs text-muted">{motionsError}</p>
                   ) : null}
@@ -240,22 +247,18 @@ export function GenerationPanel({
               </>
             ) : (
               <div>
-                <label className="mb-1 block text-xs text-muted">Duration</label>
-                <select
-                  value={duration}
-                  onChange={(e) => setDuration(Number(e.target.value) as 6 | 7 | 8)}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                >
-                  <option value={6}>6s</option>
-                  <option value={7}>7s</option>
-                  <option value={8}>8s</option>
-                </select>
+                <FieldLabel>Duration</FieldLabel>
+                <FieldSelect value={String(duration)} onChange={(v) => setDuration(Number(v) as 6 | 7 | 8)}>
+                  <option value="6">6 seconds</option>
+                  <option value="7">7 seconds</option>
+                  <option value="8">8 seconds</option>
+                </FieldSelect>
               </div>
             )}
-          </>
+          </div>
         ) : (
           <div>
-            <label className="mb-1 block text-xs text-muted">Takes (1–5)</label>
+            <FieldLabel>Take count</FieldLabel>
             <input
               type="number"
               min={1}
@@ -269,15 +272,11 @@ export function GenerationPanel({
 
         {!isHiggsfield ? (
           <div>
-            <label className="mb-1 block text-xs text-muted">Resolution</label>
-            <select
-              value={resolution}
-              onChange={(e) => setResolution(e.target.value as "480p" | "720p")}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-            >
+            <FieldLabel>Resolution</FieldLabel>
+            <FieldSelect value={resolution} onChange={(v) => setResolution(v as "480p" | "720p")}>
               <option value="480p">480p</option>
               <option value="720p">720p</option>
-            </select>
+            </FieldSelect>
           </div>
         ) : null}
       </div>
@@ -288,15 +287,15 @@ export function GenerationPanel({
         disabled={pending || !selected?.configured || (isVideo && !canGenerateVideo)}
         className="w-full"
       >
-        {pending ? "Starting…" : isVideo ? "Generate video" : "Generate"}
+        {pending ? "Starting…" : isVideo ? "Generate video" : "Generate still"}
       </Button>
 
       {startedMessage ? (
-        <p className="text-xs text-amber-400">{startedMessage}</p>
+        <p className="text-center text-xs text-status-progress">{startedMessage}</p>
       ) : null}
 
       {selected && !selected.configured ? (
-        <p className="text-xs text-accent">This model&apos;s API key is not set in the environment.</p>
+        <p className="text-center text-xs text-muted">API key not configured for this model.</p>
       ) : null}
     </div>
   );
