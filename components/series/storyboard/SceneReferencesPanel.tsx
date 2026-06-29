@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { ResolvedReference } from "@/lib/production/types";
 
 interface SceneReferencesPanelProps {
@@ -7,10 +8,39 @@ interface SceneReferencesPanelProps {
   boundSheetIds: string[];
 }
 
-function RefThumb({ url }: { url: string }) {
+function RefThumb({ url, label }: { url: string; label: string }) {
+  const [broken, setBroken] = useState(false);
+
+  if (broken) {
+    return (
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-background text-[8px] uppercase text-muted"
+        title={label}
+      >
+        —
+      </span>
+    );
+  }
+
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt="" className="h-8 w-8 shrink-0" />
+    <img
+      src={url}
+      alt=""
+      className="h-8 w-8 shrink-0 rounded-sm object-cover"
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
+function RefPlaceholder({ type, label }: { type: string; label: string }) {
+  return (
+    <span
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-dashed border-border bg-background text-[8px] uppercase text-muted"
+      title={label}
+    >
+      {type === "voice" ? "VO" : type.slice(0, 3)}
+    </span>
   );
 }
 
@@ -35,11 +65,9 @@ export function SceneReferencesPanel({
           return (
             <div key={`${ref.type}-${ref.id}`} className="studio-ref-chip">
               {thumbUrl ? (
-                <RefThumb url={thumbUrl} />
+                <RefThumb url={thumbUrl} label={ref.label} />
               ) : (
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-background text-[9px] uppercase text-muted">
-                  {ref.type.slice(0, 4)}
-                </span>
+                <RefPlaceholder type={ref.type} label={ref.label} />
               )}
               <span className="max-w-[8rem] truncate">
                 <span className="block text-[10px] uppercase tracking-wide text-muted">

@@ -363,7 +363,7 @@ export function SceneRail({
       {!showArchive && imageModels.length > 0 ? (
         <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border/80 bg-surface px-3 py-2">
           <div className="min-w-[7rem] flex-1">
-            <label className="mb-1 block studio-section-label">Batch model</label>
+            <label className="mb-1 block studio-section-label">Batch: all ungenerated stills</label>
             <select
               value={batchModelId}
               onChange={(e) => setBatchModelId(e.target.value)}

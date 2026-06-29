@@ -174,7 +174,10 @@ export function StudioShell({
                   boundSheetIds={(selectedScene.scene_character_sheets ?? []).map(
                     (b) => b.character_sheet_id,
                   )}
-                  resolvedReferences={(selectedScene.resolved_references ?? []) as ResolvedReference[]}
+                  resolvedReferences={
+                    selectedScene.displayReferences ??
+                    ((selectedScene.resolved_references ?? []) as ResolvedReference[])
+                  }
                 />
 
                 <TakesStrip

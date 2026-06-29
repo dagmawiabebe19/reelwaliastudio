@@ -90,7 +90,9 @@ function SceneDetailPanel({
 }) {
   const boundIds = scene.scene_ingredients.map((b) => b.ingredient_id);
   const boundSheetIds = (scene.scene_character_sheets ?? []).map((b) => b.character_sheet_id);
-  const resolvedReferences = (scene.resolved_references ?? []) as ResolvedReference[];
+  const resolvedReferences = (scene.displayReferences ??
+    scene.resolved_references ??
+    []) as ResolvedReference[];
 
   return (
     <div className="space-y-6">

@@ -347,7 +347,7 @@ export function TakesStrip({
             )}
           </div>
 
-          {activeTake.status === "failed" && activeTake.error_message ? (
+          {activeTake.status === "failed" && activeTake.error_message && activeTake.assetUrl ? (
             <p className="text-center text-xs leading-relaxed text-muted">{activeTake.error_message}</p>
           ) : null}
         </div>

@@ -109,27 +109,12 @@ export function ScenePromptEditor({
     });
   }
 
-  const boundChips = [
-    ...sheets.filter((s) => boundSheetIds.includes(s.id)).map((s) => ({ id: s.id, tag: s.label })),
-    ...ingredients
-      .filter((i) => boundIngredientIds.includes(i.id))
-      .map((i) => ({ id: i.id, tag: i.ref_tag })),
-  ];
-
   return (
     <div className="space-y-5">
       <SceneReferencesPanel
         resolvedReferences={resolvedReferences}
         boundSheetIds={boundSheetIds}
       />
-
-      {boundChips.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {boundChips.map((chip) => (
-            <RefTag key={chip.id} tag={chip.tag} />
-          ))}
-        </div>
-      ) : null}
 
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">

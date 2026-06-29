@@ -10,6 +10,7 @@ import { listScenesByEpisode } from "@/lib/db/scenes";
 import { getSeries } from "@/lib/db/series";
 import { listTakesForScenes } from "@/lib/db/takes";
 import { buildMentionSheets } from "@/lib/production/library-data";
+import { buildDisplayReferences } from "@/lib/production/enrich-scene-references";
 import { resolveAssetUrl, resolveAssetUrls } from "@/lib/storage/resolve-urls";
 
 interface EpisodeStoryboardPageProps {
@@ -94,6 +95,14 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
 
   const models = getPublicModelCatalog();
 
+  const ingredientsById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
+  const scenesWithDisplayRefs = await Promise.all(
+    scenes.map(async (scene) => ({
+      ...scene,
+      displayReferences: await buildDisplayReferences(scene, ingredientsById),
+    })),
+  );
+
   return (
     <EpisodeStudioPage
       seriesId={seriesId}
@@ -103,7 +112,7 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
       defaultOrientation={series.default_orientation}
       briefMarkdown={series.brief_markdown}
       seriesMemoryMarkdown={series.memory_markdown}
-      scenes={scenes}
+      scenes={scenesWithDisplayRefs}
       ingredients={mentionIngredients}
       sheets={sheets}
       characterSheets={characterSheets}

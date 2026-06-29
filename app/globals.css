@@ -397,3 +397,25 @@ body {
   letter-spacing: 0.04em;
   color: var(--muted);
 }
+
+.studio-field-inactive {
+  opacity: 0.42;
+}
+
+.studio-field-inactive label,
+.studio-field-inactive .studio-section-label {
+  color: var(--muted);
+}
+
+.studio-segment-panel-badge {
+  display: inline-block;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent-muted) 50%, transparent);
+  padding: 0.15rem 0.55rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}

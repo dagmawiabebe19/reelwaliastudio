@@ -34,6 +34,7 @@ export type SceneWithBindings = Scene & {
     assetUrls?: string[];
   }>;
   reference_overrides?: Record<string, unknown>;
+  displayReferences?: import("@/lib/production/types").ResolvedReference[];
 };
 
 export type SceneGroup = (typeof ACT_GROUPS)[number] | "Archive";

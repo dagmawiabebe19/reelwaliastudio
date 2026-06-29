@@ -32,6 +32,15 @@ type HiggsfieldMotion = {
   description: string | null;
 };
 
+const MODEL_HELPERS: Record<string, string> = {
+  "openai-image": "OpenAI Image — storyboard stills from your prompt and identity locks.",
+  seedream: "Seedream — image stills via Fal.",
+  "nano-banana": "Nano Banana — image stills via Fal.",
+  grok: "Grok Image — NSFW-capable still generation.",
+  seedance: "Seedance — animates a source still; set clip length below.",
+  higgsfield: "Higgsfield DoP — animates your source still into a short cinematic clip.",
+};
+
 interface GenerationPanelProps {
   sceneId: string;
   seriesId: string;
@@ -50,29 +59,43 @@ function resolveVideoSourceTake(takes: TakeCardData[]): TakeCardData | null {
   return readyImages.find((take) => take.starred) ?? readyImages[readyImages.length - 1];
 }
 
-function FieldLabel({ children }: { children: ReactNode }) {
-  return <label className="mb-1.5 block studio-section-label">{children}</label>;
+function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) {
+  return (
+    <div className="mb-1.5">
+      <label className="block studio-section-label">{children}</label>
+      {hint ? <p className="mt-0.5 text-[10px] text-muted">{hint}</p> : null}
+    </div>
+  );
 }
 
-function FieldSelect({
-  value,
-  onChange,
+function ControlGroup({
+  title,
+  subtitle,
+  inactive,
   children,
 }: {
-  value: string;
-  onChange: (value: string) => void;
+  title: string;
+  subtitle?: string;
+  inactive?: boolean;
   children: ReactNode;
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+    <div
+      className={`space-y-3 rounded-md border border-border/60 bg-background/30 p-3 ${
+        inactive ? "studio-field-inactive" : ""
+      }`}
     >
+      <div>
+        <p className="studio-section-label">{title}</p>
+        {subtitle ? <p className="mt-0.5 text-[10px] text-muted">{subtitle}</p> : null}
+      </div>
       {children}
-    </select>
+    </div>
   );
 }
+
+const selectClass =
+  "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60";
 
 export function GenerationPanel({
   sceneId,
@@ -106,9 +129,11 @@ export function GenerationPanel({
 
   const selected = allModels.find((m) => m.id === modelId);
   const isVideo = selected?.kind === "video";
+  const isImage = selected?.kind === "image";
   const isHiggsfield = modelId === "higgsfield";
   const videoSourceTake = useMemo(() => resolveVideoSourceTake(takes), [takes]);
   const canGenerateVideo = Boolean(videoSourceTake?.assetUrl);
+  const modelHelper = MODEL_HELPERS[modelId] ?? `${selected?.label ?? "Model"} — generate for this segment.`;
 
   useEffect(() => {
     setShotIntent(
@@ -118,8 +143,6 @@ export function GenerationPanel({
   }, [sceneId, initialShotIntent, scenePrompt]);
 
   useEffect(() => {
-    if (!isHiggsfield) return;
-
     let cancelled = false;
     void listHiggsfieldMotionsAction().then((result) => {
       if (cancelled) return;
@@ -135,7 +158,7 @@ export function GenerationPanel({
     return () => {
       cancelled = true;
     };
-  }, [isHiggsfield]);
+  }, []);
 
   function handleGenerate() {
     if (!modelId || !selected?.configured) return;
@@ -173,112 +196,150 @@ export function GenerationPanel({
 
   return (
     <div className="studio-panel-calm space-y-5">
-      <div>
-        <h3 className="studio-section-label">New take</h3>
-        <p className="mt-1 text-xs text-muted">Choose model and settings, then generate.</p>
+      <div className="space-y-1">
+        <span className="studio-segment-panel-badge">This segment</span>
+        <h3 className="studio-section-label mt-2">New take</h3>
+        <p className="text-[10px] leading-relaxed text-muted">
+          Generates one segment only — not the batch stills control in Segments above.
+        </p>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-2">
+        <FieldLabel>Model</FieldLabel>
+        <select
+          value={modelId}
+          onChange={(e) => setModelId(e.target.value)}
+          className={selectClass}
+        >
+          {allModels.map((model) => (
+            <option key={model.id} value={model.id} disabled={!model.configured}>
+              {model.label} · {model.kind} · {model.safety.toUpperCase()}
+              {!model.configured ? " (not configured)" : ""}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs leading-relaxed text-muted">{modelHelper}</p>
+      </div>
+
+      <ControlGroup
+        title="Image still"
+        subtitle={isImage ? "Active for this model" : "Not used — switch to an image model"}
+        inactive={!isImage}
+      >
         <div>
-          <FieldLabel>Model</FieldLabel>
-          <FieldSelect value={modelId} onChange={setModelId}>
-            {allModels.map((model) => (
-              <option key={model.id} value={model.id} disabled={!model.configured}>
-                {model.label} · {model.kind} · {model.safety.toUpperCase()}
-                {!model.configured ? " (not configured)" : ""}
-              </option>
-            ))}
-          </FieldSelect>
+          <FieldLabel hint="1–5 stills per run">Take count</FieldLabel>
+          <input
+            type="number"
+            min={1}
+            max={5}
+            value={count}
+            disabled={!isImage}
+            onChange={(e) => setCount(Number(e.target.value))}
+            className={selectClass}
+          />
+        </div>
+      </ControlGroup>
+
+      <ControlGroup
+        title="Video clip"
+        subtitle={isVideo ? "Active for this model" : "Not used — switch to a video model"}
+        inactive={!isVideo}
+      >
+        <div>
+          <FieldLabel>Source frame</FieldLabel>
+          {videoSourceTake ? (
+            <p className="text-sm text-foreground">
+              Take #{videoSourceTake.take_number}
+              {videoSourceTake.starred ? " ★ starred" : " (latest ready)"}
+            </p>
+          ) : (
+            <p className="text-xs leading-relaxed text-muted">
+              Generate a storyboard still first, then star it (or use the latest ready image).
+            </p>
+          )}
         </div>
 
-        {isVideo ? (
-          <div className="space-y-4 rounded-md border border-border/60 bg-background/40 p-3">
-            <div>
-              <FieldLabel>Source frame</FieldLabel>
-              {videoSourceTake ? (
-                <p className="text-sm text-foreground">
-                  Take #{videoSourceTake.take_number}
-                  {videoSourceTake.starred ? " ★" : ""}
-                </p>
-              ) : (
-                <p className="text-xs leading-relaxed text-muted">
-                  Generate a storyboard still first, then star it (or use the latest ready image).
-                </p>
-              )}
-            </div>
+        <div>
+          <FieldLabel>Shot intent</FieldLabel>
+          <select
+            value={shotIntent}
+            disabled={!isVideo}
+            onChange={(e) => setShotIntent(e.target.value as ShotIntent)}
+            className={selectClass}
+          >
+            {SHOT_INTENTS.map((intent) => (
+              <option key={intent} value={intent}>
+                {SHOT_INTENT_LABELS[intent]}
+              </option>
+            ))}
+          </select>
+        </div>
 
-            <div>
-              <FieldLabel>Shot intent</FieldLabel>
-              <FieldSelect value={shotIntent} onChange={(v) => setShotIntent(v as ShotIntent)}>
-                {SHOT_INTENTS.map((intent) => (
-                  <option key={intent} value={intent}>
-                    {SHOT_INTENT_LABELS[intent]}
-                  </option>
-                ))}
-              </FieldSelect>
-            </div>
+        <div>
+          <FieldLabel hint={!isHiggsfield ? "Higgsfield DoP only" : undefined}>DoP variant</FieldLabel>
+          <select
+            value={dopModel}
+            disabled={!isVideo || !isHiggsfield}
+            onChange={(e) => setDopModel(e.target.value)}
+            className={selectClass}
+          >
+            {DOP_MODEL_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
-            {isHiggsfield ? (
-              <>
-                <div>
-                  <FieldLabel>DoP variant</FieldLabel>
-                  <FieldSelect value={dopModel} onChange={setDopModel}>
-                    {DOP_MODEL_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </FieldSelect>
-                </div>
-                <div>
-                  <FieldLabel>Camera motion</FieldLabel>
-                  <FieldSelect value={motionId} onChange={setMotionId}>
-                    <option value="">None</option>
-                    {motions.map((motion) => (
-                      <option key={motion.id} value={motion.id}>
-                        {motion.name}
-                      </option>
-                    ))}
-                  </FieldSelect>
-                  {motionsError ? (
-                    <p className="mt-1 text-xs text-muted">{motionsError}</p>
-                  ) : null}
-                </div>
-              </>
-            ) : (
-              <div>
-                <FieldLabel>Duration</FieldLabel>
-                <FieldSelect value={String(duration)} onChange={(v) => setDuration(Number(v) as 6 | 7 | 8)}>
-                  <option value="6">6 seconds</option>
-                  <option value="7">7 seconds</option>
-                  <option value="8">8 seconds</option>
-                </FieldSelect>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div>
-            <FieldLabel>Take count</FieldLabel>
-            <input
-              type="number"
-              min={1}
-              max={5}
-              value={count}
-              onChange={(e) => setCount(Number(e.target.value))}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-            />
-          </div>
-        )}
+        <div>
+          <FieldLabel hint={!isHiggsfield ? "Higgsfield DoP only" : undefined}>Camera motion</FieldLabel>
+          <select
+            value={motionId}
+            disabled={!isVideo || !isHiggsfield}
+            onChange={(e) => setMotionId(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">None</option>
+            {motions.map((motion) => (
+              <option key={motion.id} value={motion.id}>
+                {motion.name}
+              </option>
+            ))}
+          </select>
+          {motionsError && isHiggsfield ? (
+            <p className="mt-1 text-xs text-muted">{motionsError}</p>
+          ) : null}
+        </div>
 
-        {!isHiggsfield ? (
-          <div>
-            <FieldLabel>Resolution</FieldLabel>
-            <FieldSelect value={resolution} onChange={(v) => setResolution(v as "480p" | "720p")}>
-              <option value="480p">480p</option>
-              <option value="720p">720p</option>
-            </FieldSelect>
-          </div>
-        ) : null}
+        <div>
+          <FieldLabel hint={isHiggsfield ? "Seedance only — DoP uses model quality" : undefined}>
+            Clip length
+          </FieldLabel>
+          <select
+            value={String(duration)}
+            disabled={!isVideo || isHiggsfield}
+            onChange={(e) => setDuration(Number(e.target.value) as 6 | 7 | 8)}
+            className={selectClass}
+          >
+            <option value="6">6 seconds</option>
+            <option value="7">7 seconds</option>
+            <option value="8">8 seconds</option>
+          </select>
+        </div>
+      </ControlGroup>
+
+      <div>
+        <FieldLabel hint="Applies to image stills; passed for video where supported">
+          Resolution / quality
+        </FieldLabel>
+        <select
+          value={resolution}
+          onChange={(e) => setResolution(e.target.value as "480p" | "720p")}
+          className={selectClass}
+        >
+          <option value="480p">480p</option>
+          <option value="720p">720p</option>
+        </select>
       </div>
 
       <Button
