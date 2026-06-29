@@ -3,10 +3,10 @@ import { EpisodeStudioPage } from "@/components/series/EpisodeStudioPage";
 import { getPublicModelCatalog } from "@/lib/ai/registry";
 import { listAudioLinesByEpisode } from "@/lib/db/audio-lines";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
-import { getEpisode } from "@/lib/db/episodes";
+import { getEpisode, listEpisodesBySeries } from "@/lib/db/episodes";
 import { listCharacterSheetsBySeries } from "@/lib/db/character-sheets";
 import { listIngredientsBySeries } from "@/lib/db/ingredients";
-import { listScenesByEpisode } from "@/lib/db/scenes";
+import { listScenesBySeries } from "@/lib/db/scenes";
 import { getSeries } from "@/lib/db/series";
 import { listTakesForScenes } from "@/lib/db/takes";
 import { buildMentionSheets } from "@/lib/production/library-data";
@@ -20,10 +20,12 @@ interface EpisodeStoryboardPageProps {
 export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboardPageProps) {
   const { id: seriesId, episodeId } = await params;
 
-  const [series, episode, scenes, ingredients, audioLinesRaw, chatSession, sheetsRaw] = await Promise.all([
+  const [series, episode, episodes, scenes, ingredients, audioLinesRaw, chatSession, sheetsRaw] =
+    await Promise.all([
     getSeries(seriesId),
     getEpisode(episodeId),
-    listScenesByEpisode(episodeId),
+    listEpisodesBySeries(seriesId),
+    listScenesBySeries(seriesId),
     listIngredientsBySeries(seriesId),
     listAudioLinesByEpisode(episodeId),
     getOrCreateChatSession("episode", episodeId),
@@ -111,6 +113,7 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
       episodeId={episodeId}
       seriesTitle={series.title}
       episodeTitle={episode.title}
+      episodes={episodes}
       defaultOrientation={series.default_orientation}
       briefMarkdown={series.brief_markdown}
       seriesMemoryMarkdown={series.memory_markdown}

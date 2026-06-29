@@ -7,7 +7,8 @@ import {
   listCharacterSheetsByCostume,
 } from "@/lib/db/character-sheets";
 import { getIngredient, listCostumesByCharacter } from "@/lib/db/ingredients";
-import { getTake } from "@/lib/db/takes";
+import { getScene } from "@/lib/db/scenes";
+import { getTake, listTakesByScene } from "@/lib/db/takes";
 
 export type DeletePreview = {
   title: string;
@@ -78,5 +79,28 @@ export async function getAudioLineDeletePreview(lineId: string): Promise<DeleteP
   return {
     title: `Delete "${line.title}"?`,
     message: "This permanently deletes the audio line and its file.",
+  };
+}
+
+export async function getSceneDeletePreview(sceneId: string): Promise<DeletePreview> {
+  const scene = await getScene(sceneId);
+  if (!scene) throw new Error("Scene not found.");
+
+  const takes = await listTakesByScene(sceneId);
+  const readyTakes = takes.filter((take) => take.status === "ready");
+  const starredTakes = takes.filter((take) => take.starred);
+
+  const takeSummary =
+    takes.length === 0
+      ? "no takes"
+      : `${takes.length} take${takes.length === 1 ? "" : "s"} (${readyTakes.length} ready${
+          starredTakes.length ? `, ${starredTakes.length} starred` : ""
+        })`;
+
+  return {
+    title: `Delete segment "${scene.title}"?`,
+    message:
+      `This permanently removes the segment and all of its takes — ${takeSummary}. ` +
+      "Starred and ready takes are deleted with the segment. This cannot be undone.",
   };
 }

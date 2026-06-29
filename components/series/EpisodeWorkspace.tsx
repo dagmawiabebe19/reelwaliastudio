@@ -6,7 +6,7 @@ import type { ModelCatalogEntry } from "@/components/series/generation/Generatio
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 import type { MentionSheet } from "@/lib/production/types";
-import type { Orientation } from "@/lib/db/types";
+import type { Orientation, Episode } from "@/lib/db/types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 
 type CharacterSheetCopilotData = {
@@ -23,6 +23,7 @@ interface EpisodeWorkspaceProps {
   seriesId: string;
   episodeId: string;
   episodeTitle: string;
+  episodes: Episode[];
   seriesTitle: string;
   defaultOrientation: Orientation;
   briefMarkdown: string;

@@ -12,14 +12,14 @@ export function sceneNeedsImageStill(takes: TakeStatusSummary[]): boolean {
 }
 
 export function countScenesNeedingStills(
-  scenes: Array<{ id: string; status: string; act_label: string | null }>,
+  scenes: Array<{ id: string; status: string; episode_id: string }>,
   takesByScene: Record<string, TakeStatusSummary[]>,
-  actLabel: string,
+  episodeId: string,
 ): number {
   return scenes.filter(
     (scene) =>
       scene.status !== "archived" &&
-      (scene.act_label ?? "Storyboard-only") === actLabel &&
+      scene.episode_id === episodeId &&
       sceneNeedsImageStill(takesByScene[scene.id] ?? []),
   ).length;
 }

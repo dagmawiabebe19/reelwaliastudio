@@ -41,6 +41,7 @@ export async function updateSceneAction(
     orientation?: Orientation | null;
     title?: string;
     act_label?: string;
+    episode_id?: string;
   },
 ) {
   try {

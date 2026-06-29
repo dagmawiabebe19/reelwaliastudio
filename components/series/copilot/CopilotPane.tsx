@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { writeHighlightSegments } from "@/lib/storyboard/episode-buckets";
 import {
   ANTHROPIC_MODELS,
   DEFAULT_ANTHROPIC_MODEL,
@@ -267,6 +268,18 @@ export function CopilotPane({
               ),
             );
             if (event.name === "draft_storyboard") {
+              const created = Array.isArray(event.result?.created)
+                ? (event.result?.created as string[])
+                : [];
+              if (created.length) {
+                writeHighlightSegments({
+                  sceneIds: created,
+                  episodeId:
+                    typeof event.result?.episode_id === "string"
+                      ? event.result.episode_id
+                      : undefined,
+                });
+              }
               router.refresh();
             }
           }

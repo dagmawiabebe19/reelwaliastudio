@@ -4,22 +4,44 @@ import { getDbClient } from "@/lib/db/client";
 import type { Orientation, Scene, SceneStatus, TablesInsert } from "@/lib/db/database.types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 
-export { ACT_GROUPS } from "@/lib/storyboard/constants";
+export { STORYBOARD_ONLY_LABEL } from "@/lib/storyboard/constants";
 export type { SceneWithBindings } from "@/lib/storyboard/constants";
+
+const SCENE_SELECT = `*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind)),
+       scene_character_sheets(character_sheet_id, role,
+         character_sheets(id, name, character_id, costume_id, status,
+           character:character_id(id, name, ref_tag),
+           costume:costume_id(id, name, ref_tag),
+           angles:character_sheet_angles(angle_label, asset_id, assets:asset_id(bucket, storage_path, media_type))))`;
 
 export async function listScenesByEpisode(episodeId: string): Promise<SceneWithBindings[]> {
   const supabase = await getDbClient();
   const { data, error } = await supabase
     .from("scenes")
-    .select(
-      `*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind)),
-       scene_character_sheets(character_sheet_id, role,
-         character_sheets(id, name, character_id, costume_id, status,
-           character:character_id(id, name, ref_tag),
-           costume:costume_id(id, name, ref_tag),
-           angles:character_sheet_angles(angle_label, asset_id, assets:asset_id(bucket, storage_path, media_type))))`,
-    )
+    .select(SCENE_SELECT)
     .eq("episode_id", episodeId)
+    .order("sort_order", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SceneWithBindings[];
+}
+
+export async function listScenesBySeries(seriesId: string): Promise<SceneWithBindings[]> {
+  const supabase = await getDbClient();
+  const { data: episodes, error: episodeError } = await supabase
+    .from("episodes")
+    .select("id")
+    .eq("series_id", seriesId);
+
+  if (episodeError) throw new Error(episodeError.message);
+
+  const episodeIds = (episodes ?? []).map((episode) => episode.id);
+  if (!episodeIds.length) return [];
+
+  const { data, error } = await supabase
+    .from("scenes")
+    .select(SCENE_SELECT)
+    .in("episode_id", episodeIds)
     .order("sort_order", { ascending: true });
 
   if (error) throw new Error(error.message);
@@ -30,14 +52,7 @@ export async function getScene(id: string): Promise<SceneWithBindings | null> {
   const supabase = await getDbClient();
   const { data, error } = await supabase
     .from("scenes")
-    .select(
-      `*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind)),
-       scene_character_sheets(character_sheet_id, role,
-         character_sheets(id, name, character_id, costume_id, status,
-           character:character_id(id, name, ref_tag),
-           costume:costume_id(id, name, ref_tag),
-           angles:character_sheet_angles(angle_label, asset_id, assets:asset_id(bucket, storage_path, media_type))))`,
-    )
+    .select(SCENE_SELECT)
     .eq("id", id)
     .maybeSingle();
 
@@ -79,6 +94,7 @@ export async function updateScene(
       | "orientation"
       | "duration_seconds"
       | "act_label"
+      | "episode_id"
       | "status"
       | "resolved_references"
       | "reference_overrides"

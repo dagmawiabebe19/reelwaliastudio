@@ -9,11 +9,15 @@ import {
   unarchiveSceneAction,
   updateSceneAction,
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/actions";
+import {
+  deleteSceneAction,
+  getSceneDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
 import { generateEpisodeStillsAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import { Button } from "@/components/ui/Button";
 import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
-import type { Orientation } from "@/lib/db/types";
+import type { Episode, Orientation } from "@/lib/db/types";
 import {
   countScenesNeedingStills,
   sceneHasPendingImageStill,
@@ -23,12 +27,24 @@ import {
   orientationAspectClass,
   resolveRepresentativeTake,
 } from "@/lib/storyboard/studio-visuals";
-import { ACT_GROUPS, type SceneWithBindings } from "@/lib/storyboard/constants";
+import type { SceneWithBindings } from "@/lib/storyboard/constants";
+import {
+  ARCHIVE_BUCKET_ID,
+  STORYBOARD_ONLY_BUCKET_ID,
+  STORYBOARD_ONLY_LABEL,
+  buildEpisodeBuckets,
+  clearHighlightSegments,
+  episodeBucketLabel,
+  readHighlightSegments,
+  scenesForBucket,
+  type SegmentBucket,
+} from "@/lib/storyboard/episode-buckets";
 import { effectiveOrientation } from "@/lib/storyboard/orientation";
 
 interface SceneRailProps {
   seriesId: string;
   episodeId: string;
+  episodes: Episode[];
   defaultOrientation: Orientation;
   scenes: SceneWithBindings[];
   selectedSceneId: string | null;
@@ -79,6 +95,7 @@ function SegmentCard({
   orientation,
   takes,
   isSelected,
+  isHighlighted,
   isGenerating,
   showArchive,
   menuOpen,
@@ -86,13 +103,16 @@ function SegmentCard({
   onSelect,
   onArchive,
   onRestore,
+  onDelete,
   onDragStart,
+  cardRef,
 }: {
   scene: SceneWithBindings;
   sceneNumber: number;
   orientation: Orientation;
   takes: TakeCardData[];
   isSelected: boolean;
+  isHighlighted: boolean;
   isGenerating: boolean;
   showArchive: boolean;
   menuOpen: boolean;
@@ -100,7 +120,9 @@ function SegmentCard({
   onSelect: () => void;
   onArchive: () => void;
   onRestore: () => void;
+  onDelete: () => void;
   onDragStart: () => void;
+  cardRef?: (node: HTMLElement | null) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const representative = resolveRepresentativeTake(takes);
@@ -121,12 +143,13 @@ function SegmentCard({
 
   return (
     <article
+      ref={cardRef}
       draggable={!showArchive}
       onDragStart={onDragStart}
       onClick={onSelect}
       className={`studio-segment-card group w-[7.5rem] ${isSelected ? "studio-segment-card--active" : ""} ${
-        isUngenerated ? "studio-segment-card--ungenerated" : ""
-      }`}
+        isHighlighted ? "studio-segment-card--new" : ""
+      } ${isUngenerated ? "studio-segment-card--ungenerated" : ""}`}
     >
       <div className={`relative mx-auto mt-2 ${thumbWidth} overflow-hidden rounded-sm border border-border/80 bg-background`}>
         <div className={`${orientationAspectClass(orientation)} w-full`}>
@@ -174,7 +197,7 @@ function SegmentCard({
             …
           </button>
           {menuOpen ? (
-            <div className="absolute right-0 top-full z-30 mt-1 min-w-[6rem] rounded-md border border-border bg-surface-elevated py-1 shadow-lg">
+            <div className="absolute right-0 top-full z-30 mt-1 min-w-[8.5rem] rounded-md border border-border bg-surface-elevated py-1 shadow-lg">
               {scene.status === "archived" ? (
                 <button
                   type="button"
@@ -187,16 +210,28 @@ function SegmentCard({
                   Restore
                 </button>
               ) : (
-                <button
-                  type="button"
-                  className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onArchive();
-                  }}
-                >
-                  Archive
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onArchive();
+                    }}
+                  >
+                    Archive
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-1.5 text-left text-xs text-accent hover:bg-accent-muted/30"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDelete();
+                    }}
+                  >
+                    Delete segment
+                  </button>
+                </>
               )}
             </div>
           ) : null}
@@ -209,6 +244,7 @@ function SegmentCard({
 export function SceneRail({
   seriesId,
   episodeId,
+  episodes,
   defaultOrientation,
   scenes,
   selectedSceneId,
@@ -217,12 +253,28 @@ export function SceneRail({
   models = [],
 }: SceneRailProps) {
   const router = useRouter();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [showArchive, setShowArchive] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [batchAct, setBatchAct] = useState<string | null>(null);
+  const [batchBucketId, setBatchBucketId] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [activeAct, setActiveAct] = useState<string>(ACT_GROUPS[0]);
+  const [activeBucketId, setActiveBucketId] = useState<string>(episodeId);
+  const [highlightSceneIds, setHighlightSceneIds] = useState<string[]>([]);
+  const [addToStoryboardOnly, setAddToStoryboardOnly] = useState(false);
+
+  const episodeBuckets = useMemo(() => buildEpisodeBuckets(episodes), [episodes]);
+  const storyboardBucket: SegmentBucket = {
+    id: STORYBOARD_ONLY_BUCKET_ID,
+    type: "storyboard-only",
+    label: STORYBOARD_ONLY_LABEL,
+  };
+  const archiveBucket: SegmentBucket = {
+    id: ARCHIVE_BUCKET_ID,
+    type: "archive",
+    label: "Archive",
+  };
 
   const imageModels = useMemo(
     () => models.filter((model) => model.kind === "image"),
@@ -239,66 +291,207 @@ export function SceneRail({
     }
   }, [batchModelId, defaultImageModelId]);
 
-  const activeScenes = scenes.filter((s) => s.status !== "archived");
-  const archivedScenes = scenes.filter((s) => s.status === "archived");
-  const visibleScenes = showArchive ? archivedScenes : activeScenes;
+  useEffect(() => {
+    if (!showArchive) {
+      setActiveBucketId(episodeId);
+    }
+  }, [episodeId, showArchive]);
+
+  const activeScenes = scenes.filter((scene) => scene.status !== "archived");
+  const archivedScenes = scenes.filter((scene) => scene.status === "archived");
   const batchModel = imageModels.find((model) => model.id === batchModelId);
 
-  function scenesForAct(act: string) {
-    return visibleScenes.filter((s) => (s.act_label ?? "Storyboard-only") === act);
+  const currentBucket: SegmentBucket = showArchive
+    ? archiveBucket
+    : activeBucketId === STORYBOARD_ONLY_BUCKET_ID
+      ? storyboardBucket
+      : episodeBuckets.find((bucket) => bucket.id === activeBucketId) ?? {
+          id: episodeId,
+          type: "episode",
+          episodeId,
+          label:
+            episodeBucketLabel(
+              episodes.find((episode) => episode.id === episodeId)?.sort_order ?? 0,
+            ),
+        };
+
+  const bucketScenes = scenesForBucket(scenes, currentBucket);
+
+  function scrollToScene(sceneId: string) {
+    const node = cardRefs.current.get(sceneId);
+    const container = scrollRef.current;
+    if (!node || !container) return;
+    const nodeLeft = node.offsetLeft;
+    const nodeRight = nodeLeft + node.offsetWidth;
+    const viewLeft = container.scrollLeft;
+    const viewRight = viewLeft + container.clientWidth;
+    if (nodeLeft < viewLeft || nodeRight > viewRight) {
+      container.scrollTo({
+        left: Math.max(0, nodeLeft - container.clientWidth / 2 + node.offsetWidth / 2),
+        behavior: "smooth",
+      });
+    }
   }
 
+  function scrollToEnd() {
+    const container = scrollRef.current;
+    if (!container) return;
+    container.scrollTo({ left: container.scrollWidth, behavior: "smooth" });
+  }
+
+  useEffect(() => {
+    const payload = readHighlightSegments();
+    if (!payload?.sceneIds.length) return;
+
+    const targetEpisodeId = payload.episodeId ?? episodeId;
+    const firstScene = scenes.find((scene) => payload.sceneIds.includes(scene.id));
+
+    if (firstScene) {
+      if (firstScene.status === "archived") {
+        setShowArchive(true);
+      } else if (
+        (firstScene.act_label ?? STORYBOARD_ONLY_LABEL) === STORYBOARD_ONLY_LABEL
+      ) {
+        setShowArchive(false);
+        setActiveBucketId(STORYBOARD_ONLY_BUCKET_ID);
+      } else {
+        setShowArchive(false);
+        setActiveBucketId(firstScene.episode_id);
+      }
+    } else {
+      setShowArchive(false);
+      setActiveBucketId(targetEpisodeId);
+    }
+
+    setHighlightSceneIds(payload.sceneIds);
+    onSelectScene(payload.sceneIds[payload.sceneIds.length - 1] ?? selectedSceneId ?? "");
+
+    const lastSceneId = payload.sceneIds[payload.sceneIds.length - 1];
+    window.setTimeout(() => {
+      if (lastSceneId) scrollToScene(lastSceneId);
+      else scrollToEnd();
+    }, 80);
+
+    const clearTimer = window.setTimeout(() => {
+      setHighlightSceneIds([]);
+      clearHighlightSegments();
+    }, 2800);
+
+    return () => window.clearTimeout(clearTimer);
+  }, [scenes, episodeId, onSelectScene, selectedSceneId]);
+
+  useEffect(() => {
+    if (!highlightSceneIds.length) return;
+    const lastSceneId = highlightSceneIds[highlightSceneIds.length - 1];
+    window.setTimeout(() => scrollToScene(lastSceneId), 50);
+  }, [activeBucketId, showArchive, highlightSceneIds, bucketScenes.length]);
+
   function handleCreate(formData: FormData) {
+    if (addToStoryboardOnly) {
+      formData.set("actLabel", STORYBOARD_ONLY_LABEL);
+    }
+
     startTransition(async () => {
-      const result = await createSceneAction(episodeId, seriesId, formData);
+      const targetEpisodeId =
+        showArchive || addToStoryboardOnly
+          ? episodeId
+          : currentBucket.type === "episode"
+            ? currentBucket.episodeId
+            : episodeId;
+
+      const result = await createSceneAction(targetEpisodeId, seriesId, formData);
       if (result.error) alert(result.error);
       else router.refresh();
     });
   }
 
-  function handleDrop(targetAct: string) {
-    if (!dragId) return;
-    const ordered = [...activeScenes];
-    const fromIndex = ordered.findIndex((s) => s.id === dragId);
-    if (fromIndex < 0) return;
-    const [moved] = ordered.splice(fromIndex, 1);
-    moved.act_label = targetAct;
-    ordered.push(moved);
+  async function handleDeleteScene(scene: SceneWithBindings) {
+    setOpenMenuId(null);
+    try {
+      const preview = await getSceneDeletePreviewAction(scene.id, scene.episode_id, seriesId);
+      if ("error" in preview && preview.error) {
+        alert(preview.error);
+        return;
+      }
+      if (!("title" in preview)) return;
+
+      const confirmed = window.confirm(`${preview.title}\n\n${preview.message}`);
+      if (!confirmed) return;
+
+      startTransition(async () => {
+        const result = await deleteSceneAction(scene.id, seriesId);
+        if ("error" in result && result.error) {
+          alert(result.error);
+          return;
+        }
+        if (selectedSceneId === scene.id) {
+          onSelectScene("");
+        }
+        router.refresh();
+      });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Delete failed.");
+    }
+  }
+
+  function handleDrop(targetBucket: SegmentBucket) {
+    if (!dragId || targetBucket.type === "archive") return;
+
+    const draggedScene = scenes.find((scene) => scene.id === dragId);
+    if (!draggedScene) return;
 
     startTransition(async () => {
-      await updateSceneAction(dragId, episodeId, seriesId, { act_label: targetAct });
-      await reorderScenesAction(
-        episodeId,
-        seriesId,
-        ordered.map((s) => s.id),
-      );
+      if (targetBucket.type === "storyboard-only") {
+        await updateSceneAction(dragId, draggedScene.episode_id, seriesId, {
+          act_label: STORYBOARD_ONLY_LABEL,
+        });
+      } else if (targetBucket.type === "episode") {
+        const episode = episodes.find((item) => item.id === targetBucket.episodeId);
+        await updateSceneAction(dragId, targetBucket.episodeId, seriesId, {
+          episode_id: targetBucket.episodeId,
+          act_label: episode ? episodeBucketLabel(episode.sort_order) : undefined,
+        });
+
+        const targetScenes = scenesForBucket(scenes, targetBucket).filter(
+          (scene) => scene.id !== dragId,
+        );
+        targetScenes.push({ ...draggedScene, episode_id: targetBucket.episodeId });
+        await reorderScenesAction(
+          targetBucket.episodeId,
+          seriesId,
+          targetScenes.map((scene) => scene.id),
+        );
+      }
+
       router.refresh();
     });
     setDragId(null);
   }
 
-  function handleBatchStills(act: string, count: number) {
-    if (!batchModelId || !batchModel?.configured || count < 1) return;
+  function handleBatchStills(bucket: SegmentBucket, count: number) {
+    if (bucket.type !== "episode" || !batchModelId || !batchModel?.configured || count < 1) {
+      return;
+    }
 
     const modelLabel = batchModel.label;
     const confirmed = window.confirm(
-      `Generate ${count} still${count === 1 ? "" : "s"} for ${act} using ${modelLabel} at ${batchResolution}?`,
+      `Generate ${count} still${count === 1 ? "" : "s"} for ${bucket.label} using ${modelLabel} at ${batchResolution}?`,
     );
     if (!confirmed) return;
 
-    setBatchAct(act);
+    setBatchBucketId(bucket.id);
     startTransition(async () => {
       const result = await generateEpisodeStillsAction({
         episodeId,
         seriesId,
         modelId: batchModelId,
         resolution: batchResolution,
-        actLabel: act,
+        bucketEpisodeId: bucket.episodeId,
       });
 
       if ("error" in result && result.error) {
         alert(result.error);
-        setBatchAct(null);
+        setBatchBucketId(null);
         return;
       }
 
@@ -307,32 +500,33 @@ export function SceneRail({
   }
 
   useEffect(() => {
-    if (!batchAct) return;
+    if (!batchBucketId) return;
 
-    const actScenes = activeScenes.filter(
-      (scene) => (scene.act_label ?? "Storyboard-only") === batchAct,
-    );
-    const stillPending = actScenes.some((scene) =>
+    const bucket = episodeBuckets.find((item) => item.id === batchBucketId);
+    if (!bucket) {
+      setBatchBucketId(null);
+      return;
+    }
+
+    const bucketSceneList = scenesForBucket(scenes, bucket);
+    const stillPending = bucketSceneList.some((scene) =>
       sceneHasPendingImageStill(takesByScene[scene.id] ?? []),
     );
 
     if (!stillPending) {
-      setBatchAct(null);
+      setBatchBucketId(null);
       return;
     }
 
     const interval = window.setInterval(() => router.refresh(), 4000);
     return () => window.clearInterval(interval);
-  }, [batchAct, takesByScene, activeScenes, router]);
+  }, [batchBucketId, takesByScene, scenes, episodeBuckets, router]);
 
-  const actTabs = showArchive ? ["Archive"] : [...ACT_GROUPS];
-  const currentAct = showArchive ? "Archive" : activeAct;
-  const actScenes = currentAct === "Archive" ? archivedScenes : scenesForAct(currentAct);
   const ungeneratedCount =
-    currentAct === "Archive"
-      ? 0
-      : countScenesNeedingStills(activeScenes, takesByScene, currentAct);
-  const batchRunning = batchAct === currentAct;
+    currentBucket.type === "episode"
+      ? countScenesNeedingStills(activeScenes, takesByScene, currentBucket.episodeId)
+      : 0;
+  const batchRunning = batchBucketId === currentBucket.id;
 
   return (
     <div className="space-y-3">
@@ -404,17 +598,32 @@ export function SceneRail({
           placeholder="New segment title"
           className="min-w-[8rem] flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
         />
-        <select
-          name="actLabel"
-          defaultValue="Storyboard-only"
-          className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-        >
-          {[...ACT_GROUPS, "Archive"].map((act) => (
-            <option key={act} value={act}>
-              {act}
-            </option>
-          ))}
-        </select>
+        {!showArchive && currentBucket.type === "storyboard-only" ? (
+          <input type="hidden" name="actLabel" value={STORYBOARD_ONLY_LABEL} />
+        ) : !showArchive && currentBucket.type === "episode" ? (
+          <input
+            type="hidden"
+            name="actLabel"
+            value={
+              episodes.find((episode) => episode.id === currentBucket.episodeId)
+                ? episodeBucketLabel(
+                    episodes.find((episode) => episode.id === currentBucket.episodeId)!.sort_order,
+                  )
+                : STORYBOARD_ONLY_LABEL
+            }
+          />
+        ) : (
+          <input type="hidden" name="actLabel" value={STORYBOARD_ONLY_LABEL} />
+        )}
+        <label className="flex items-center gap-1.5 text-[10px] text-muted">
+          <input
+            type="checkbox"
+            checked={addToStoryboardOnly}
+            onChange={(event) => setAddToStoryboardOnly(event.target.checked)}
+            className="rounded border-border"
+          />
+          Storyboard-only
+        </label>
         <Button type="submit" disabled={pending} className="text-sm">
           Add
         </Button>
@@ -422,48 +631,70 @@ export function SceneRail({
 
       {!showArchive ? (
         <div className="flex flex-wrap gap-1 border-b border-border pb-2">
-          {ACT_GROUPS.map((act) => (
+          {episodeBuckets.map((bucket) => (
             <button
-              key={act}
+              key={bucket.id}
               type="button"
-              onClick={() => setActiveAct(act)}
+              onClick={() => setActiveBucketId(bucket.id)}
               className={`rounded-full px-3 py-1 text-[10px] tracking-wider ${
-                activeAct === act
+                activeBucketId === bucket.id
                   ? "bg-foreground text-background"
                   : "text-muted hover:text-foreground"
               }`}
             >
-              {act.replace("_", " ")}
+              {bucket.label.replace("_", " ")}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setActiveBucketId(STORYBOARD_ONLY_BUCKET_ID)}
+            className={`rounded-full px-3 py-1 text-[10px] tracking-wider ${
+              activeBucketId === STORYBOARD_ONLY_BUCKET_ID
+                ? "bg-foreground text-background"
+                : "text-muted hover:text-foreground"
+            }`}
+          >
+            Storyboard-only
+          </button>
         </div>
       ) : null}
 
       <section
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={() => currentAct !== "Archive" && handleDrop(currentAct)}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={() => !showArchive && handleDrop(currentBucket)}
       >
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="studio-section-label">{currentAct.replace("_", " ")}</h3>
-          {currentAct !== "Archive" && ungeneratedCount > 0 ? (
-            <button
-              type="button"
-              className="text-[10px] tracking-wide text-accent hover:underline disabled:opacity-50"
-              disabled={pending || batchRunning || !batchModel?.configured}
-              onClick={() => handleBatchStills(currentAct, ungeneratedCount)}
-            >
-              {batchRunning
-                ? "Generating stills…"
-                : `Generate ${ungeneratedCount} still${ungeneratedCount === 1 ? "" : "s"}`}
-            </button>
-          ) : null}
+          <h3 className="studio-section-label">{currentBucket.label.replace("_", " ")}</h3>
+          <div className="flex items-center gap-3">
+            {bucketScenes.length > 0 ? (
+              <button
+                type="button"
+                onClick={scrollToEnd}
+                className="text-[10px] tracking-wide text-muted hover:text-accent"
+              >
+                Newest →
+              </button>
+            ) : null}
+            {currentBucket.type === "episode" && ungeneratedCount > 0 ? (
+              <button
+                type="button"
+                className="text-[10px] tracking-wide text-accent hover:underline disabled:opacity-50"
+                disabled={pending || batchRunning || !batchModel?.configured}
+                onClick={() => handleBatchStills(currentBucket, ungeneratedCount)}
+              >
+                {batchRunning
+                  ? "Generating stills…"
+                  : `Generate ${ungeneratedCount} still${ungeneratedCount === 1 ? "" : "s"}`}
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        {actScenes.length === 0 ? (
+        {bucketScenes.length === 0 ? (
           <p className="py-4 text-center text-xs text-muted">No segments in this bucket.</p>
         ) : (
-          <div className="studio-timeline-scroll">
-            {actScenes.map((scene) => {
+          <div ref={scrollRef} className="studio-timeline-scroll">
+            {bucketScenes.map((scene) => {
               const sceneTakes = takesByScene[scene.id] ?? [];
               const sceneNumber = scene.position ?? scene.sort_order + 1;
               const orientation = effectiveOrientation(scene.orientation, defaultOrientation);
@@ -476,6 +707,7 @@ export function SceneRail({
                   orientation={orientation}
                   takes={sceneTakes}
                   isSelected={selectedSceneId === scene.id}
+                  isHighlighted={highlightSceneIds.includes(scene.id)}
                   isGenerating={sceneHasPendingImageStill(sceneTakes)}
                   showArchive={showArchive}
                   menuOpen={openMenuId === scene.id}
@@ -486,18 +718,23 @@ export function SceneRail({
                   onArchive={() => {
                     setOpenMenuId(null);
                     startTransition(async () => {
-                      await archiveSceneAction(scene.id, episodeId, seriesId);
+                      await archiveSceneAction(scene.id, scene.episode_id, seriesId);
                       router.refresh();
                     });
                   }}
                   onRestore={() => {
                     setOpenMenuId(null);
                     startTransition(async () => {
-                      await unarchiveSceneAction(scene.id, episodeId, seriesId);
+                      await unarchiveSceneAction(scene.id, scene.episode_id, seriesId);
                       router.refresh();
                     });
                   }}
+                  onDelete={() => void handleDeleteScene(scene)}
                   onDragStart={() => setDragId(scene.id)}
+                  cardRef={(node) => {
+                    if (node) cardRefs.current.set(scene.id, node);
+                    else cardRefs.current.delete(scene.id);
+                  }}
                 />
               );
             })}

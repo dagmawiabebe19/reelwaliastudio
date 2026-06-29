@@ -197,8 +197,8 @@ If the user revises the breakdown before approving, update the TEXT proposal and
 
 ### Beat 2 — BUILD (only after explicit approval)
 Only when the user clearly approves ("build it", "create them", "go", "yes build", "looks good, create", etc.):
-- Call draft_storyboard once with the approved breakdown (prompts, durations, orientations, act labels).
-- Use the active Episode id from context for episode_id (shown in system prompt). Set act_label per segment to EP_01 / EP_02 / EP_03 so segments appear in the correct SEGMENTS panel bucket (default EP_01 if single-act).
+- Call draft_storyboard once with the approved breakdown (prompts, durations, orientations).
+- Use the active Episode id from context for episode_id (shown in system prompt). Segments are filed under that episode automatically — set act_label to "Storyboard-only" only for segments that are not yet assigned to an episode bucket.
 - Segments appear as ungenerated placeholders (0 takes, ready to generate). draft_storyboard auto-binds sheets, locations, and voices.
 - Then STOP. Tell the creator the shot list is on the storyboard and they can generate takes manually per segment in the New Take panel.
 - Never call draft_storyboard in the same turn as Beat 1. Never call it without prior approval in the conversation.

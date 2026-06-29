@@ -11,7 +11,7 @@ import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 import type { MentionSheet } from "@/lib/production/types";
 import type { ResolvedReference } from "@/lib/production/types";
-import type { Orientation } from "@/lib/db/types";
+import type { Orientation, Episode } from "@/lib/db/types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 import { effectiveOrientation } from "@/lib/storyboard/orientation";
 
@@ -19,6 +19,7 @@ interface StudioShellProps {
   seriesId: string;
   episodeId: string;
   episodeTitle: string;
+  episodes: Episode[];
   seriesTitle: string;
   defaultOrientation: Orientation;
   briefMarkdown: string;
@@ -44,6 +45,7 @@ export function StudioShell({
   seriesId,
   episodeId,
   episodeTitle,
+  episodes,
   seriesTitle,
   defaultOrientation,
   briefMarkdown,
@@ -204,6 +206,7 @@ export function StudioShell({
             <SceneRail
               seriesId={seriesId}
               episodeId={episodeId}
+              episodes={episodes}
               defaultOrientation={defaultOrientation}
               scenes={scenes}
               selectedSceneId={selectedSceneId}

@@ -7,6 +7,7 @@ import {
   listCharacterSheetsByCostume,
 } from "@/lib/db/character-sheets";
 import { getDbClient } from "@/lib/db/client";
+import { getScene } from "@/lib/db/scenes";
 import {
   getIngredient,
   listCostumesByCharacter,
@@ -141,4 +142,33 @@ export async function deleteAudioLineWithCleanup(
 
   const assetId = await deleteAudioLine(lineId);
   if (assetId) await deleteAssetsByIds([assetId]);
+}
+
+export async function deleteSceneWithCleanup(sceneId: string): Promise<string> {
+  const scene = await getScene(sceneId);
+  if (!scene) {
+    throw new Error("Scene not found.");
+  }
+
+  const { verifyEpisodeOwnership } = await import("@/lib/db/audio-lines");
+  await verifyEpisodeOwnership(scene.episode_id);
+
+  const { listTakesByScene, deleteTake } = await import("@/lib/db/takes");
+  const takes = await listTakesByScene(sceneId);
+  const assetIds: string[] = [];
+
+  for (const take of takes) {
+    const assetId = await deleteTake(take.id);
+    if (assetId) assetIds.push(assetId);
+  }
+
+  const supabase = await getDbClient();
+  const { error } = await supabase.from("scenes").delete().eq("id", sceneId);
+  if (error) throw new Error(error.message);
+
+  if (assetIds.length) {
+    await deleteAssetsByIds(assetIds);
+  }
+
+  return scene.episode_id;
 }

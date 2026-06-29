@@ -11,7 +11,7 @@ import { createPendingTakes, executeGenerationJob, type GenerateTakeParams } fro
 import { getModelById, getPublicModelCatalog, isModelConfigured } from "@/lib/ai/registry";
 import { listHiggsfieldMotions } from "@/lib/ai/video/higgsfield";
 import { clearFailedTakesWithCleanup } from "@/lib/db/delete";
-import { listScenesByEpisode, updateScene } from "@/lib/db/scenes";
+import { listScenesBySeries, updateScene } from "@/lib/db/scenes";
 import { listTakesByScene, listTakesForScenes, setTakeStarred } from "@/lib/db/takes";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { resolveAssetUrl } from "@/lib/storage/resolve-urls";
@@ -101,7 +101,7 @@ export async function generateEpisodeStillsAction(input: {
   seriesId: string;
   modelId: string;
   resolution: string;
-  actLabel: string;
+  bucketEpisodeId: string;
 }) {
   try {
     const model = getModelById(input.modelId);
@@ -113,18 +113,18 @@ export async function generateEpisodeStillsAction(input: {
       return { error: `${model.label} is not configured. Set ${model.envKey} to enable.` };
     }
 
-    const scenes = await listScenesByEpisode(input.episodeId);
-    const actScenes = scenes.filter(
+    const scenes = await listScenesBySeries(input.seriesId);
+    const bucketScenes = scenes.filter(
       (scene) =>
         scene.status !== "archived" &&
-        (scene.act_label ?? "Storyboard-only") === input.actLabel,
+        scene.episode_id === input.bucketEpisodeId,
     );
 
-    if (!actScenes.length) {
+    if (!bucketScenes.length) {
       return { queued: 0 };
     }
 
-    const takes = await listTakesForScenes(actScenes.map((scene) => scene.id));
+    const takes = await listTakesForScenes(bucketScenes.map((scene) => scene.id));
     const takesByScene = new Map<string, typeof takes>();
     for (const take of takes) {
       const bucket = takesByScene.get(take.scene_id) ?? [];
@@ -134,7 +134,7 @@ export async function generateEpisodeStillsAction(input: {
 
     const jobs: Array<{ params: GenerateTakeParams; takeIds: string[] }> = [];
 
-    for (const scene of actScenes) {
+    for (const scene of bucketScenes) {
       const sceneTakes = takesByScene.get(scene.id) ?? [];
       if (!sceneNeedsImageStill(sceneTakes)) continue;
 

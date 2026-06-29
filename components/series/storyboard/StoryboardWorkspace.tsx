@@ -8,13 +8,14 @@ import { GenerationPanel, type ModelCatalogEntry } from "@/components/series/gen
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { SceneMetaControls } from "@/components/series/storyboard/SceneMetaControls";
 import { SceneRail } from "@/components/series/storyboard/SceneRail";
-import type { Orientation } from "@/lib/db/types";
+import type { Episode, Orientation } from "@/lib/db/types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 import { effectiveOrientation } from "@/lib/storyboard/orientation";
 
 interface StoryboardWorkspaceProps {
   seriesId: string;
   episodeId: string;
+  episodes: Episode[];
   defaultOrientation: Orientation;
   scenes: SceneWithBindings[];
   ingredients: MentionIngredient[];
@@ -26,6 +27,7 @@ interface StoryboardWorkspaceProps {
 export function StoryboardWorkspace({
   seriesId,
   episodeId,
+  episodes,
   defaultOrientation,
   scenes,
   ingredients,
@@ -41,6 +43,7 @@ export function StoryboardWorkspace({
       <SceneRail
         seriesId={seriesId}
         episodeId={episodeId}
+        episodes={episodes}
         defaultOrientation={defaultOrientation}
         scenes={scenes}
         selectedSceneId={selectedSceneId}

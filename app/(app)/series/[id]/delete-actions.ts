@@ -5,12 +5,14 @@ import {
   deleteAudioLineWithCleanup,
   deleteCharacterSheetWithCleanup,
   deleteIngredientWithCleanup,
+  deleteSceneWithCleanup,
   deleteTakeWithCleanup,
 } from "@/lib/db/delete";
 import {
   getAudioLineDeletePreview,
   getCharacterSheetDeletePreview,
   getIngredientDeletePreview,
+  getSceneDeletePreview,
   getTakeDeletePreview,
 } from "@/lib/db/delete-preview";
 import { verifySeriesOwnership } from "@/lib/db/ingredients";
@@ -105,6 +107,30 @@ export async function deleteAudioLineAction(
     await deleteAudioLineWithCleanup(lineId, episodeId);
     revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
     return { success: true as const };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Delete failed." };
+  }
+}
+
+export async function getSceneDeletePreviewAction(
+  sceneId: string,
+  episodeId: string,
+  seriesId: string,
+) {
+  try {
+    await verifyEpisodeOwnership(episodeId);
+    void seriesId;
+    return await getSceneDeletePreview(sceneId);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to load preview." };
+  }
+}
+
+export async function deleteSceneAction(sceneId: string, seriesId: string) {
+  try {
+    const sceneEpisodeId = await deleteSceneWithCleanup(sceneId);
+    revalidatePath(`/series/${seriesId}/episodes/${sceneEpisodeId}`);
+    return { success: true as const, episodeId: sceneEpisodeId };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Delete failed." };
   }

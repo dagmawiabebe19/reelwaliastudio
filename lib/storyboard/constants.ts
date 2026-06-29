@@ -1,6 +1,6 @@
 import type { Scene } from "@/lib/db/types";
 
-export const ACT_GROUPS = ["EP_01", "EP_02", "EP_03", "Storyboard-only"] as const;
+export { STORYBOARD_ONLY_LABEL } from "@/lib/storyboard/episode-buckets";
 
 export type SceneWithBindings = Scene & {
   scene_ingredients: {
@@ -36,5 +36,3 @@ export type SceneWithBindings = Scene & {
   reference_overrides?: Record<string, unknown>;
   displayReferences?: import("@/lib/production/types").ResolvedReference[];
 };
-
-export type SceneGroup = (typeof ACT_GROUPS)[number] | "Archive";

@@ -306,8 +306,22 @@ body {
 }
 
 .studio-segment-card--active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  border-color: var(--status-validated);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--status-validated) 40%, transparent);
+}
+
+.studio-segment-card--new {
+  animation: studio-segment-pulse 1.1s ease-out 2;
+}
+
+@keyframes studio-segment-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-validated) 70%, transparent);
+  }
 }
 
 .studio-segment-card--ungenerated {

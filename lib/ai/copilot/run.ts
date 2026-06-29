@@ -31,7 +31,7 @@ import { appendChatMessage, listChatMessages } from "@/lib/db/chat";
 import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
 import { getEpisode } from "@/lib/db/episodes";
 import { getSeries } from "@/lib/db/series";
-import { ACT_GROUPS } from "@/lib/storyboard/constants";
+import { resolveActLabelForEpisode } from "@/lib/storyboard/episode-buckets";
 
 export type CopilotStreamEvent =
   | { type: "text"; content: string }
@@ -52,14 +52,6 @@ export type CopilotStreamEvent =
 
 type ToolProgressEmitter = (detail: string, step?: number, total?: number) => void;
 type OutputEmitter = (event: CopilotOutputEvent) => void;
-
-function normalizeActLabel(raw: unknown, hasActiveEpisode: boolean): string {
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
-    if ((ACT_GROUPS as readonly string[]).includes(trimmed)) return trimmed;
-  }
-  return hasActiveEpisode ? "EP_01" : "Storyboard-only";
-}
 
 async function resolveDraftStoryboardEpisodeId(
   context: CopilotContext,
@@ -102,6 +94,10 @@ async function executeTool(
         return { error: episodeResolution.error };
       }
       const episodeId = episodeResolution.episodeId;
+      const episode = await getEpisode(episodeId);
+      if (!episode) {
+        return { error: `Episode not found: ${episodeId}` };
+      }
 
       const segments = (args.segments as Array<Record<string, unknown>>) ?? [];
       const created: string[] = [];
@@ -121,7 +117,7 @@ async function executeTool(
         index++;
         emitProgress(`writing segment ${index}/${total || index}: ${title}…`, index, total || index);
 
-        const actLabel = normalizeActLabel(segment.act_label, Boolean(context.episodeId ?? episodeId));
+        const actLabel = resolveActLabelForEpisode(episode, segment.act_label);
         const shotIntent = normalizeShotIntent(
           typeof segment.shot_intent === "string" ? segment.shot_intent : null,
         );
