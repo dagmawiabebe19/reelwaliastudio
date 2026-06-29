@@ -19,7 +19,6 @@ import {
 } from "@/components/series/episodes/EpisodesSection";
 import type { Orientation, SeriesStatus } from "@/lib/db/types";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
-import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import type { CopilotOutputItem, LibraryHighlight } from "@/lib/copilot/output";
 import type { CharacterSheetCardData, EpisodeOption, IngredientCardData } from "@/lib/production/types";
 
@@ -76,7 +75,6 @@ interface SeriesWorkspaceProps {
   }>;
   activeEpisodes: EpisodeCardData[];
   archivedEpisodes: EpisodeCardData[];
-  models: ModelCatalogEntry[];
   chatMessages: ChatMessageData[];
 }
 
@@ -91,7 +89,6 @@ export function SeriesWorkspace({
   characterSheets,
   activeEpisodes,
   archivedEpisodes,
-  models,
   chatMessages,
 }: SeriesWorkspaceProps) {
   const [view, setView] = useState<"classic" | "studio">("classic");

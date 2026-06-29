@@ -1,19 +1,23 @@
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { Orientation } from "@/lib/db/types";
 
-/** Starred ready take, else latest ready image, else latest ready video. */
+/** Starred ready take, else latest ready video, else latest ready image (legacy). */
 export function resolveRepresentativeTake(takes: TakeCardData[]): TakeCardData | null {
   const ready = takes.filter((take) => take.status === "ready" && take.assetUrl);
   const starred = ready.find((take) => take.starred);
   if (starred) return starred;
 
-  const images = ready.filter((take) => take.media_type === "image");
-  if (images.length) return images[images.length - 1];
-
   const videos = ready.filter((take) => take.media_type === "video");
   if (videos.length) return videos[videos.length - 1];
 
+  const images = ready.filter((take) => take.media_type === "image");
+  if (images.length) return images[images.length - 1];
+
   return null;
+}
+
+export function sceneHasPendingVideoTake(takes: TakeCardData[]): boolean {
+  return takes.some((take) => take.media_type === "video" && take.status === "pending");
 }
 
 export function countReadyTakes(takes: TakeCardData[]): number {

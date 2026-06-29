@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { SeriesWorkspace } from "@/components/series/SeriesWorkspace";
-import { getPublicModelCatalog } from "@/lib/ai/registry";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
 import { listCharacterSheetsBySeries } from "@/lib/db/character-sheets";
 import { getIngredientCounts, listIngredientsBySeries } from "@/lib/db/ingredients";
@@ -34,7 +33,6 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
   if (!series) notFound();
 
   const chatMessages = await listChatMessages(chatSession.id);
-  const models = getPublicModelCatalog();
 
   const ingredientsWithUrls = await resolveAssetUrls(
     ingredientsRaw.map((i) => ({
@@ -88,7 +86,6 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       characterSheets={characterSheets}
       activeEpisodes={activeEpisodes}
       archivedEpisodes={archivedEpisodes}
-      models={models}
       chatMessages={chatMessages.map((m) => ({
         id: m.id,
         role: m.role,

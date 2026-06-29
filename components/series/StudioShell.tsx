@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspaceProvider";
-import { GenerationPanel, type ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
+import { GenerationPanel } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { SceneMetaControls } from "@/components/series/storyboard/SceneMetaControls";
 import { ScenePromptEditor } from "@/components/series/storyboard/ScenePromptEditor";
@@ -36,7 +36,7 @@ interface StudioShellProps {
     status: string;
     episode_ids: string[];
   }>;
-  models: ModelCatalogEntry[];
+  seedanceConfigured: boolean;
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
 }
@@ -54,7 +54,7 @@ export function StudioShell({
   ingredients,
   sheets,
   characterSheets,
-  models,
+  seedanceConfigured,
   takesByScene,
   chatMessages,
 }: StudioShellProps) {
@@ -212,7 +212,6 @@ export function StudioShell({
               selectedSceneId={selectedSceneId}
               onSelectScene={setSelectedSceneId}
               takesByScene={takesByScene}
-              models={models}
             />
           </div>
         </main>
@@ -238,8 +237,7 @@ export function StudioShell({
                 sceneId={selectedScene.id}
                 seriesId={seriesId}
                 episodeId={episodeId}
-                models={models}
-                takes={sceneTakes}
+                seedanceConfigured={seedanceConfigured}
                 scenePrompt={selectedScene.prompt}
                 shotIntent={selectedScene.shot_intent}
                 resolvedReferences={

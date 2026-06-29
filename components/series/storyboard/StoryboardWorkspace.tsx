@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ScenePromptEditor, type MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 import type { MentionSheet } from "@/lib/production/types";
 import type { ResolvedReference } from "@/lib/production/types";
-import { GenerationPanel, type ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
+import { GenerationPanel } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { SceneMetaControls } from "@/components/series/storyboard/SceneMetaControls";
 import { SceneRail } from "@/components/series/storyboard/SceneRail";
@@ -20,7 +20,7 @@ interface StoryboardWorkspaceProps {
   scenes: SceneWithBindings[];
   ingredients: MentionIngredient[];
   sheets: MentionSheet[];
-  models: ModelCatalogEntry[];
+  seedanceConfigured: boolean;
   takesByScene: Record<string, TakeCardData[]>;
 }
 
@@ -32,7 +32,7 @@ export function StoryboardWorkspace({
   scenes,
   ingredients,
   sheets,
-  models,
+  seedanceConfigured,
   takesByScene,
 }: StoryboardWorkspaceProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
@@ -49,7 +49,6 @@ export function StoryboardWorkspace({
         selectedSceneId={selectedSceneId}
         onSelectScene={setSelectedSceneId}
         takesByScene={takesByScene}
-        models={models}
       />
 
       <aside className="sticky top-8 h-fit rounded-lg border border-border bg-surface p-5">
@@ -61,7 +60,7 @@ export function StoryboardWorkspace({
             defaultOrientation={defaultOrientation}
             ingredients={ingredients}
             sheets={sheets}
-            models={models}
+            seedanceConfigured={seedanceConfigured}
             takes={takesByScene[selectedScene.id] ?? []}
           />
         ) : (
@@ -79,7 +78,7 @@ function SceneDetailPanel({
   defaultOrientation,
   ingredients,
   sheets,
-  models,
+  seedanceConfigured,
   takes,
 }: {
   scene: SceneWithBindings;
@@ -88,7 +87,7 @@ function SceneDetailPanel({
   defaultOrientation: Orientation;
   ingredients: MentionIngredient[];
   sheets: MentionSheet[];
-  models: ModelCatalogEntry[];
+  seedanceConfigured: boolean;
   takes: TakeCardData[];
 }) {
   const boundIds = scene.scene_ingredients.map((b) => b.ingredient_id);
@@ -122,8 +121,7 @@ function SceneDetailPanel({
         sceneId={scene.id}
         seriesId={seriesId}
         episodeId={episodeId}
-        models={models}
-        takes={takes}
+        seedanceConfigured={seedanceConfigured}
         scenePrompt={scene.prompt}
         shotIntent={scene.shot_intent}
         resolvedReferences={resolvedReferences}

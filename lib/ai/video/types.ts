@@ -10,18 +10,11 @@ export type VideoReferenceImage = {
 
 export interface GenerateVideoInput {
   prompt: string;
-  startImageUrl: string | null;
-  startImageBucket?: string | null;
-  startImageStoragePath?: string | null;
-  /** Seedance reference-to-video: bound character sheet + location images (up to 9). */
-  referenceImages?: VideoReferenceImage[];
+  referenceImages: VideoReferenceImage[];
   durationSeconds: number;
   aspectRatio: AspectRatio;
   resolution: string;
   sceneId: string;
-  dopModel?: string;
-  motionId?: string | null;
-  motionStrength?: number;
   seedanceTier?: "standard" | "fast";
   seedanceAudioMode?: "off" | "full" | "ambient";
 }

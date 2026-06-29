@@ -2,7 +2,7 @@ import "server-only";
 
 import { after } from "next/server";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
-import { runWithConcurrency } from "@/lib/ai/generation/batch-stills";
+import { runWithConcurrency } from "@/lib/ai/generation/concurrency";
 import { defaultAspectRatioForIngredients, sheetAnglePrompt, SHEET_ANGLE_LABELS, type SheetAngle } from "@/lib/production/prompts";
 import { createAsset } from "@/lib/db/assets";
 import {

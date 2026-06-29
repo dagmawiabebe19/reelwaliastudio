@@ -3,13 +3,8 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  generateTakesAction,
-  listHiggsfieldMotionsAction,
-} from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
+import { generateTakesAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import { Button } from "@/components/ui/Button";
-import type { TakeCardData } from "@/components/series/generation/TakesStrip";
-import { DOP_MODEL_OPTIONS } from "@/lib/ai/video/higgsfield-constants";
 import {
   SEEDANCE_AUDIO_MODE_OPTIONS,
   SEEDANCE_DURATION_OPTIONS,
@@ -25,35 +20,11 @@ import {
 } from "@/lib/production/prompts";
 import type { ResolvedReference } from "@/lib/production/types";
 
-export type ModelCatalogEntry = {
-  id: string;
-  label: string;
-  kind: "image" | "video" | "voice";
-  safety: "sfw" | "nsfw";
-  configured: boolean;
-};
-
-type HiggsfieldMotion = {
-  id: string;
-  name: string;
-  description: string | null;
-};
-
-const MODEL_HELPERS: Record<string, string> = {
-  "openai-image": "OpenAI Image — storyboard stills from your prompt and identity locks.",
-  seedream: "Seedream — image stills via Fal.",
-  "nano-banana": "Nano Banana — image stills via Fal.",
-  grok: "Grok Image — NSFW-capable still generation.",
-  seedance: "Seedance 2.0 — generates video from bound reference images + your shot prompt in one pass.",
-  higgsfield: "Higgsfield DoP — animates your source still into a short cinematic clip.",
-};
-
 interface GenerationPanelProps {
   sceneId: string;
   seriesId: string;
   episodeId: string;
-  models: ModelCatalogEntry[];
-  takes?: TakeCardData[];
+  seedanceConfigured: boolean;
   scenePrompt?: string | null;
   shotIntent?: string | null;
   resolvedReferences?: ResolvedReference[];
@@ -78,45 +49,11 @@ function seedanceReferenceLabels(refs: ResolvedReference[]): string[] {
     .map(formatSeedanceRefLabel);
 }
 
-function resolveVideoSourceTake(takes: TakeCardData[]): TakeCardData | null {
-  const readyImages = takes.filter(
-    (take) => take.media_type === "image" && take.status === "ready" && take.assetUrl,
-  );
-  if (!readyImages.length) return null;
-  return readyImages.find((take) => take.starred) ?? readyImages[readyImages.length - 1];
-}
-
 function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
     <div className="mb-1.5">
       <label className="block studio-section-label">{children}</label>
       {hint ? <p className="mt-0.5 text-[10px] text-muted">{hint}</p> : null}
-    </div>
-  );
-}
-
-function ControlGroup({
-  title,
-  subtitle,
-  inactive,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  inactive?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={`space-y-3 rounded-md border border-border/60 bg-background/30 p-3 ${
-        inactive ? "studio-field-inactive" : ""
-      }`}
-    >
-      <div>
-        <p className="studio-section-label">{title}</p>
-        {subtitle ? <p className="mt-0.5 text-[10px] text-muted">{subtitle}</p> : null}
-      </div>
-      {children}
     </div>
   );
 }
@@ -128,28 +65,17 @@ export function GenerationPanel({
   sceneId,
   seriesId,
   episodeId,
-  models,
-  takes = [],
+  seedanceConfigured,
   scenePrompt = "",
   shotIntent: initialShotIntent = null,
   resolvedReferences = [],
 }: GenerationPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const imageModels = models.filter((m) => m.kind === "image");
-  const videoModels = models.filter((m) => m.kind === "video");
-  const allModels = [...imageModels, ...videoModels];
-
-  const [modelId, setModelId] = useState(allModels.find((m) => m.configured)?.id ?? allModels[0]?.id ?? "");
-  const [count, setCount] = useState(1);
   const [resolution, setResolution] = useState<"480p" | "720p">("720p");
   const [duration, setDuration] = useState(8);
   const [seedanceTier, setSeedanceTier] = useState<string>(SEEDANCE_TIER_OPTIONS[0].id);
   const [seedanceAudioMode, setSeedanceAudioMode] = useState<SeedanceAudioMode>("off");
-  const [dopModel, setDopModel] = useState<string>(DOP_MODEL_OPTIONS[0].id);
-  const [motionId, setMotionId] = useState<string>("");
-  const [motions, setMotions] = useState<HiggsfieldMotion[]>([]);
-  const [motionsError, setMotionsError] = useState<string | null>(null);
   const [shotIntent, setShotIntent] = useState<ShotIntent>(
     () =>
       normalizeShotIntent(initialShotIntent) ??
@@ -157,21 +83,11 @@ export function GenerationPanel({
   );
   const [startedMessage, setStartedMessage] = useState<string | null>(null);
 
-  const selected = allModels.find((m) => m.id === modelId);
-  const isVideo = selected?.kind === "video";
-  const isImage = selected?.kind === "image";
-  const isHiggsfield = modelId === "higgsfield";
-  const isSeedance = modelId === "seedance";
-  const usesClipLength = isVideo && isSeedance;
-  const videoSourceTake = useMemo(() => resolveVideoSourceTake(takes), [takes]);
   const seedanceRefLabels = useMemo(
     () => seedanceReferenceLabels(resolvedReferences),
     [resolvedReferences],
   );
-  const canGenerateVideo = isSeedance
-    ? seedanceRefLabels.length > 0
-    : Boolean(videoSourceTake?.assetUrl);
-  const modelHelper = MODEL_HELPERS[modelId] ?? `${selected?.label ?? "Model"} — generate for this segment.`;
+  const canGenerate = seedanceConfigured && seedanceRefLabels.length > 0;
 
   useEffect(() => {
     setShotIntent(
@@ -180,27 +96,8 @@ export function GenerationPanel({
     );
   }, [sceneId, initialShotIntent, scenePrompt]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void listHiggsfieldMotionsAction().then((result) => {
-      if (cancelled) return;
-      if ("error" in result && result.error) {
-        setMotions([]);
-        setMotionsError(result.error);
-        return;
-      }
-      setMotionsError(null);
-      setMotions(result.motions ?? []);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   function handleGenerate() {
-    if (!modelId || !selected?.configured) return;
-    if (isVideo && !canGenerateVideo) return;
+    if (!canGenerate) return;
 
     startTransition(async () => {
       setStartedMessage(null);
@@ -208,28 +105,18 @@ export function GenerationPanel({
         sceneId,
         seriesId,
         episodeId,
-        modelId,
-        count: isVideo ? 1 : count,
         resolution,
-        durationSeconds: usesClipLength ? duration : undefined,
-        dopModel: isHiggsfield ? dopModel : undefined,
-        motionId: isHiggsfield && motionId ? motionId : undefined,
-        motionStrength: isHiggsfield && motionId ? 1 : undefined,
-        seedanceTier: isSeedance ? (seedanceTier as "standard" | "fast") : undefined,
-        seedanceAudioMode: isSeedance ? seedanceAudioMode : undefined,
-        shotIntent: isVideo ? shotIntent : undefined,
+        durationSeconds: duration,
+        seedanceTier: seedanceTier as "standard" | "fast",
+        seedanceAudioMode,
+        shotIntent,
       });
 
       if ("error" in result && result.error) {
         alert(result.error);
       } else {
-        const n = isVideo ? 1 : count;
         setStartedMessage(
-          isVideo
-            ? isSeedance
-              ? `Generating video from ${seedanceRefLabels.length} reference${seedanceRefLabels.length === 1 ? "" : "s"}… may take several minutes`
-              : `Generating video from take #${videoSourceTake?.take_number}… may take several minutes`
-            : `Generating ${n} take${n === 1 ? "" : "s"}… ~30–90s`,
+          `Generating video from ${seedanceRefLabels.length} reference${seedanceRefLabels.length === 1 ? "" : "s"}… may take several minutes`,
         );
         router.refresh();
       }
@@ -242,81 +129,28 @@ export function GenerationPanel({
         <span className="studio-segment-panel-badge">This segment</span>
         <h3 className="studio-section-label mt-2">New take</h3>
         <p className="text-[10px] leading-relaxed text-muted">
-          Generates one segment only — not the batch stills control in Segments above.
+          Seedance generates video from bound ingredient references and your shot prompt.
         </p>
       </div>
 
-      <div className="space-y-2">
-        <FieldLabel>Model</FieldLabel>
-        <select
-          value={modelId}
-          onChange={(e) => setModelId(e.target.value)}
-          className={selectClass}
-        >
-          {allModels.map((model) => (
-            <option key={model.id} value={model.id} disabled={!model.configured}>
-              {model.label} · {model.kind} · {model.safety.toUpperCase()}
-              {!model.configured ? " (not configured)" : ""}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs leading-relaxed text-muted">{modelHelper}</p>
+      <div className="rounded-md border border-border/60 bg-background/30 px-3 py-2.5">
+        <p className="studio-section-label">Model</p>
+        <p className="mt-1 text-sm text-foreground">Seedance 2.0</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted">
+          References + text → video in one pass. No intermediate still required.
+        </p>
       </div>
 
-      <ControlGroup
-        title="Image still"
-        subtitle={isImage ? "Active for this model" : "Not used — switch to an image model"}
-        inactive={!isImage}
-      >
+      <div className="space-y-3 rounded-md border border-border/60 bg-background/30 p-3">
         <div>
-          <FieldLabel hint="1–5 stills per run">Take count</FieldLabel>
-          <input
-            type="number"
-            min={1}
-            max={5}
-            value={count}
-            disabled={!isImage}
-            onChange={(e) => setCount(Number(e.target.value))}
-            className={selectClass}
-          />
-        </div>
-      </ControlGroup>
-
-      <ControlGroup
-        title="Video clip"
-        subtitle={isVideo ? "Active for this model" : "Not used — switch to a video model"}
-        inactive={!isVideo}
-      >
-        <div>
-          {isSeedance ? (
-            <>
-              <FieldLabel>References</FieldLabel>
-              {seedanceRefLabels.length ? (
-                <p className="text-sm text-foreground">
-                  {seedanceRefLabels.join(", ")}
-                </p>
-              ) : (
-                <p className="text-xs leading-relaxed text-muted">
-                  Bind character sheets and locations to this segment (mention them in the prompt to
-                  auto-bind). Seedance uses these references plus your shot prompt — no source still
-                  required.
-                </p>
-              )}
-            </>
+          <FieldLabel>References</FieldLabel>
+          {seedanceRefLabels.length ? (
+            <p className="text-sm text-foreground">{seedanceRefLabels.join(", ")}</p>
           ) : (
-            <>
-              <FieldLabel>Source frame</FieldLabel>
-              {videoSourceTake ? (
-                <p className="text-sm text-foreground">
-                  Take #{videoSourceTake.take_number}
-                  {videoSourceTake.starred ? " ★ starred" : " (latest ready)"}
-                </p>
-              ) : (
-                <p className="text-xs leading-relaxed text-muted">
-                  Generate a storyboard still first, then star it (or use the latest ready image).
-                </p>
-              )}
-            </>
+            <p className="text-xs leading-relaxed text-muted">
+              Bind a character sheet or location to generate — mention them in the segment prompt to
+              auto-bind references.
+            </p>
           )}
         </div>
 
@@ -324,7 +158,6 @@ export function GenerationPanel({
           <FieldLabel>Shot intent</FieldLabel>
           <select
             value={shotIntent}
-            disabled={!isVideo}
             onChange={(e) => setShotIntent(e.target.value as ShotIntent)}
             className={selectClass}
           >
@@ -337,26 +170,9 @@ export function GenerationPanel({
         </div>
 
         <div>
-          <FieldLabel hint={!isHiggsfield ? "Higgsfield DoP only" : undefined}>DoP variant</FieldLabel>
-          <select
-            value={dopModel}
-            disabled={!isVideo || !isHiggsfield}
-            onChange={(e) => setDopModel(e.target.value)}
-            className={selectClass}
-          >
-            {DOP_MODEL_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <FieldLabel hint={!isSeedance ? "Seedance 2.0 only" : undefined}>Tier</FieldLabel>
+          <FieldLabel>Tier</FieldLabel>
           <select
             value={seedanceTier}
-            disabled={!isVideo || !isSeedance}
             onChange={(e) => setSeedanceTier(e.target.value)}
             className={selectClass}
           >
@@ -368,77 +184,45 @@ export function GenerationPanel({
           </select>
         </div>
 
-        {isSeedance ? (
-          <div className="space-y-2 rounded-md border border-border/40 bg-background/20 p-3">
-            <FieldLabel>Native audio</FieldLabel>
-            <select
-              value={seedanceAudioMode}
-              onChange={(e) => setSeedanceAudioMode(e.target.value as SeedanceAudioMode)}
-              className={selectClass}
-            >
-              {SEEDANCE_AUDIO_MODE_OPTIONS.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <p className="text-[10px] leading-relaxed text-muted">
-              {seedanceAudioMode === "off"
-                ? "Silent clip — generate_audio=false."
-                : seedanceAudioMode === "ambient"
-                  ? "fal has no SFX-only flag — this enables full native audio; describe ambient sound and SFX in the shot prompt and avoid quoted dialogue."
-                  : "Full native audio — dialogue, SFX, and ambient in one pass."}
-            </p>
-            {seedanceAudioMode !== "off" ? (
-              <>
-                <p className="text-[10px] leading-relaxed text-muted">
-                  For spoken lines, put dialogue in double quotes in the shot description — Seedance
-                  will lip-sync it.
-                </p>
-                <p className="text-[10px] leading-relaxed text-muted">
-                  Native voices are model-generated and may vary between shots — for a consistent
-                  character voice across episodes, keep dialogue audio off here and use a dedicated
-                  voice pass.
-                </p>
-              </>
-            ) : null}
-          </div>
-        ) : (
-          <div className={!isVideo ? "studio-field-inactive" : ""}>
-            <FieldLabel hint="Seedance 2.0 only">Native audio</FieldLabel>
-            <select disabled className={selectClass}>
-              <option>Audio: Off</option>
-            </select>
-          </div>
-        )}
-
-        <div>
-          <FieldLabel hint={!isHiggsfield ? "Higgsfield DoP only" : undefined}>Camera motion</FieldLabel>
+        <div className="space-y-2 rounded-md border border-border/40 bg-background/20 p-3">
+          <FieldLabel>Native audio</FieldLabel>
           <select
-            value={motionId}
-            disabled={!isVideo || !isHiggsfield}
-            onChange={(e) => setMotionId(e.target.value)}
+            value={seedanceAudioMode}
+            onChange={(e) => setSeedanceAudioMode(e.target.value as SeedanceAudioMode)}
             className={selectClass}
           >
-            <option value="">None</option>
-            {motions.map((motion) => (
-              <option key={motion.id} value={motion.id}>
-                {motion.name}
+            {SEEDANCE_AUDIO_MODE_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
               </option>
             ))}
           </select>
-          {motionsError && isHiggsfield ? (
-            <p className="mt-1 text-xs text-muted">{motionsError}</p>
+          <p className="text-[10px] leading-relaxed text-muted">
+            {seedanceAudioMode === "off"
+              ? "Silent clip — generate_audio=false."
+              : seedanceAudioMode === "ambient"
+                ? "fal has no SFX-only flag — this enables full native audio; describe ambient sound and SFX in the shot prompt and avoid quoted dialogue."
+                : "Full native audio — dialogue, SFX, and ambient in one pass."}
+          </p>
+          {seedanceAudioMode !== "off" ? (
+            <>
+              <p className="text-[10px] leading-relaxed text-muted">
+                For spoken lines, put dialogue in double quotes in the shot description — Seedance
+                will lip-sync it.
+              </p>
+              <p className="text-[10px] leading-relaxed text-muted">
+                Native voices are model-generated and may vary between shots — for a consistent
+                character voice across episodes, keep dialogue audio off here and use a dedicated
+                voice pass.
+              </p>
+            </>
           ) : null}
         </div>
 
         <div>
-          <FieldLabel hint={!usesClipLength ? "Seedance 2.0 only — DoP uses fixed clip length" : undefined}>
-            Clip length
-          </FieldLabel>
+          <FieldLabel>Clip length</FieldLabel>
           <select
             value={String(duration)}
-            disabled={!usesClipLength}
             onChange={(e) => setDuration(Number(e.target.value))}
             className={selectClass}
           >
@@ -449,37 +233,35 @@ export function GenerationPanel({
             ))}
           </select>
         </div>
-      </ControlGroup>
 
-      <div>
-        <FieldLabel hint="Applies to image stills; passed for video where supported">
-          Resolution / quality
-        </FieldLabel>
-        <select
-          value={resolution}
-          onChange={(e) => setResolution(e.target.value as "480p" | "720p")}
-          className={selectClass}
-        >
-          <option value="480p">480p</option>
-          <option value="720p">720p</option>
-        </select>
+        <div>
+          <FieldLabel>Resolution</FieldLabel>
+          <select
+            value={resolution}
+            onChange={(e) => setResolution(e.target.value as "480p" | "720p")}
+            className={selectClass}
+          >
+            <option value="480p">480p</option>
+            <option value="720p">720p</option>
+          </select>
+        </div>
       </div>
 
       <Button
         type="button"
         onClick={handleGenerate}
-        disabled={pending || !selected?.configured || (isVideo && !canGenerateVideo)}
+        disabled={pending || !canGenerate}
         className="w-full"
       >
-        {pending ? "Starting…" : isVideo ? "Generate video" : "Generate still"}
+        {pending ? "Starting…" : "Generate video"}
       </Button>
 
       {startedMessage ? (
         <p className="text-center text-xs text-status-progress">{startedMessage}</p>
       ) : null}
 
-      {selected && !selected.configured ? (
-        <p className="text-center text-xs text-muted">API key not configured for this model.</p>
+      {!seedanceConfigured ? (
+        <p className="text-center text-xs text-muted">Set FAL_KEY to enable Seedance 2.0.</p>
       ) : null}
     </div>
   );

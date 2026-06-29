@@ -73,7 +73,7 @@ export const generateVideo: VideoAdapter = async (input) => {
     return notConfiguredResult("Seedance 2.0", "FAL_KEY");
   }
 
-  const references = input.referenceImages ?? [];
+  const references = input.referenceImages;
   if (!references.length) {
     return errorResult(
       "Seedance: reference-to-video requires bound reference images (character sheet and/or location) for this segment.",

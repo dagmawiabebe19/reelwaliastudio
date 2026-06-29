@@ -5,7 +5,6 @@ import { AudioLinesPanel, type AudioLineCardData } from "@/components/series/aud
 import { EpisodeStudioChrome } from "@/components/series/EpisodeStudioChrome";
 import { EpisodeWorkspace } from "@/components/series/EpisodeWorkspace";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
-import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 import type { MentionSheet } from "@/lib/production/types";
@@ -35,7 +34,7 @@ interface EpisodeStudioPageProps {
   ingredients: MentionIngredient[];
   sheets: MentionSheet[];
   characterSheets: CharacterSheetCopilotData[];
-  models: ModelCatalogEntry[];
+  seedanceConfigured: boolean;
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
   audioLines: AudioLineCardData[];

@@ -2,8 +2,8 @@ import "server-only";
 
 import { formatGenerationError, logGenerationError } from "@/lib/ai/generation/errors";
 import { orientationToAspectRatio } from "@/lib/ai/orientation";
-import { runImageModel, runVideoModel } from "@/lib/ai/router";
-import { getModelById, isModelConfigured } from "@/lib/ai/registry";
+import { runVideoModel } from "@/lib/ai/router";
+import { getModelById, isModelConfigured, SEGMENT_VIDEO_MODEL_ID } from "@/lib/ai/registry";
 import { createAsset } from "@/lib/db/assets";
 import { getScene, effectiveOrientation } from "@/lib/db/scenes";
 import { getSeries } from "@/lib/db/series";
@@ -13,14 +13,11 @@ import {
   markTakeFailed,
   markTakeReady,
 } from "@/lib/db/takes";
-import type { VideoReferenceImage } from "@/lib/ai/video/types";
-import { validateSeedanceVideoGeneration, validateVideoGeneration } from "@/lib/ai/generation/video-source";
+import { validateSeedanceVideoGeneration } from "@/lib/ai/generation/video-source";
 import { composeVideoPrompt } from "@/lib/production/prompts";
 import { seedanceGenerateAudio } from "@/lib/ai/video/seedance-constants";
-import { collectGenerationRefUrls, resolveSceneReferences } from "@/lib/production/resolve-references";
-import { getSignedUrl } from "@/lib/storage/signed-url";
+import { resolveSceneReferences } from "@/lib/production/resolve-references";
 import { persistRemoteAsset } from "@/lib/storage/persist-generated";
-import type { SceneWithBindings } from "@/lib/storyboard/constants";
 import type { GenerationProgressCallback } from "@/lib/generation/progress";
 
 export interface GenerateTakeParams {
@@ -28,12 +25,8 @@ export interface GenerateTakeParams {
   seriesId: string;
   episodeId: string;
   modelId: string;
-  count: number;
   resolution: string;
   durationSeconds?: number;
-  dopModel?: string;
-  motionId?: string | null;
-  motionStrength?: number;
   seedanceTier?: "standard" | "fast";
   seedanceAudioMode?: "off" | "full" | "ambient";
   shotIntent?: string | null;
@@ -80,79 +73,31 @@ async function buildOutcome(takeIds: string[]): Promise<GenerationJobOutcome> {
   return { ...countByStatus(takes), takes };
 }
 
-async function resolveIdentityLockUrlsFromScene(scene: SceneWithBindings): Promise<string[]> {
-  const fromSheets = await collectGenerationRefUrls(scene.id);
-  if (fromSheets.length) return fromSheets;
-
-  const supabase = await import("@/lib/db/client").then((m) => m.getDbClient());
-  const ingredientIds = (scene.scene_ingredients ?? [])
-    .filter((b) => b.role === "identity_lock")
-    .map((b) => b.ingredient_id);
-
-  if (!ingredientIds.length) return [];
-
-  const { data, error } = await supabase
-    .from("ingredients")
-    .select("primary_asset_id, assets:primary_asset_id(bucket, storage_path)")
-    .in("id", ingredientIds);
-
-  if (error) throw new Error(error.message);
-
-  const urls: string[] = [];
-  for (const row of data ?? []) {
-    const raw = row.assets as { bucket: string; storage_path: string } | { bucket: string; storage_path: string }[] | null;
-    const asset = Array.isArray(raw) ? raw[0] : raw;
-    if (!asset) continue;
-    const signed = await getSignedUrl(asset.bucket, asset.storage_path);
-    if (signed) urls.push(signed);
-  }
-  return urls;
-}
-
 export async function createPendingTakes(params: GenerateTakeParams): Promise<string[]> {
-  const model = getModelById(params.modelId);
-  if (!model) throw new Error("Unknown model.");
+  const modelId = params.modelId || SEGMENT_VIDEO_MODEL_ID;
+  const model = getModelById(modelId);
+  if (!model || model.kind !== "video") {
+    throw new Error("Segment generation uses Seedance video only.");
+  }
   if (!isModelConfigured(model)) {
     throw new Error(`${model.label} is not configured. Set ${model.envKey} to enable.`);
   }
-  if (params.count < 1 || params.count > 5) throw new Error("Take count must be between 1 and 5.");
 
-  const isVideo = model.kind === "video";
-  const isHiggsfield = params.modelId === "higgsfield";
-  const isSeedance = params.modelId === "seedance";
-  if (isVideo) {
-    if (params.count > 1) {
-      throw new Error("Video generation supports one take at a time.");
-    }
-    if (isSeedance) {
-      const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
-      if (!seedanceCheck.ok) {
-        throw new Error(seedanceCheck.error);
-      }
-    } else {
-      const videoCheck = await validateVideoGeneration(params.sceneId);
-      if (!videoCheck.ok) {
-        throw new Error(videoCheck.error);
-      }
-    }
+  const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
+  if (!seedanceCheck.ok) {
+    throw new Error(seedanceCheck.error);
   }
 
-  const takeIds: string[] = [];
+  const take = await createTake({
+    sceneId: params.sceneId,
+    mediaType: "video",
+    model: modelId,
+    resolution: params.resolution,
+    durationSeconds: params.durationSeconds ?? 6,
+    status: "pending",
+  });
 
-  for (let i = 0; i < params.count; i++) {
-    const take = await createTake({
-      sceneId: params.sceneId,
-      mediaType: isVideo ? "video" : "image",
-      model: params.modelId,
-      resolution: params.resolution,
-      durationSeconds:
-        isVideo && !isHiggsfield ? (params.durationSeconds ?? 6) : isVideo ? null : null,
-      status: "pending",
-    });
-    takeIds.push(take.id);
-  }
-
-  return takeIds;
+  return [take.id];
 }
 
 export async function executeGenerationJob(
@@ -167,7 +112,7 @@ export async function executeGenerationJob(
     const series = await getSeries(params.seriesId);
     if (!series) throw new Error("Series not found.");
 
-    const model = getModelById(params.modelId);
+    const model = getModelById(params.modelId || SEGMENT_VIDEO_MODEL_ID);
     if (!model) throw new Error("Unknown model.");
 
     onProgress?.("resolving references…", 0, takeIds.length);
@@ -175,14 +120,11 @@ export async function executeGenerationJob(
     const aspectRatio = orientationToAspectRatio(
       effectiveOrientation(scene.orientation, series.default_orientation),
     );
-    const isVideo = model.kind === "video";
     const scenePrompt = scene.prompt?.trim() || scene.title;
-    const prompt = isVideo
-      ? composeVideoPrompt({
-          scenePrompt,
-          shotIntent: scene.shot_intent,
-        })
-      : scenePrompt;
+    const prompt = composeVideoPrompt({
+      scenePrompt,
+      shotIntent: scene.shot_intent,
+    });
 
     await resolveSceneReferences({
       sceneId: params.sceneId,
@@ -191,73 +133,30 @@ export async function executeGenerationJob(
       autoBind: true,
     });
 
-    const refImageUrls = await resolveIdentityLockUrlsFromScene(scene);
-    const isHiggsfield = params.modelId === "higgsfield";
-    const isSeedance = params.modelId === "seedance";
-    const seedanceAudioMode = isSeedance ? (params.seedanceAudioMode ?? "off") : undefined;
-    const total = takeIds.length;
-    const durationSeconds =
-      isVideo && !isHiggsfield ? (params.durationSeconds ?? 6) : null;
-    const durationMs = durationSeconds != null ? durationSeconds * 1000 : null;
+    const seedanceAudioMode = params.seedanceAudioMode ?? "off";
+    const durationSeconds = params.durationSeconds ?? 6;
+    const durationMs = durationSeconds * 1000;
 
-    let startImageUrl: string | null = null;
-    let startImageBucket: string | null = null;
-    let startImageStoragePath: string | null = null;
-    let referenceImages: VideoReferenceImage[] | undefined;
-    if (isVideo) {
-      if (isSeedance) {
-        const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
-        if (!seedanceCheck.ok) {
-          await Promise.all(takeIds.map((id) => markTakeFailed(id, seedanceCheck.error)));
-          return buildOutcome(takeIds);
-        }
-        referenceImages = seedanceCheck.references;
-      } else {
-        const videoCheck = await validateVideoGeneration(params.sceneId);
-        if (!videoCheck.ok) {
-          await Promise.all(takeIds.map((id) => markTakeFailed(id, videoCheck.error)));
-          return buildOutcome(takeIds);
-        }
-        startImageUrl = videoCheck.startImageUrl;
-        startImageBucket = videoCheck.sourceTake.bucket;
-        startImageStoragePath = videoCheck.sourceTake.storagePath;
-      }
+    const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
+    if (!seedanceCheck.ok) {
+      await Promise.all(takeIds.map((id) => markTakeFailed(id, seedanceCheck.error)));
+      return buildOutcome(takeIds);
     }
 
-    onProgress?.(
-      isVideo ? "generating video…" : `generating image${total > 1 ? "s" : ""}…`,
-      0,
-      total,
-    );
+    onProgress?.("generating video…", 0, takeIds.length);
 
     let result;
     try {
-      result = isVideo
-        ? await runVideoModel(params.modelId, {
-            prompt,
-            startImageUrl,
-            startImageBucket,
-            startImageStoragePath,
-            referenceImages,
-            durationSeconds: params.durationSeconds ?? 6,
-            aspectRatio,
-            resolution: params.resolution,
-            sceneId: params.sceneId,
-            dopModel: params.dopModel,
-            motionId: params.motionId,
-            motionStrength: params.motionStrength,
-            seedanceTier: params.seedanceTier,
-            seedanceAudioMode,
-          })
-        : await runImageModel(params.modelId, {
-            prompt,
-            refImageUrls,
-            aspectRatio,
-            count: params.count,
-            resolution: params.resolution,
-            safety: model.safety,
-            sceneId: params.sceneId,
-          });
+      result = await runVideoModel(params.modelId || SEGMENT_VIDEO_MODEL_ID, {
+        prompt,
+        referenceImages: seedanceCheck.references,
+        durationSeconds,
+        aspectRatio,
+        resolution: params.resolution,
+        sceneId: params.sceneId,
+        seedanceTier: params.seedanceTier,
+        seedanceAudioMode,
+      });
     } catch (error) {
       const message = formatGenerationError(error, `${model.label}: generation request failed.`);
       logGenerationError("provider", error, {
@@ -283,22 +182,13 @@ export async function executeGenerationJob(
 
     for (let i = 0; i < takeIds.length; i++) {
       const takeId = takeIds[i];
-      onProgress?.(
-        isVideo ? "saving video…" : `saving take ${i + 1}/${total}…`,
-        i + 1,
-        total,
-      );
+      onProgress?.("saving video…", i + 1, takeIds.length);
       const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
       const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
-      const takeDurationSeconds =
-        result.videoDurationSeconds ?? durationSeconds ?? null;
+      const takeDurationSeconds = result.videoDurationSeconds ?? durationSeconds;
       const takeDurationMs =
         takeDurationSeconds != null ? takeDurationSeconds * 1000 : durationMs;
-
-      const takeHasAudio =
-        isSeedance && seedanceAudioMode
-          ? seedanceGenerateAudio(seedanceAudioMode)
-          : false;
+      const takeHasAudio = seedanceGenerateAudio(seedanceAudioMode);
 
       try {
         if (persisted) {
@@ -308,15 +198,15 @@ export async function executeGenerationJob(
             mediaType: persisted.mediaType,
             width: persisted.width ?? null,
             height: persisted.height ?? null,
-            durationMs: isVideo ? takeDurationMs : null,
+            durationMs: takeDurationMs,
             source: "generated",
-            model: params.modelId,
+            model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
             prompt,
           });
 
           await markTakeReady(takeId, asset.id, {
             duration_seconds: takeDurationSeconds,
-            has_audio: isVideo ? takeHasAudio : null,
+            has_audio: takeHasAudio,
           });
           continue;
         }
@@ -331,7 +221,7 @@ export async function executeGenerationJob(
         const stored = await persistRemoteAsset({
           sceneId: params.sceneId,
           remoteUrl,
-          model: params.modelId,
+          model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
           prompt,
         });
 
@@ -339,15 +229,15 @@ export async function executeGenerationJob(
           bucket: stored.bucket,
           storagePath: stored.storagePath,
           mediaType: stored.mediaType,
-          durationMs: isVideo ? takeDurationMs : null,
+          durationMs: takeDurationMs,
           source: "generated",
-          model: params.modelId,
+          model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
           prompt,
         });
 
         await markTakeReady(takeId, asset.id, {
           duration_seconds: takeDurationSeconds,
-          has_audio: isVideo ? takeHasAudio : null,
+          has_audio: takeHasAudio,
         });
       } catch (error) {
         const message = formatGenerationError(error, "Failed to persist generated asset.");

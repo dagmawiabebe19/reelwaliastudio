@@ -13,19 +13,14 @@ import {
   deleteSceneAction,
   getSceneDeletePreviewAction,
 } from "@/app/(app)/series/[id]/delete-actions";
-import { generateEpisodeStillsAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import { Button } from "@/components/ui/Button";
-import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { Episode, Orientation } from "@/lib/db/types";
-import {
-  countScenesNeedingStills,
-  sceneHasPendingImageStill,
-} from "@/lib/ai/generation/batch-stills";
 import {
   countReadyTakes,
   orientationAspectClass,
   resolveRepresentativeTake,
+  sceneHasPendingVideoTake,
 } from "@/lib/storyboard/studio-visuals";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 import {
@@ -50,7 +45,6 @@ interface SceneRailProps {
   selectedSceneId: string | null;
   onSelectScene: (sceneId: string) => void;
   takesByScene?: Record<string, TakeCardData[]>;
-  models?: ModelCatalogEntry[];
 }
 
 function SegmentThumbnail({
@@ -250,14 +244,12 @@ export function SceneRail({
   selectedSceneId,
   onSelectScene,
   takesByScene = {},
-  models = [],
 }: SceneRailProps) {
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [showArchive, setShowArchive] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [batchBucketId, setBatchBucketId] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [activeBucketId, setActiveBucketId] = useState<string>(episodeId);
@@ -276,30 +268,13 @@ export function SceneRail({
     label: "Archive",
   };
 
-  const imageModels = useMemo(
-    () => models.filter((model) => model.kind === "image"),
-    [models],
-  );
-  const defaultImageModelId =
-    imageModels.find((model) => model.configured)?.id ?? imageModels[0]?.id ?? "";
-  const [batchModelId, setBatchModelId] = useState(defaultImageModelId);
-  const [batchResolution, setBatchResolution] = useState<"480p" | "720p">("720p");
-
-  useEffect(() => {
-    if (!batchModelId && defaultImageModelId) {
-      setBatchModelId(defaultImageModelId);
-    }
-  }, [batchModelId, defaultImageModelId]);
-
   useEffect(() => {
     if (!showArchive) {
       setActiveBucketId(episodeId);
     }
   }, [episodeId, showArchive]);
 
-  const activeScenes = scenes.filter((scene) => scene.status !== "archived");
   const archivedScenes = scenes.filter((scene) => scene.status === "archived");
-  const batchModel = imageModels.find((model) => model.id === batchModelId);
 
   const currentBucket: SegmentBucket = showArchive
     ? archiveBucket
@@ -468,66 +443,6 @@ export function SceneRail({
     setDragId(null);
   }
 
-  function handleBatchStills(bucket: SegmentBucket, count: number) {
-    if (bucket.type !== "episode" || !batchModelId || !batchModel?.configured || count < 1) {
-      return;
-    }
-
-    const modelLabel = batchModel.label;
-    const confirmed = window.confirm(
-      `Generate ${count} still${count === 1 ? "" : "s"} for ${bucket.label} using ${modelLabel} at ${batchResolution}?`,
-    );
-    if (!confirmed) return;
-
-    setBatchBucketId(bucket.id);
-    startTransition(async () => {
-      const result = await generateEpisodeStillsAction({
-        episodeId,
-        seriesId,
-        modelId: batchModelId,
-        resolution: batchResolution,
-        bucketEpisodeId: bucket.episodeId,
-      });
-
-      if ("error" in result && result.error) {
-        alert(result.error);
-        setBatchBucketId(null);
-        return;
-      }
-
-      router.refresh();
-    });
-  }
-
-  useEffect(() => {
-    if (!batchBucketId) return;
-
-    const bucket = episodeBuckets.find((item) => item.id === batchBucketId);
-    if (!bucket) {
-      setBatchBucketId(null);
-      return;
-    }
-
-    const bucketSceneList = scenesForBucket(scenes, bucket);
-    const stillPending = bucketSceneList.some((scene) =>
-      sceneHasPendingImageStill(takesByScene[scene.id] ?? []),
-    );
-
-    if (!stillPending) {
-      setBatchBucketId(null);
-      return;
-    }
-
-    const interval = window.setInterval(() => router.refresh(), 4000);
-    return () => window.clearInterval(interval);
-  }, [batchBucketId, takesByScene, scenes, episodeBuckets, router]);
-
-  const ungeneratedCount =
-    currentBucket.type === "episode"
-      ? countScenesNeedingStills(activeScenes, takesByScene, currentBucket.episodeId)
-      : 0;
-  const batchRunning = batchBucketId === currentBucket.id;
-
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -553,37 +468,6 @@ export function SceneRail({
           </button>
         </div>
       </div>
-
-      {!showArchive && imageModels.length > 0 ? (
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border/80 bg-surface px-3 py-2">
-          <div className="min-w-[7rem] flex-1">
-            <label className="mb-1 block studio-section-label">Batch: all ungenerated stills</label>
-            <select
-              value={batchModelId}
-              onChange={(e) => setBatchModelId(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground"
-            >
-              {imageModels.map((model) => (
-                <option key={model.id} value={model.id} disabled={!model.configured}>
-                  {model.label}
-                  {!model.configured ? " — not configured" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block studio-section-label">Res</label>
-            <select
-              value={batchResolution}
-              onChange={(e) => setBatchResolution(e.target.value as "480p" | "720p")}
-              className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground"
-            >
-              <option value="480p">480p</option>
-              <option value="720p">720p</option>
-            </select>
-          </div>
-        </div>
-      ) : null}
 
       <form
         onSubmit={(e) => {
@@ -675,18 +559,6 @@ export function SceneRail({
                 Newest →
               </button>
             ) : null}
-            {currentBucket.type === "episode" && ungeneratedCount > 0 ? (
-              <button
-                type="button"
-                className="text-[10px] tracking-wide text-accent hover:underline disabled:opacity-50"
-                disabled={pending || batchRunning || !batchModel?.configured}
-                onClick={() => handleBatchStills(currentBucket, ungeneratedCount)}
-              >
-                {batchRunning
-                  ? "Generating stills…"
-                  : `Generate ${ungeneratedCount} still${ungeneratedCount === 1 ? "" : "s"}`}
-              </button>
-            ) : null}
           </div>
         </div>
 
@@ -708,7 +580,7 @@ export function SceneRail({
                   takes={sceneTakes}
                   isSelected={selectedSceneId === scene.id}
                   isHighlighted={highlightSceneIds.includes(scene.id)}
-                  isGenerating={sceneHasPendingImageStill(sceneTakes)}
+                  isGenerating={sceneHasPendingVideoTake(sceneTakes)}
                   showArchive={showArchive}
                   menuOpen={openMenuId === scene.id}
                   onToggleMenu={() =>

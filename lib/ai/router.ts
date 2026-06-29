@@ -6,7 +6,6 @@ import { runNanoBanana } from "@/lib/ai/image/nano-banana";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
 import { runSeedream } from "@/lib/ai/image/seedream";
 import type { GenerateImageInput } from "@/lib/ai/image/types";
-import { runHiggsfield } from "@/lib/ai/video/higgsfield";
 import { runSeedance } from "@/lib/ai/video/seedance";
 import type { GenerateVideoInput } from "@/lib/ai/video/types";
 import { notConfiguredResult, pendingIntegrationResult } from "@/lib/ai/shared";
@@ -20,7 +19,6 @@ const IMAGE_RUNNERS: Record<string, (input: GenerateImageInput) => ReturnType<ty
 
 const VIDEO_RUNNERS: Record<string, (input: GenerateVideoInput) => ReturnType<typeof runSeedance>> = {
   seedance: runSeedance,
-  higgsfield: runHiggsfield,
 };
 
 export async function runImageModel(modelId: string, input: GenerateImageInput) {

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { EpisodeStudioPage } from "@/components/series/EpisodeStudioPage";
-import { getPublicModelCatalog } from "@/lib/ai/registry";
+import { isSeedanceConfigured } from "@/lib/ai/registry";
 import { listAudioLinesByEpisode } from "@/lib/db/audio-lines";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
 import { getEpisode, listEpisodesBySeries } from "@/lib/db/episodes";
@@ -97,7 +97,7 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
     );
   }
 
-  const models = getPublicModelCatalog();
+  const seedanceConfigured = isSeedanceConfigured();
 
   const ingredientsById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
   const scenesWithDisplayRefs = await Promise.all(
@@ -121,7 +121,7 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
       ingredients={mentionIngredients}
       sheets={sheets}
       characterSheets={characterSheets}
-      models={models}
+      seedanceConfigured={seedanceConfigured}
       takesByScene={takesEnriched}
       chatMessages={chatMessages.map((m) => ({
         id: m.id,

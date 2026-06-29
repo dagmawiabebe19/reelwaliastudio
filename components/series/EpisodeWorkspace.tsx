@@ -2,7 +2,6 @@
 
 import { StudioShell } from "@/components/series/StudioShell";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
-import type { ModelCatalogEntry } from "@/components/series/generation/GenerationPanel";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 import type { MentionSheet } from "@/lib/production/types";
@@ -32,7 +31,7 @@ interface EpisodeWorkspaceProps {
   ingredients: MentionIngredient[];
   sheets: MentionSheet[];
   characterSheets: CharacterSheetCopilotData[];
-  models: ModelCatalogEntry[];
+  seedanceConfigured: boolean;
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
 }
