@@ -1,6 +1,8 @@
 import "server-only";
 
 import { listTakesByScene } from "@/lib/db/takes";
+import { collectBoundVideoReferenceAssets } from "@/lib/production/resolve-references";
+import type { VideoReferenceImage } from "@/lib/ai/video/types";
 import { getStorageClient } from "@/lib/storage/client";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 
@@ -98,4 +100,22 @@ export async function validateVideoGeneration(
   }
 
   return { ok: true, sourceTake: resolved.take, startImageUrl };
+}
+
+export async function validateSeedanceVideoGeneration(
+  sceneId: string,
+): Promise<
+  | { ok: true; references: VideoReferenceImage[] }
+  | { ok: false; error: string }
+> {
+  const references = await collectBoundVideoReferenceAssets(sceneId);
+  if (!references.length) {
+    return {
+      ok: false,
+      error:
+        "Seedance requires bound reference images for this segment (character sheet and/or location). Mention characters and locations in the segment prompt to auto-bind references, or bind them manually.",
+    };
+  }
+
+  return { ok: true, references };
 }

@@ -1,5 +1,5 @@
-export const DEFAULT_SEEDANCE_MODEL = "bytedance/seedance-2.0/image-to-video";
-export const DEFAULT_SEEDANCE_FAST_MODEL = "bytedance/seedance-2.0/fast/image-to-video";
+export const DEFAULT_SEEDANCE_MODEL = "bytedance/seedance-2.0/reference-to-video";
+export const DEFAULT_SEEDANCE_FAST_MODEL = "bytedance/seedance-2.0/fast/reference-to-video";
 
 export const SEEDANCE_TIER_OPTIONS = [
   { id: "standard", label: "Standard" },

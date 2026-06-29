@@ -79,12 +79,21 @@ export type SeedanceQueueResult = {
 
 export type SeedanceFalInput = {
   prompt: string;
-  image_url: string;
+  image_urls: string[];
   resolution: "480p" | "720p";
   duration: string;
   aspect_ratio: "9:16" | "16:9";
   generate_audio: boolean;
 };
+
+/** fal Seedance expects @Image1, @Image2, … in the prompt for each image_urls entry. */
+export function buildSeedancePromptWithImageRefs(prompt: string, labels: string[]): string {
+  if (!labels.length) return prompt;
+  const refClause = labels
+    .map((label, index) => `@Image${index + 1} for ${label}`)
+    .join("; ");
+  return `${refClause}. ${prompt}`;
+}
 
 type SeedanceFalOutput = {
   video?: { url?: string };

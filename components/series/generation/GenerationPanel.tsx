@@ -23,6 +23,7 @@ import {
   normalizeShotIntent,
   type ShotIntent,
 } from "@/lib/production/prompts";
+import type { ResolvedReference } from "@/lib/production/types";
 
 export type ModelCatalogEntry = {
   id: string;
@@ -43,7 +44,7 @@ const MODEL_HELPERS: Record<string, string> = {
   seedream: "Seedream — image stills via Fal.",
   "nano-banana": "Nano Banana — image stills via Fal.",
   grok: "Grok Image — NSFW-capable still generation.",
-  seedance: "Seedance 2.0 — premium cinematic clip, longer duration, native physics (higher cost).",
+  seedance: "Seedance 2.0 — generates video from bound reference images + your shot prompt in one pass.",
   higgsfield: "Higgsfield DoP — animates your source still into a short cinematic clip.",
 };
 
@@ -55,6 +56,26 @@ interface GenerationPanelProps {
   takes?: TakeCardData[];
   scenePrompt?: string | null;
   shotIntent?: string | null;
+  resolvedReferences?: ResolvedReference[];
+}
+
+function formatSeedanceRefLabel(ref: ResolvedReference): string {
+  if (ref.type === "location") return ref.label;
+  if (ref.type === "character_sheet") {
+    const name = ref.label.split(" · ")[0] ?? ref.label;
+    return `${name} sheet`;
+  }
+  return ref.label.replace(/ \(headshot.*\)/i, "");
+}
+
+function seedanceReferenceLabels(refs: ResolvedReference[]): string[] {
+  return refs
+    .filter(
+      (ref) =>
+        (ref.type === "character_sheet" || ref.type === "location" || ref.type === "ingredient") &&
+        ref.assetUrls.length > 0,
+    )
+    .map(formatSeedanceRefLabel);
 }
 
 function resolveVideoSourceTake(takes: TakeCardData[]): TakeCardData | null {
@@ -111,6 +132,7 @@ export function GenerationPanel({
   takes = [],
   scenePrompt = "",
   shotIntent: initialShotIntent = null,
+  resolvedReferences = [],
 }: GenerationPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -142,7 +164,13 @@ export function GenerationPanel({
   const isSeedance = modelId === "seedance";
   const usesClipLength = isVideo && isSeedance;
   const videoSourceTake = useMemo(() => resolveVideoSourceTake(takes), [takes]);
-  const canGenerateVideo = Boolean(videoSourceTake?.assetUrl);
+  const seedanceRefLabels = useMemo(
+    () => seedanceReferenceLabels(resolvedReferences),
+    [resolvedReferences],
+  );
+  const canGenerateVideo = isSeedance
+    ? seedanceRefLabels.length > 0
+    : Boolean(videoSourceTake?.assetUrl);
   const modelHelper = MODEL_HELPERS[modelId] ?? `${selected?.label ?? "Model"} — generate for this segment.`;
 
   useEffect(() => {
@@ -198,7 +226,9 @@ export function GenerationPanel({
         const n = isVideo ? 1 : count;
         setStartedMessage(
           isVideo
-            ? `Generating video from take #${videoSourceTake?.take_number}… may take several minutes`
+            ? isSeedance
+              ? `Generating video from ${seedanceRefLabels.length} reference${seedanceRefLabels.length === 1 ? "" : "s"}… may take several minutes`
+              : `Generating video from take #${videoSourceTake?.take_number}… may take several minutes`
             : `Generating ${n} take${n === 1 ? "" : "s"}… ~30–90s`,
         );
         router.refresh();
@@ -258,16 +288,35 @@ export function GenerationPanel({
         inactive={!isVideo}
       >
         <div>
-          <FieldLabel>Source frame</FieldLabel>
-          {videoSourceTake ? (
-            <p className="text-sm text-foreground">
-              Take #{videoSourceTake.take_number}
-              {videoSourceTake.starred ? " ★ starred" : " (latest ready)"}
-            </p>
+          {isSeedance ? (
+            <>
+              <FieldLabel>References</FieldLabel>
+              {seedanceRefLabels.length ? (
+                <p className="text-sm text-foreground">
+                  {seedanceRefLabels.join(", ")}
+                </p>
+              ) : (
+                <p className="text-xs leading-relaxed text-muted">
+                  Bind character sheets and locations to this segment (mention them in the prompt to
+                  auto-bind). Seedance uses these references plus your shot prompt — no source still
+                  required.
+                </p>
+              )}
+            </>
           ) : (
-            <p className="text-xs leading-relaxed text-muted">
-              Generate a storyboard still first, then star it (or use the latest ready image).
-            </p>
+            <>
+              <FieldLabel>Source frame</FieldLabel>
+              {videoSourceTake ? (
+                <p className="text-sm text-foreground">
+                  Take #{videoSourceTake.take_number}
+                  {videoSourceTake.starred ? " ★ starred" : " (latest ready)"}
+                </p>
+              ) : (
+                <p className="text-xs leading-relaxed text-muted">
+                  Generate a storyboard still first, then star it (or use the latest ready image).
+                </p>
+              )}
+            </>
           )}
         </div>
 

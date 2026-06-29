@@ -242,6 +242,10 @@ export function StudioShell({
                 takes={sceneTakes}
                 scenePrompt={selectedScene.prompt}
                 shotIntent={selectedScene.shot_intent}
+                resolvedReferences={
+                  selectedScene.displayReferences ??
+                  ((selectedScene.resolved_references ?? []) as ResolvedReference[])
+                }
               />
             </div>
           ) : (

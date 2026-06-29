@@ -126,6 +126,7 @@ function SceneDetailPanel({
         takes={takes}
         scenePrompt={scene.prompt}
         shotIntent={scene.shot_intent}
+        resolvedReferences={resolvedReferences}
       />
 
       <TakesStrip

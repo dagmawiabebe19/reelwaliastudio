@@ -12,12 +12,14 @@ import {
   type SeedanceAudioMode,
 } from "@/lib/ai/video/seedance-constants";
 import {
+  buildSeedancePromptWithImageRefs,
   falCredentialsConfigured,
   formatFalError,
   isPublicFalImageUrl,
   submitSeedanceJob,
   uploadSeedanceSourceImage,
 } from "@/lib/ai/video/seedance-api";
+import type { VideoReferenceImage } from "@/lib/ai/video/types";
 import { persistGeneratedBuffer } from "@/lib/storage/persist-generated";
 import type { GenerateVideoInput, VideoAdapter } from "./types";
 
@@ -54,35 +56,43 @@ function normalizeDurationSeconds(durationSeconds: number): string {
   return String(clamped);
 }
 
+async function uploadReferenceImage(ref: VideoReferenceImage): Promise<string> {
+  if (isPublicFalImageUrl(ref.signedUrl)) {
+    return ref.signedUrl!;
+  }
+
+  const { buffer, contentType } = await downloadVideoSourceImage({
+    bucket: ref.bucket,
+    storagePath: ref.storagePath,
+  });
+  return uploadSeedanceSourceImage(buffer, contentType);
+}
+
 export const generateVideo: VideoAdapter = async (input) => {
   if (!falCredentialsConfigured()) {
     return notConfiguredResult("Seedance 2.0", "FAL_KEY");
   }
 
-  if (!input.startImageBucket || !input.startImageStoragePath) {
+  const references = input.referenceImages ?? [];
+  if (!references.length) {
     return errorResult(
-      "Seedance: image-to-video requires a source image (star a ready storyboard take for this scene).",
+      "Seedance: reference-to-video requires bound reference images (character sheet and/or location) for this segment.",
     );
   }
 
   try {
-    let imageUrl: string;
-    if (isPublicFalImageUrl(input.startImageUrl)) {
-      imageUrl = input.startImageUrl!;
-    } else {
-      const { buffer, contentType } = await downloadVideoSourceImage({
-        bucket: input.startImageBucket,
-        storagePath: input.startImageStoragePath,
-      });
-      imageUrl = await uploadSeedanceSourceImage(buffer, contentType);
-    }
+    const image_urls = await Promise.all(references.map((ref) => uploadReferenceImage(ref)));
+    const prompt = buildSeedancePromptWithImageRefs(
+      input.prompt,
+      references.map((ref) => ref.label),
+    );
 
     const audioMode: SeedanceAudioMode = input.seedanceAudioMode ?? "off";
     const generate_audio = seedanceGenerateAudio(audioMode);
 
     const { videoUrl, requestId } = await submitSeedanceJob(input.seedanceTier, {
-      prompt: input.prompt,
-      image_url: imageUrl,
+      prompt,
+      image_urls,
       resolution: normalizeResolution(input.resolution),
       duration: normalizeDurationSeconds(input.durationSeconds),
       aspect_ratio: input.aspectRatio,

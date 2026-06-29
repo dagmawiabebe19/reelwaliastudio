@@ -1,11 +1,13 @@
 import "server-only";
 
+import { getDbClient } from "@/lib/db/client";
 import { findSheetForEpisodeCharacter, getCharacterSheet } from "@/lib/db/character-sheets";
 import { listIngredientsBySeries } from "@/lib/db/ingredients";
 import { getScene, updateScene } from "@/lib/db/scenes";
 import { listSceneSheets, bindSheetToScene } from "@/lib/db/scene-sheets";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
 import { getSignedUrl } from "@/lib/storage/signed-url";
+import type { VideoReferenceImage } from "@/lib/ai/video/types";
 
 import type { ResolvedReference } from "@/lib/production/types";
 
@@ -172,6 +174,103 @@ export async function collectGenerationRefUrls(sceneId: string): Promise<string[
   }
 
   return [...new Set(urls)];
+}
+
+const SEEDANCE_SHEET_ANGLE_PRIORITY = ["front", "three_quarter", "left_profile", "right_profile"] as const;
+
+function pickSheetAngleAsset(
+  angles: Array<{ angle_label: string; assets?: { bucket: string; storage_path: string } | null }>,
+) {
+  for (const label of SEEDANCE_SHEET_ANGLE_PRIORITY) {
+    const match = angles.find((angle) => angle.angle_label === label && angle.assets);
+    if (match?.assets) return match.assets;
+  }
+  return angles.find((angle) => angle.assets)?.assets ?? null;
+}
+
+/** One image per bound character sheet + location for Seedance reference-to-video (max 9). */
+export async function collectBoundVideoReferenceAssets(sceneId: string): Promise<VideoReferenceImage[]> {
+  const refs: VideoReferenceImage[] = [];
+  const sheetCharacterIds = new Set<string>();
+
+  const bindings = await listSceneSheets(sceneId);
+  for (const binding of bindings) {
+    const sheet = binding.character_sheets as {
+      id: string;
+      name: string;
+      character_id: string;
+      character?: { id: string; name: string } | null;
+      costume?: { name: string } | null;
+      angles?: Array<{ angle_label: string; assets?: { bucket: string; storage_path: string } | null }>;
+    } | null;
+    if (!sheet?.angles?.length) continue;
+
+    const asset = pickSheetAngleAsset(sheet.angles);
+    if (!asset) continue;
+
+    const characterName = sheet.character?.name ?? sheet.name ?? "Character";
+    const label = sheet.costume?.name
+      ? `${characterName} · ${sheet.costume.name} sheet`
+      : `${characterName} sheet`;
+
+    const signedUrl = await getSignedUrl(asset.bucket, asset.storage_path);
+    refs.push({
+      label,
+      bucket: asset.bucket,
+      storagePath: asset.storage_path,
+      signedUrl,
+    });
+    if (sheet.character_id) sheetCharacterIds.add(sheet.character_id);
+  }
+
+  const scene = await getScene(sceneId);
+  if (!scene) return refs.slice(0, 9);
+
+  const ingredientBindings = (scene.scene_ingredients ?? []).filter(
+    (binding) => binding.role === "reference" || binding.role === "identity_lock",
+  );
+  const ingredientIds = ingredientBindings.map((binding) => binding.ingredient_id);
+  if (!ingredientIds.length) return refs.slice(0, 9);
+
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from("ingredients")
+    .select("id, name, kind, primary_asset_id, assets:primary_asset_id(bucket, storage_path)")
+    .in("id", ingredientIds);
+
+  if (error) throw new Error(error.message);
+
+  for (const row of data ?? []) {
+    const binding = ingredientBindings.find((item) => item.ingredient_id === row.id);
+    if (!binding) continue;
+
+    const rawAsset = row.assets as { bucket: string; storage_path: string } | { bucket: string; storage_path: string }[] | null;
+    const asset = Array.isArray(rawAsset) ? rawAsset[0] : rawAsset;
+    if (!asset) continue;
+
+    if (row.kind === "location" && binding.role === "reference") {
+      const signedUrl = await getSignedUrl(asset.bucket, asset.storage_path);
+      refs.push({
+        label: row.name,
+        bucket: asset.bucket,
+        storagePath: asset.storage_path,
+        signedUrl,
+      });
+      continue;
+    }
+
+    if (row.kind === "character" && binding.role === "identity_lock" && !sheetCharacterIds.has(row.id)) {
+      const signedUrl = await getSignedUrl(asset.bucket, asset.storage_path);
+      refs.push({
+        label: `${row.name} (headshot)`,
+        bucket: asset.bucket,
+        storagePath: asset.storage_path,
+        signedUrl,
+      });
+    }
+  }
+
+  return refs.slice(0, 9);
 }
 
 export async function getSheetRefUrls(sheetId: string): Promise<string[]> {

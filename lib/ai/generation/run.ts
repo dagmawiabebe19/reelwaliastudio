@@ -13,7 +13,8 @@ import {
   markTakeFailed,
   markTakeReady,
 } from "@/lib/db/takes";
-import { validateVideoGeneration } from "@/lib/ai/generation/video-source";
+import type { VideoReferenceImage } from "@/lib/ai/video/types";
+import { validateSeedanceVideoGeneration, validateVideoGeneration } from "@/lib/ai/generation/video-source";
 import { composeVideoPrompt } from "@/lib/production/prompts";
 import { seedanceGenerateAudio } from "@/lib/ai/video/seedance-constants";
 import { collectGenerationRefUrls, resolveSceneReferences } from "@/lib/production/resolve-references";
@@ -118,13 +119,21 @@ export async function createPendingTakes(params: GenerateTakeParams): Promise<st
 
   const isVideo = model.kind === "video";
   const isHiggsfield = params.modelId === "higgsfield";
+  const isSeedance = params.modelId === "seedance";
   if (isVideo) {
     if (params.count > 1) {
       throw new Error("Video generation supports one take at a time.");
     }
-    const videoCheck = await validateVideoGeneration(params.sceneId);
-    if (!videoCheck.ok) {
-      throw new Error(videoCheck.error);
+    if (isSeedance) {
+      const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
+      if (!seedanceCheck.ok) {
+        throw new Error(seedanceCheck.error);
+      }
+    } else {
+      const videoCheck = await validateVideoGeneration(params.sceneId);
+      if (!videoCheck.ok) {
+        throw new Error(videoCheck.error);
+      }
     }
   }
 
@@ -194,15 +203,25 @@ export async function executeGenerationJob(
     let startImageUrl: string | null = null;
     let startImageBucket: string | null = null;
     let startImageStoragePath: string | null = null;
+    let referenceImages: VideoReferenceImage[] | undefined;
     if (isVideo) {
-      const videoCheck = await validateVideoGeneration(params.sceneId);
-      if (!videoCheck.ok) {
-        await Promise.all(takeIds.map((id) => markTakeFailed(id, videoCheck.error)));
-        return buildOutcome(takeIds);
+      if (isSeedance) {
+        const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
+        if (!seedanceCheck.ok) {
+          await Promise.all(takeIds.map((id) => markTakeFailed(id, seedanceCheck.error)));
+          return buildOutcome(takeIds);
+        }
+        referenceImages = seedanceCheck.references;
+      } else {
+        const videoCheck = await validateVideoGeneration(params.sceneId);
+        if (!videoCheck.ok) {
+          await Promise.all(takeIds.map((id) => markTakeFailed(id, videoCheck.error)));
+          return buildOutcome(takeIds);
+        }
+        startImageUrl = videoCheck.startImageUrl;
+        startImageBucket = videoCheck.sourceTake.bucket;
+        startImageStoragePath = videoCheck.sourceTake.storagePath;
       }
-      startImageUrl = videoCheck.startImageUrl;
-      startImageBucket = videoCheck.sourceTake.bucket;
-      startImageStoragePath = videoCheck.sourceTake.storagePath;
     }
 
     onProgress?.(
@@ -219,6 +238,7 @@ export async function executeGenerationJob(
             startImageUrl,
             startImageBucket,
             startImageStoragePath,
+            referenceImages,
             durationSeconds: params.durationSeconds ?? 6,
             aspectRatio,
             resolution: params.resolution,
