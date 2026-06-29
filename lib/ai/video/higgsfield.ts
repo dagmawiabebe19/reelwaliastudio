@@ -16,11 +16,11 @@ import {
   configureHiggsfieldSdk,
   createHiggsfieldUploadClient,
   higgsfieldCredentials,
+  higgsfieldCredentialsConfigured,
   higgsfieldDopModel,
 } from "@/lib/ai/video/higgsfield-api";
 import {
   errorResult,
-  getEnv,
   notConfiguredResult,
   successResult,
   type GenerationResult,
@@ -72,8 +72,11 @@ function formatHiggsfieldError(error: unknown): string {
 }
 
 export const generateVideo: VideoAdapter = async (input) => {
-  if (!getEnv("HIGGSFIELD_API_KEY")) {
-    return notConfiguredResult("Higgsfield", "HIGGSFIELD_API_KEY");
+  if (!higgsfieldCredentialsConfigured()) {
+    return notConfiguredResult(
+      "Higgsfield",
+      "HIGGSFIELD_API_KEY, HF_CREDENTIALS, or HF_KEY",
+    );
   }
 
   if (!input.startImageBucket || !input.startImageStoragePath) {
@@ -173,7 +176,9 @@ export async function runHiggsfield(input: GenerateVideoInput): Promise<Generati
 export async function listHiggsfieldMotions() {
   const credentials = higgsfieldCredentials();
   if (!credentials) {
-    throw new Error("Higgsfield is not configured — set HIGGSFIELD_API_KEY.");
+    throw new Error(
+      "Higgsfield is not configured — set HIGGSFIELD_API_KEY, HF_CREDENTIALS, or HF_KEY.",
+    );
   }
 
   const client = createHiggsfieldUploadClient(credentials);

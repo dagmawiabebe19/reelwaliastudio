@@ -1,3 +1,5 @@
+import { higgsfieldCredentialsConfigured } from "@/lib/ai/video/higgsfield-api";
+
 export type AspectRatio = "9:16" | "16:9";
 export type SafetyTag = "sfw" | "nsfw";
 export type ModelKind = "image" | "video" | "voice";
@@ -29,6 +31,9 @@ export function getModelsByKind(kind: ModelKind): ModelDefinition[] {
 }
 
 export function isModelConfigured(model: ModelDefinition): boolean {
+  if (model.id === "higgsfield") {
+    return higgsfieldCredentialsConfigured();
+  }
   return Boolean(process.env[model.envKey]?.trim());
 }
 
@@ -45,6 +50,7 @@ export function getPublicModelCatalog(kind?: ModelKind) {
     label,
     kind: k,
     safety,
-    configured: Boolean(process.env[envKey]?.trim()),
+    configured:
+      id === "higgsfield" ? higgsfieldCredentialsConfigured() : Boolean(process.env[envKey]?.trim()),
   }));
 }
