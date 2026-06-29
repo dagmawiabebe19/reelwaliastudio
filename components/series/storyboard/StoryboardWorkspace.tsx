@@ -45,6 +45,8 @@ export function StoryboardWorkspace({
         scenes={scenes}
         selectedSceneId={selectedSceneId}
         onSelectScene={setSelectedSceneId}
+        takesByScene={takesByScene}
+        models={models}
       />
 
       <aside className="sticky top-8 h-fit rounded-lg border border-border bg-surface p-5">

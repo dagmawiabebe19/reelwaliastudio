@@ -202,6 +202,8 @@ export function StudioShell({
               scenes={scenes}
               selectedSceneId={selectedSceneId}
               onSelectScene={setSelectedSceneId}
+              takesByScene={takesByScene}
+              models={models}
             />
           </div>
         </main>
