@@ -25,7 +25,7 @@ export function orientationAspectClass(orientation: Orientation): string {
 }
 
 export function takeStatusRingClass(status: string, active: boolean): string {
-  if (active) return "ring-2 ring-accent shadow-[0_0_0_1px_var(--accent)]";
+  if (active) return "ring-2 ring-status-validated shadow-[0_0_0_1px_var(--status-validated)]";
   switch (status) {
     case "ready":
       return "ring-1 ring-status-released/70";
