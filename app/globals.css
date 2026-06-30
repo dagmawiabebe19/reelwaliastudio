@@ -217,6 +217,65 @@ body {
   color: var(--muted);
 }
 
+/* Co-pilot chat — compact markdown in the side panel */
+.prose-copilot {
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.prose-copilot > :first-child {
+  margin-top: 0;
+}
+
+.prose-copilot > :last-child {
+  margin-bottom: 0;
+}
+
+.prose-copilot h1 {
+  font-size: 1.125rem;
+}
+
+.prose-copilot h2 {
+  font-size: 1rem;
+}
+
+.prose-copilot h3 {
+  font-size: 0.9375rem;
+}
+
+.prose-copilot h1,
+.prose-copilot h2,
+.prose-copilot h3 {
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+
+.prose-copilot p,
+.prose-copilot ul,
+.prose-copilot ol {
+  margin-bottom: 0.65em;
+}
+
+.prose-copilot li {
+  margin-bottom: 0.25em;
+}
+
+.prose-copilot pre {
+  margin-bottom: 0.75em;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  padding: 0.65rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.prose-copilot pre code {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Episode Studio — filmmaker editing bay                                     */
 /* -------------------------------------------------------------------------- */

@@ -14,11 +14,12 @@ import { usePathname } from "next/navigation";
 import { parseStudioRoute } from "@/lib/copilot/parse-route";
 import { loadCopilotPanelPrefs, saveCopilotPanelPrefs } from "@/lib/copilot/panel-prefs";
 import { registrationSignature } from "@/lib/copilot/registration-signature";
-import type {
-  CopilotPanelPrefs,
-  CopilotRegistration,
-  CopilotScopeType,
-  CopilotSuggestion,
+import {
+  DEFAULT_COPILOT_PANEL_PREFS,
+  type CopilotPanelPrefs,
+  type CopilotRegistration,
+  type CopilotScopeType,
+  type CopilotSuggestion,
 } from "@/lib/copilot/workspace-types";
 import type { CopilotContextPayload, MentionIngredient } from "@/components/series/copilot/CopilotPane";
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
@@ -101,10 +102,14 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
   const route = useMemo(() => parseStudioRoute(pathname), [pathname]);
   const active = route.isSeriesRoute;
 
-  const [prefs, setPrefs] = useState<CopilotPanelPrefs>(() => loadCopilotPanelPrefs());
+  const [prefs, setPrefs] = useState<CopilotPanelPrefs>(DEFAULT_COPILOT_PANEL_PREFS);
   const [registered, setRegistered] = useState<CopilotRegistration | null>(null);
   const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<Set<string>>(() => new Set());
   const [messagesVersion, setMessagesVersion] = useState(0);
+
+  useEffect(() => {
+    setPrefs(loadCopilotPanelPrefs());
+  }, []);
 
   const registerRef = useRef<CopilotRegistration | null>(null);
   const lastSignatureRef = useRef<string | null>(null);

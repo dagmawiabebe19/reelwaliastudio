@@ -9,6 +9,7 @@ import {
 } from "@/lib/ai/anthropic-models";
 
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
+import { CopilotMessageContent } from "@/components/series/copilot/CopilotMessageContent";
 
 export type ChatMessageData = {
   id: string;
@@ -122,6 +123,8 @@ export function CopilotPane({
   const [mentionOpen, setMentionOpen] = useState(false);
   const messageLogRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const streamingAssistantIdRef = useRef<string | null>(null);
+  const wasStreamingRef = useRef(false);
 
   function handleStop() {
     abortRef.current?.abort();
@@ -131,7 +134,23 @@ export function CopilotPane({
   useEffect(() => {
     const log = messageLogRef.current;
     if (!log) return;
-    log.scrollTop = log.scrollHeight;
+
+    if (streaming) {
+      wasStreamingRef.current = true;
+      log.scrollTop = log.scrollHeight;
+      return;
+    }
+
+    if (wasStreamingRef.current) {
+      wasStreamingRef.current = false;
+      const assistantId = streamingAssistantIdRef.current;
+      if (assistantId) {
+        requestAnimationFrame(() => {
+          const el = log.querySelector(`[data-copilot-message-id="${assistantId}"]`);
+          el?.scrollIntoView({ block: "start", behavior: "smooth" });
+        });
+      }
+    }
   }, [messages, streaming]);
 
   async function handleSend() {
@@ -146,9 +165,14 @@ export function CopilotPane({
       ...prev,
       { id: `local-${Date.now()}`, role: "user", content: text },
     ]);
+    requestAnimationFrame(() => {
+      const log = messageLogRef.current;
+      if (log) log.scrollTop = log.scrollHeight;
+    });
 
     let assistantBuffer = "";
     const assistantId = `assistant-${Date.now()}`;
+    streamingAssistantIdRef.current = assistantId;
 
     try {
       const live = getLiveContext?.() ?? context;
@@ -202,7 +226,7 @@ export function CopilotPane({
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const event = JSON.parse(line.slice(6)) as {
+          let event: {
             type: string;
             content?: string;
             toolId?: string;
@@ -215,7 +239,13 @@ export function CopilotPane({
             summary?: string;
             payload?: CopilotOutputEvent;
             inFlightNote?: string;
+            insufficientCredits?: { needed: number; available: number };
           };
+          try {
+            event = JSON.parse(line.slice(6)) as typeof event;
+          } catch {
+            continue;
+          }
 
           if (event.type === "text" && event.content) {
             assistantBuffer += event.content;
@@ -380,6 +410,7 @@ export function CopilotPane({
           messages.map((message) => (
             <div
               key={message.id}
+              data-copilot-message-id={message.id}
               className={`rounded-lg border px-3 py-2 text-sm ${
                 message.role === "user"
                   ? "border-border bg-surface-elevated"
@@ -404,6 +435,12 @@ export function CopilotPane({
                     </pre>
                   ) : null}
                 </div>
+              ) : message.role === "assistant" || message.role === "system" ? (
+                message.role === "system" ? (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                ) : (
+                  <CopilotMessageContent content={message.content} />
+                )
               ) : (
                 <p className="whitespace-pre-wrap">{message.content}</p>
               )}
