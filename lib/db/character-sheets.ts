@@ -175,13 +175,72 @@ export async function listCharacterSheetsByCostume(costumeId: string): Promise<C
   }));
 }
 
+/** Prefer ready sheets linked to the episode, then newest by created_at. Never returns failed/pending. */
+export function pickBestReadySheet(
+  sheets: CharacterSheetWithDetails[],
+  options?: { episodeId?: string; costumeId?: string | null; label?: string },
+): { sheet: CharacterSheetWithDetails | null; ambiguous: boolean } {
+  let candidates = sheets.filter(
+    (sheet) =>
+      sheet.status === "ready" &&
+      (sheet.angles ?? []).some((angle) => angle.assets),
+  );
+
+  if (options?.episodeId) {
+    const linked = candidates.filter((sheet) => sheet.episode_ids.includes(options.episodeId!));
+    if (linked.length) candidates = linked;
+  }
+
+  if (options?.costumeId !== undefined) {
+    const costumeMatches = candidates.filter(
+      (sheet) => (sheet.costume_id ?? null) === (options.costumeId ?? null),
+    );
+    if (costumeMatches.length) candidates = costumeMatches;
+  }
+
+  if (options?.label) {
+    const normalized = options.label.trim().toLowerCase();
+    const labelMatches = candidates.filter(
+      (sheet) => sheet.name.trim().toLowerCase() === normalized,
+    );
+    if (labelMatches.length) candidates = labelMatches;
+  }
+
+  if (!candidates.length) {
+    return { sheet: null, ambiguous: false };
+  }
+
+  const sorted = [...candidates].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+
+  return { sheet: sorted[0], ambiguous: sorted.length > 1 };
+}
+
 export async function findSheetForEpisodeCharacter(input: {
   episodeId: string;
   characterId: string;
+  costumeId?: string | null;
+  label?: string;
 }): Promise<CharacterSheetWithDetails | null> {
   const sheets = await listCharacterSheetsByCharacter(input.characterId);
-  const linked = sheets.filter((s) => s.episode_ids.includes(input.episodeId) && s.status === "ready");
-  if (linked.length) return linked[0];
-  const base = sheets.find((s) => s.status === "ready" && !s.costume_id);
-  return base ?? sheets.find((s) => s.status === "ready") ?? null;
+  const { sheet } = pickBestReadySheet(sheets, {
+    episodeId: input.episodeId,
+    costumeId: input.costumeId,
+    label: input.label,
+  });
+  if (sheet) return sheet;
+
+  const { sheet: fallback } = pickBestReadySheet(sheets, {
+    costumeId: input.costumeId,
+    label: input.label,
+  });
+  return fallback;
+}
+
+export async function listFailedSheetsByCharacter(
+  characterId: string,
+): Promise<CharacterSheetWithDetails[]> {
+  const sheets = await listCharacterSheetsByCharacter(characterId);
+  return sheets.filter((sheet) => sheet.status === "failed");
 }

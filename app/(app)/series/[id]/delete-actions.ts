@@ -8,6 +8,7 @@ import {
   deleteSceneWithCleanup,
   deleteTakeWithCleanup,
 } from "@/lib/db/delete";
+import { listFailedSheetsByCharacter } from "@/lib/db/character-sheets";
 import {
   getAudioLineDeletePreview,
   getCharacterSheetDeletePreview,
@@ -53,6 +54,28 @@ export async function deleteCharacterSheetAction(sheetId: string, seriesId: stri
     return { success: true as const };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Delete failed." };
+  }
+}
+
+export async function cleanupFailedSheetsForCharacterAction(
+  characterId: string,
+  seriesId: string,
+) {
+  try {
+    await verifySeriesOwnership(seriesId);
+    const failed = await listFailedSheetsByCharacter(characterId);
+    if (!failed.length) {
+      return { deleted: 0 };
+    }
+
+    for (const sheet of failed) {
+      await deleteCharacterSheetWithCleanup(sheet.id, seriesId);
+    }
+
+    revalidatePath(`/series/${seriesId}`);
+    return { deleted: failed.length };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Cleanup failed." };
   }
 }
 

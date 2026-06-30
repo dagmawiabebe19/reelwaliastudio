@@ -3,14 +3,16 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  deleteCharacterSheetAction,
-  getCharacterSheetDeletePreviewAction,
-} from "@/app/(app)/series/[id]/delete-actions";
-import {
   createCharacterSheetAction,
   generateCharacterAction,
   generateCostumeAction,
+  retryCharacterSheetAction,
 } from "@/app/(app)/series/[id]/production-actions";
+import {
+  cleanupFailedSheetsForCharacterAction,
+  deleteCharacterSheetAction,
+  getCharacterSheetDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
 import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
 import { CreditCostHint } from "@/components/credits/CreditCostHint";
 import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
@@ -271,7 +273,31 @@ export function CharactersSection({
                     </div>
 
                     <div className="space-y-2 border-t border-border pt-3">
-                      <p className="text-xs uppercase tracking-widest text-muted">Character sheets</p>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-widest text-muted">Character sheets</p>
+                        {sheets.some((sheet) => sheet.status === "failed") ? (
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => {
+                              const count = sheets.filter((sheet) => sheet.status === "failed").length;
+                              if (
+                                !window.confirm(
+                                  `Remove ${count} failed sheet${count === 1 ? "" : "s"} for ${character.name}?`,
+                                )
+                              ) {
+                                return;
+                              }
+                              runAction(() =>
+                                cleanupFailedSheetsForCharacterAction(character.id, seriesId),
+                              );
+                            }}
+                            className="studio-btn studio-btn-ghost !min-h-7 !px-2 !py-1 !text-[10px]"
+                          >
+                            Clean up failed
+                          </button>
+                        ) : null}
+                      </div>
                       <form
                         className="flex flex-wrap items-end gap-2"
                         onSubmit={(e) => {
@@ -348,14 +374,30 @@ export function CharactersSection({
                                   </span>
                                   <GenerationBadge status={sheet.status} />
                                 </button>
-                                <DeleteConfirmButton
-                                  ariaLabel="Delete character sheet"
-                                  fetchPreview={() =>
-                                    getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
-                                  }
-                                  onDelete={() => deleteCharacterSheetAction(sheet.id, seriesId)}
-                                  onSuccess={() => router.refresh()}
-                                />
+                                <div className="ml-2 flex items-center gap-1">
+                                  {sheet.status === "failed" ? (
+                                    <button
+                                      type="button"
+                                      disabled={pending}
+                                      onClick={() =>
+                                        runAction(() =>
+                                          retryCharacterSheetAction(sheet.id, seriesId),
+                                        )
+                                      }
+                                      className="studio-btn studio-btn-secondary !min-h-7 !px-2 !py-1 !text-[10px]"
+                                    >
+                                      Retry
+                                    </button>
+                                  ) : null}
+                                  <DeleteConfirmButton
+                                    ariaLabel="Delete character sheet"
+                                    fetchPreview={() =>
+                                      getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
+                                    }
+                                    onDelete={() => deleteCharacterSheetAction(sheet.id, seriesId)}
+                                    onSuccess={() => router.refresh()}
+                                  />
+                                </div>
                               </div>
                               <GenerationStatusLine
                                 status={sheet.status}

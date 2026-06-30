@@ -1,8 +1,15 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMemo } from "react";
+import { useMemo, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Check, ImageOff, X } from "lucide-react";
+import {
+  deleteCharacterSheetAction,
+  getCharacterSheetDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
+import { retryCharacterSheetAction } from "@/app/(app)/series/[id]/production-actions";
+import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
@@ -32,6 +39,7 @@ function PanelRow({
   referenced,
   disabled,
   onInsert,
+  trailingActions,
 }: {
   name: string;
   refLabel: string;
@@ -41,6 +49,7 @@ function PanelRow({
   referenced: boolean;
   disabled?: boolean;
   onInsert: () => void;
+  trailingActions?: ReactNode;
 }) {
   const lightbox = useLightbox();
 
@@ -79,6 +88,7 @@ function PanelRow({
             in prompt
           </span>
         ) : null}
+        {trailingActions}
       </div>
       <Lightbox state={lightbox.state} onClose={lightbox.close} />
     </div>
@@ -86,6 +96,7 @@ function PanelRow({
 }
 
 interface StudioIngredientsPanelProps {
+  seriesId: string;
   ingredients: IngredientCardData[];
   costumesByCharacter: Record<string, IngredientCardData[]>;
   sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
@@ -100,6 +111,7 @@ interface StudioIngredientsPanelProps {
 }
 
 export function StudioIngredientsPanel({
+  seriesId,
   ingredients,
   costumesByCharacter,
   sheetsByCharacter,
@@ -112,6 +124,8 @@ export function StudioIngredientsPanel({
   onInsertSheet,
   onClose,
 }: StudioIngredientsPanelProps) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
   const characters = ingredients.filter((item) => item.kind === "character");
   const locations = ingredients.filter((item) => item.kind === "location");
   const voices = ingredients.filter((item) => item.kind === "voice");
@@ -140,6 +154,17 @@ export function StudioIngredientsPanel({
     const mention = sheetMentionById.get(sheet.id);
     if (mention && prompt.includes(`@sheet:${mention.label}`)) return true;
     return prompt.toLowerCase().includes(sheet.name.toLowerCase());
+  }
+
+  function runSheetAction(action: () => Promise<Record<string, unknown>>) {
+    startTransition(async () => {
+      const result = await action();
+      if (typeof result.error === "string") {
+        alert(result.error);
+      } else {
+        router.refresh();
+      }
+    });
   }
 
   function renderSection(title: string, children: ReactNode) {
@@ -225,8 +250,35 @@ export function StudioIngredientsPanel({
                     status={sheet.status}
                     thumbnailUrl={thumb}
                     referenced={isSheetReferenced(sheet)}
-                    disabled={!hasActiveScene || !mention}
+                    disabled={!hasActiveScene || !mention || sheet.status !== "ready"}
                     onInsert={() => mention && onInsertSheet(mention)}
+                    trailingActions={
+                      sheet.status === "failed" ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() =>
+                              runSheetAction(() =>
+                                retryCharacterSheetAction(sheet.id, seriesId),
+                              )
+                            }
+                            className="studio-btn studio-btn-secondary !min-h-6 !px-1.5 !py-0.5 !text-[9px]"
+                          >
+                            Retry
+                          </button>
+                          <DeleteConfirmButton
+                            ariaLabel="Delete failed sheet"
+                            className="!min-h-6 !min-w-6"
+                            fetchPreview={() =>
+                              getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
+                            }
+                            onDelete={() => deleteCharacterSheetAction(sheet.id, seriesId)}
+                            onSuccess={() => router.refresh()}
+                          />
+                        </div>
+                      ) : null
+                    }
                   />
                 );
               })}

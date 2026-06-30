@@ -457,10 +457,21 @@ async function executeTool(
 
       let genResult;
       try {
+        const safeEmitProgress: ToolProgressEmitter = (detail, step, total) => {
+          try {
+            emitProgress(detail, step, total);
+          } catch (error) {
+            console.warn("[copilot] tool progress dropped (stream closed)", {
+              detail,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        };
+
         genResult = await executeSheetGeneration(
           sheet.id,
           (msg, step, total) => {
-            emitProgress(msg, step, total);
+            safeEmitProgress(msg, step, total);
             if (step && total) {
               emitOutput({ type: "sheet_progress", sheetId: sheet.id, step, total });
             }

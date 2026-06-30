@@ -20,7 +20,14 @@ export async function POST(request: Request) {
     async start(controller) {
       const encoder = new TextEncoder();
       const send = (event: Record<string, unknown>) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch (error) {
+          console.warn("[copilot-sse] dropped event after stream close", {
+            type: event.type,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       };
 
       await runCopilotStream({

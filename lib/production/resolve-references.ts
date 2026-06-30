@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getDbClient } from "@/lib/db/client";
-import { findSheetForEpisodeCharacter, getCharacterSheet } from "@/lib/db/character-sheets";
+import { findSheetForEpisodeCharacter, getCharacterSheet, listCharacterSheetsByCharacter, pickBestReadySheet } from "@/lib/db/character-sheets";
 import { listIngredientsBySeries } from "@/lib/db/ingredients";
 import { getScene, updateScene } from "@/lib/db/scenes";
 import { listSceneSheets, bindSheetToScene } from "@/lib/db/scene-sheets";
@@ -37,6 +37,16 @@ function extractLocationNames(prompt: string, ingredients: { name: string; kind:
   return names;
 }
 
+function extractSheetMentionLabels(prompt: string): string[] {
+  const labels: string[] = [];
+  const pattern = /@sheet:([^\s@]+)/gi;
+  for (const match of prompt.matchAll(pattern)) {
+    const label = match[1]?.trim();
+    if (label) labels.push(label);
+  }
+  return labels;
+}
+
 export async function resolveSceneReferences(input: {
   sceneId: string;
   seriesId: string;
@@ -49,16 +59,32 @@ export async function resolveSceneReferences(input: {
   const ingredients = await listIngredientsBySeries(input.seriesId);
   const prompt = scene.prompt ?? scene.title;
   const resolved: ResolvedReference[] = [];
+  const sheetMentionLabels = extractSheetMentionLabels(prompt);
 
   const characterNames = extractCharacterNames(prompt, ingredients);
   for (const name of characterNames) {
     const character = ingredients.find((i) => i.kind === "character" && i.name === name);
     if (!character) continue;
 
-    const sheet = await findSheetForEpisodeCharacter({
-      episodeId: input.episodeId,
-      characterId: character.id,
-    });
+    const mentionLabel = sheetMentionLabels[0];
+    const characterSheets = await listCharacterSheetsByCharacter(character.id);
+    const { sheet: explicitSheet, ambiguous } = mentionLabel
+      ? pickBestReadySheet(characterSheets, { episodeId: input.episodeId, label: mentionLabel })
+      : { sheet: null, ambiguous: false };
+
+    if (ambiguous) {
+      console.warn(
+        `[resolve-references] Multiple ready sheets match label "${mentionLabel}" for ${name}; using newest.`,
+      );
+    }
+
+    const sheet =
+      explicitSheet ??
+      (await findSheetForEpisodeCharacter({
+        episodeId: input.episodeId,
+        characterId: character.id,
+        label: mentionLabel,
+      }));
 
     if (sheet && isSheetReadyForBinding(sheet)) {
       const assetUrls: string[] = [];

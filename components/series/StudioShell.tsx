@@ -179,6 +179,7 @@ export function StudioShell({
             {showIngredients ? (
               <div className="flex max-h-[38vh] min-h-0 w-full shrink-0 flex-col border-b border-border/80 md:max-h-none md:w-[min(100%,18rem)] md:border-b-0 md:border-r">
                 <StudioIngredientsPanel
+                  seriesId={seriesId}
                   ingredients={libraryIngredients}
                   costumesByCharacter={costumesByCharacter}
                   sheetsByCharacter={sheetsByCharacter}

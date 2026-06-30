@@ -15,10 +15,11 @@ import {
 } from "@/lib/production/prompts";
 import { createIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
 import { queueIngredientImageGeneration, getIngredientRefUrl } from "@/lib/ai/generation/ingredient-generation";
-import { createCharacterSheet } from "@/lib/db/character-sheets";
-import { queueSheetGeneration } from "@/lib/ai/generation/sheet-generation";
+import { createCharacterSheet, getCharacterSheet } from "@/lib/db/character-sheets";
+import { queueSheetGeneration, retrySheetGeneration } from "@/lib/ai/generation/sheet-generation";
 import { bindSheetToScene } from "@/lib/db/scene-sheets";
 import { resolveSceneReferences } from "@/lib/production/resolve-references";
+import { isSheetReadyForBinding } from "@/lib/production/reference-readiness";
 
 export async function generateCharacterAction(seriesId: string, formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
@@ -172,11 +173,35 @@ export async function bindSheetAction(
   episodeId: string,
 ) {
   try {
+    const sheet = await getCharacterSheet(sheetId);
+    if (!sheet || !isSheetReadyForBinding(sheet)) {
+      return { error: "Only ready character sheets can be bound. Retry or delete failed sheets first." };
+    }
     await bindSheetToScene(sceneId, sheetId, "identity_lock");
     revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
     return { success: true };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to bind sheet." };
+  }
+}
+
+export async function retryCharacterSheetAction(sheetId: string, seriesId: string) {
+  try {
+    await verifySeriesOwnership(seriesId);
+    const userId = await getActiveUserId();
+    await assertSufficientCredits(userId, estimateSheetCredits());
+
+    const sheet = await getCharacterSheet(sheetId);
+    if (!sheet) return { error: "Character sheet not found." };
+    if (sheet.status === "pending") return { error: "Sheet is already generating." };
+
+    const result = await retrySheetGeneration(sheetId, `/series/${seriesId}`);
+    if (result.status === "failed") {
+      return { error: result.error ?? "Sheet generation failed." };
+    }
+    return { sheetId, status: result.status };
+  } catch (error) {
+    return formatActionError(error, "Failed to retry character sheet.");
   }
 }
 

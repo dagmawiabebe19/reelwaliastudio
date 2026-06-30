@@ -1,13 +1,18 @@
 import "server-only";
 
-import { after } from "next/server";
 import { getActiveUserId } from "@/lib/auth/getUser";
 import { CopilotAbortError, throwIfAborted } from "@/lib/ai/copilot/abort";
 import { isInsufficientCreditsError } from "@/lib/credits/errors";
 import { estimateSheetCredits } from "@/lib/credits/pricing";
 import { withCredits, withCreditsAbortable } from "@/lib/credits/meter";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
+import { runSeedream } from "@/lib/ai/image/seedream";
 import { runWithConcurrency } from "@/lib/ai/generation/concurrency";
+import {
+  classifyImageError,
+  moderationUserMessage,
+} from "@/lib/ai/generation/image-errors";
+import { withImageRetries } from "@/lib/ai/generation/image-retry";
 import {
   defaultAspectRatioForIngredients,
   sheetAnglePrompt,
@@ -22,6 +27,7 @@ import {
 } from "@/lib/db/character-sheets";
 import { getIngredientRefUrl } from "@/lib/ai/generation/ingredient-generation";
 import type { GenerationProgressCallback } from "@/lib/generation/progress";
+import type { GenerateImageInput } from "@/lib/ai/image/types";
 
 const SHEET_ANGLES: SheetAngle[] = [
   "front",
@@ -30,6 +36,104 @@ const SHEET_ANGLES: SheetAngle[] = [
   "three_quarter",
   "back",
 ];
+
+function safeProgress(
+  onProgress: GenerationProgressCallback | undefined,
+  message: string,
+  step: number,
+  total: number,
+): void {
+  try {
+    onProgress?.(message, step, total);
+  } catch (error) {
+    console.warn("[sheet-generation] progress callback failed (stream may be closed)", {
+      message,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function runImageForAngle(
+  input: GenerateImageInput,
+  options?: { preferSeedreamOnModeration?: boolean },
+): Promise<{ persisted: NonNullable<Awaited<ReturnType<typeof runOpenAiImage>>["persistedAssets"]>[0] }> {
+  const openAiResult = await withImageRetries(
+    `sheet-angle:${input.sceneId}`,
+    () => runOpenAiImage(input),
+    { abortSignal: input.abortSignal },
+  );
+
+  if (!openAiResult.error && openAiResult.persistedAssets?.[0]) {
+    return { persisted: openAiResult.persistedAssets[0] };
+  }
+
+  const openAiError = openAiResult.error ?? "Failed to generate angle.";
+  const classified = classifyImageError(new Error(openAiError));
+
+  if (
+    classified.category === "moderation" &&
+    options?.preferSeedreamOnModeration
+  ) {
+    const seedreamResult = await runSeedream(input);
+    if (!seedreamResult.error && seedreamResult.persistedAssets?.[0]) {
+      return { persisted: seedreamResult.persistedAssets[0] };
+    }
+    if (seedreamResult.error?.includes("pending integration")) {
+      throw new Error(moderationUserMessage());
+    }
+    if (seedreamResult.error) {
+      throw new Error(`${moderationUserMessage()} (${seedreamResult.error})`);
+    }
+  }
+
+  if (classified.category === "moderation") {
+    throw new Error(moderationUserMessage());
+  }
+
+  throw new Error(openAiError);
+}
+
+async function generateSheetAngle(input: {
+  sheetId: string;
+  angle: SheetAngle;
+  prompt: string;
+  refUrls: string[];
+  abortSignal?: AbortSignal;
+  onBillableWorkStarted?: () => void;
+}): Promise<void> {
+  const imageInput: GenerateImageInput = {
+    prompt: input.prompt,
+    refImageUrls: input.refUrls,
+    aspectRatio: defaultAspectRatioForIngredients(),
+    count: 1,
+    resolution: "720p",
+    safety: "sfw",
+    sceneId: input.sheetId,
+    abortSignal: input.abortSignal,
+    onBillableWorkStarted: input.onBillableWorkStarted,
+  };
+
+  const { persisted } = await runImageForAngle(imageInput, {
+    preferSeedreamOnModeration: true,
+  });
+
+  const asset = await createAsset({
+    bucket: persisted.bucket,
+    storagePath: persisted.storagePath,
+    mediaType: persisted.mediaType,
+    width: persisted.width ?? null,
+    height: persisted.height ?? null,
+    source: "generated",
+    model: "openai-image",
+    prompt: input.prompt,
+  });
+
+  await addSheetAngle({
+    sheetId: input.sheetId,
+    assetId: asset.id,
+    angleLabel: input.angle,
+  });
+}
 
 async function runSheetGenerationCore(
   sheetId: string,
@@ -56,49 +160,43 @@ async function runSheetGenerationCore(
     throw new Error("Character headshot is required before generating a sheet.");
   }
 
+  const existingAngles = new Set(
+    sheet.angles.map((angle) => angle.angle_label as SheetAngle),
+  );
+  const anglesToGenerate = SHEET_ANGLES.filter((angle) => !existingAngles.has(angle));
+
+  if (anglesToGenerate.length === 0) {
+    await updateCharacterSheetStatus(sheetId, "ready", null);
+    return { status: "ready" };
+  }
+
+  await updateCharacterSheetStatus(sheetId, "pending", null);
+
   const total = SHEET_ANGLES.length;
-  let completed = 0;
+  let completed = existingAngles.size;
   const failures: Array<{ angle: SheetAngle; error: string }> = [];
 
-  await runWithConcurrency(SHEET_ANGLES, 3, async (angle) => {
+  await runWithConcurrency(anglesToGenerate, 3, async (angle) => {
     try {
       throwIfAborted(options?.abortSignal);
       const prompt = sheetAnglePrompt(angle, characterName, costumeNote);
-      const result = await runOpenAiImage({
+      await generateSheetAngle({
+        sheetId,
+        angle,
         prompt,
-        refImageUrls: refUrls,
-        aspectRatio: defaultAspectRatioForIngredients(),
-        count: 1,
-        resolution: "720p",
-        safety: "sfw",
-        sceneId: sheetId,
+        refUrls,
         abortSignal: options?.abortSignal,
         onBillableWorkStarted: options?.onBillableWorkStarted,
       });
-
-      if (result.error || !result.persistedAssets?.[0]) {
-        throw new Error(result.error ?? `Failed to generate ${angle} angle.`);
-      }
-
-      const persisted = result.persistedAssets[0];
-      const asset = await createAsset({
-        bucket: persisted.bucket,
-        storagePath: persisted.storagePath,
-        mediaType: persisted.mediaType,
-        width: persisted.width ?? null,
-        height: persisted.height ?? null,
-        source: "generated",
-        model: "openai-image",
-        prompt,
-      });
-
-      await addSheetAngle({ sheetId, assetId: asset.id, angleLabel: angle });
     } catch (error) {
+      if (error instanceof CopilotAbortError) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : `Failed to generate ${angle} angle.`;
       failures.push({ angle, error: message });
     } finally {
       completed += 1;
-      onProgress?.(`generating angle ${completed}/${total}…`, completed, total);
+      safeProgress(onProgress, `generating angle ${completed}/${total}…`, completed, total);
     }
   });
 
@@ -163,24 +261,50 @@ export async function executeSheetGeneration(
   }
 }
 
+async function runQueuedSheetGeneration(sheetId: string, revalidatePath?: string): Promise<void> {
+  try {
+    await executeSheetGeneration(sheetId);
+  } catch (error) {
+    if (isInsufficientCreditsError(error)) {
+      await updateCharacterSheetStatus(
+        sheetId,
+        "failed",
+        `Not enough credits (need ${error.needed}, have ${error.available}).`,
+      );
+    } else if (!(error instanceof CopilotAbortError)) {
+      const message = error instanceof Error ? error.message : "Sheet generation failed.";
+      await updateCharacterSheetStatus(sheetId, "failed", message);
+    }
+  }
+
+  if (revalidatePath) {
+    const { revalidatePath: revalidate } = await import("next/cache");
+    revalidate(revalidatePath);
+  }
+}
+
 export async function queueSheetGeneration(sheetId: string, revalidatePath?: string): Promise<void> {
   await updateCharacterSheetStatus(sheetId, "pending", null);
 
-  after(async () => {
-    try {
-      await executeSheetGeneration(sheetId);
-    } catch (error) {
-      if (isInsufficientCreditsError(error)) {
-        await updateCharacterSheetStatus(
-          sheetId,
-          "failed",
-          `Not enough credits (need ${error.needed}, have ${error.available}).`,
-        );
-      }
-    }
-    if (revalidatePath) {
-      const { revalidatePath: revalidate } = await import("next/cache");
-      revalidate(revalidatePath);
-    }
-  });
+  // Detach from the HTTP/SSE request lifecycle — `after()` can race with closed controllers.
+  void runQueuedSheetGeneration(sheetId, revalidatePath);
+}
+
+export async function retrySheetGeneration(
+  sheetId: string,
+  revalidatePath?: string,
+): Promise<{ status: "ready" | "failed"; error?: string }> {
+  const sheet = await getCharacterSheet(sheetId);
+  if (!sheet) return { status: "failed", error: "Character sheet not found." };
+  if (sheet.status === "pending") {
+    return { status: "failed", error: "Sheet is already generating." };
+  }
+
+  await updateCharacterSheetStatus(sheetId, "pending", null);
+  const result = await executeSheetGeneration(sheetId);
+  if (revalidatePath) {
+    const { revalidatePath: revalidate } = await import("next/cache");
+    revalidate(revalidatePath);
+  }
+  return result;
 }

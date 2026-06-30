@@ -62,7 +62,19 @@ export async function buildProductionLibraryData(input: {
 }
 
 export function buildMentionSheets(sheets: CharacterSheetWithDetails[]): MentionSheet[] {
-  return sheets.map((sheet) => ({
+  const readySheets = sheets.filter((sheet) => sheet.status === "ready");
+  const byLabel = new Map<string, CharacterSheetWithDetails>();
+
+  for (const sheet of [...readySheets].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )) {
+    const key = sheet.name.trim().toLowerCase();
+    if (!byLabel.has(key)) {
+      byLabel.set(key, sheet);
+    }
+  }
+
+  return [...byLabel.values()].map((sheet) => ({
     id: sheet.id,
     label: sheet.name,
     character_id: sheet.character_id,
