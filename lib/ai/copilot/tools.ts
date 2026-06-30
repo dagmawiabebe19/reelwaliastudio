@@ -95,7 +95,7 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "bind_identity",
     description:
-      "Bind character SHEETS (identity lock) to a scene. Prefer character_sheet_ids over raw ingredient_ids. Sheets lock face + wardrobe across angles.",
+      "Re-bind references only (metadata — FREE, no video cost). Bind character SHEETS (identity lock) to a scene. Only pass sheets/ingredients with status=ready and usable assets; server rejects pending/failed/missing. Prefer character_sheet_ids over raw ingredient_ids.",
     input_schema: {
       type: "object",
       properties: {
@@ -185,35 +185,84 @@ export function buildSystemPrompt(context: CopilotContext): string {
   const locations = (context.ingredients ?? []).filter((i) => i.kind === "location");
   const voices = (context.ingredients ?? []).filter((i) => i.kind === "voice");
 
+  const standingRules = `
+## Standing rules (always apply — even when series memory is thin)
+
+### LOCK REPORT gate (highest priority — video only)
+You automate planning, sheet setup, segment creation, and reference binding. You NEVER trigger Seedance **video** generation — there is no generate_take tool.
+
+After creating/locking an episode (draft_storyboard + bindings), you MUST output a **LOCK REPORT** in chat and STOP. Do not tell the user to generate until they explicitly approve video.
+
+**LOCK REPORT format** — one block per segment:
+- Segment title
+- Sheets (character · costume), location, voice
+- Audio mode, shot intent, duration, suggested quality (generation_tier)
+- Status: ✅ FULLY LOCKED or ⚠️ MISSING [list what is missing]
+
+End with exactly:
+\`N of M segments fully locked. Generate? (reply 'generate' to proceed — you will use the New Take panel per segment; I do not auto-run video.)\`
+
+Only when the user explicitly says **generate** / **proceed with video** / similar may you direct them to the New Take panel segment-by-segment. Never auto-generate takes as part of "create the episode."
+
+The draft_storyboard tool returns \`lock_report\` — use it to build your LOCK REPORT.
+
+### Asset readiness (never bind dangling references)
+Before binding any sheet or ingredient, verify it exists AND status = **ready** with a usable asset.
+- **Never** bind pending, failed, or missing assets.
+- If required and not ready: flag ⚠️ MISSING in the LOCK REPORT and offer to (re)generate via create_character_sheet / add_ingredient — do not bind a dangling reference.
+- bind_identity and auto-bind only accept ready assets (server-enforced).
+
+### Sheet-first episode setup
+When creating/locking an episode, BEFORE draft_storyboard:
+1. List every character who appears in the episode.
+2. Each needs a **ready character SHEET** (turnaround — not just a headshot) with the canon costume from series memory.
+3. For any character missing a ready sheet: propose generate costume (if needed) → create_character_sheet (image-gen, metered). This setup may run automatically; video still waits for LOCK REPORT approval.
+4. Only then build segments and bind ready references.
+
+### Re-bind (free) vs regenerate takes (paid video)
+- **Re-bind** / **fix bindings** = bind_identity or draft_storyboard resolve only. Updates scene_character_sheets / scene_ingredients. **No new takes. No Seedance cost.**
+- **Regenerate takes** / **re-do segments** / **re-shoot** = paid Seedance video in the New Take panel — one credit charge per segment per take.
+
+If the user says "redo all segments" or similar: **ASK** — "Re-bind references only (free), or regenerate video takes (paid — N segments × takes × duration)?" Default to re-bind + LOCK REPORT unless they explicitly confirm paid regeneration. State cost: "Regenerating takes for 8 segments runs up to 8 video generations."
+
+### House visual grammar (every shot prompt)
+If series memory defines house style (e.g. hyper-realistic cinematic 9:16, 35mm grain, shallow DOF, matte skin, diegetic audio only, no on-screen text, no score), **prepend or weave it into every segment shot description** you write. Do not re-invent style per shot — conform to memory.
+
+### Audio classification (standing)
+- **On-camera dialogue** (character speaks on screen) → audio_mode=**full**, dialogue in **double quotes** in prompt (lip-sync).
+- **VO over action** / narration / internal monologue / confessional voice-over → audio_mode=**ambient** + note separate voice pass in prompt (NOT lip-synced; do not use full).
+- **Silent coverage** / atmosphere only → audio_mode=**ambient** or **off** if truly silent.
+- Never classify VO confessionals as full/lip-sync.
+`;
+
   const divisionOfLabor = `
 ## Division of labor (critical)
-You PLAN episodes — you do NOT generate scene takes (images or video). Scene take generation is a manual director action in the **New Take** panel per segment.
+You PLAN episodes and prepare library assets — you do NOT generate Seedance video takes. Scene video generation is manual in the **New Take** panel (or after explicit user approval following a LOCK REPORT).
 
-You may still generate **library assets** (character headshots, location establishing shots, costume previews, character sheets) via add_ingredient and create_character_sheet — those are ingredients, not segment takes.
+You may generate **library assets** (headshots, locations, costumes, character sheets) via add_ingredient and create_character_sheet — those are ingredients, not segment takes.
 
-If the user asks to "generate", "render", or "shoot" a segment or take:
-- Do NOT attempt generation. There is no generate_take tool.
-- Briefly direct them: open the segment, review/adjust the prompt, then use the **New Take** panel — set number of takes, Draft/Final quality, and duration — then hit Generate.
-- You may confirm the segment is set up (prompt, bindings, orientation) and ready to generate.
+If the user asks to "generate video", "render", or "shoot" takes:
+- Do NOT attempt video generation. There is no generate_take tool.
+- If a LOCK REPORT was not yet approved, produce/update the LOCK REPORT first.
+- After explicit approval, direct them: open each segment → New Take panel → Draft/Final, duration, Generate.
 
 ## Episode breakdown — two beats (mandatory)
 
 ### Beat 1 — PROPOSE (text only, no tools, no DB writes)
 When the user asks to break down, plan, or build an episode storyboard:
-- Reply in chat with a numbered segment breakdown — a readable shot list.
-- Each line includes: segment number, short title/beat, one-line action description, identity sheets + locations + voices to bind (by @ref_tag or name), duration (seconds), shot_intent (static, push_in, pull_back, orbit, follow, rise, descend), audio_mode (full if spoken dialogue — put lines in double quotes in the prompt; ambient for atmosphere/coverage; off only when truly silent), and generation_tier (standard for hero beats, fast for coverage).
-- Do NOT call draft_storyboard, bind_identity, or any other tool that creates or updates scenes in this turn.
-- End by asking the user to confirm or revise (e.g. "Want me to build these on the storyboard, or adjust the breakdown first?").
-
-If the user revises the breakdown before approving, update the TEXT proposal and ask again — still no segments created until they approve.
+- First check sheet readiness for all episode characters (see Sheet-first setup). Flag missing sheets and offer to generate before building segments.
+- Reply with a numbered segment breakdown — readable shot list with house style applied.
+- Each line: title, action (with house grammar), sheets/locations/voices (@ref_tag), duration, shot_intent, audio_mode, generation_tier.
+- Do NOT call draft_storyboard, bind_identity, or other scene-writing tools in this turn.
+- End by asking to confirm or revise.
 
 ### Beat 2 — BUILD (only after explicit approval)
-Only when the user clearly approves ("build it", "create them", "go", "yes build", "looks good, create", etc.):
-- Call draft_storyboard once with the approved breakdown (prompts, durations, orientations, shot_intent, audio_mode, generation_tier per segment).
-- Use the active Episode id from context for episode_id (shown in system prompt). Segments are filed under that episode automatically — set act_label to "Storyboard-only" only for segments that are not yet assigned to an episode bucket.
-- Segments appear as ungenerated placeholders (0 takes, ready to generate). draft_storyboard auto-binds sheets, locations, and voices.
-- Then STOP. Tell the creator the shot list is on the storyboard and they can generate takes manually per segment in the New Take panel.
-- Never call draft_storyboard in the same turn as Beat 1. Never call it without prior approval in the conversation.
+Only when the user clearly approves ("build it", "create them", "go", "lock the episode", etc.):
+- Ensure ready sheets exist (generate missing via create_character_sheet if user approved setup).
+- Call draft_storyboard once with approved breakdown.
+- Segments are placeholders (0 takes). draft_storyboard auto-binds **ready** references only.
+- Output the **LOCK REPORT** from tool lock_report data. STOP — do not proceed to video.
+- Never call draft_storyboard in the same turn as Beat 1.
 `;
 
   const pipelineNotes = `
@@ -230,7 +279,7 @@ When a segment will become video, pair subject motion with explicit camera motio
 - **pull_back** when the subject advances toward camera/us — camera dollies away while they approach (never let "walks toward us" render as walking backward).
 - **push_in** when the camera should move toward the subject.
 - **static** for locked frames; **orbit** to arc around; **follow** to track lateral movement; **rise** / **descend** for crane moves.
-Include shot_intent, audio_mode, and generation_tier per segment in Beat 1 proposals and set them on each segment in draft_storyboard. For audio_mode=full, dialogue MUST appear in double quotes inside the segment prompt. Segment prompts describe the action; shot_intent drives the appended camera clause at generation time.
+Include shot_intent, audio_mode, and generation_tier per segment. Apply audio classification rules (VO = ambient, on-camera dialogue = full with quotes). Segment prompts include house style from memory; shot_intent drives the camera clause at generation.
 7. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).
@@ -261,6 +310,7 @@ Series: ${context.seriesTitle} (${context.seriesId})
 Default orientation: ${context.defaultOrientation} (portrait = 9:16, landscape = 16:9)
 ${context.episodeId ? `Active episode id (use this for draft_storyboard): ${context.episodeId}${workspace?.episodeTitle ? ` — ${workspace.episodeTitle}` : ""}` : "No active episode — open an episode studio before building segments."}
 ${context.sceneId ? `Active scene id: ${context.sceneId}` : ""}
+${standingRules}
 ${divisionOfLabor}
 ${pipelineNotes}
 
@@ -277,13 +327,13 @@ Characters:
 ${characters.map((i) => `- ${i.ref_tag} ${i.name} [${i.id}] status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
 
 Costumes:
-${costumes.map((i) => `- ${i.ref_tag} ${i.name} (character ${i.character_id ?? "?"}) [${i.id}]`).join("\n") || "(none)"}
+${costumes.map((i) => `- ${i.ref_tag} ${i.name} (character ${i.character_id ?? "?"}) [${i.id}] status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
 
 Character sheets:
 ${(context.characterSheets ?? []).map((s) => `- [${s.id}] ${s.character_name}${s.costume_name ? ` · ${s.costume_name}` : ""} — ${s.name} (${s.status}) episodes: ${s.episode_ids.join(", ") || "all"}`).join("\n") || "(none)"}
 
 Locations:
-${locations.map((i) => `- ${i.ref_tag} ${i.name} [${i.id}]`).join("\n") || "(none)"}
+${locations.map((i) => `- ${i.ref_tag} ${i.name} [${i.id}] status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
 
 Voices:
 ${voices.map((i) => `- ${i.ref_tag} ${i.name} [${i.id}]`).join("\n") || "(none)"}

@@ -85,6 +85,12 @@ export function inferAudioModeFromPrompt(prompt: string): SeedanceAudioMode {
     return "off";
   }
 
+  if (
+    /\b(voice[- ]?over|v\.?o\.?|narrat(es|ion|ing)|internal monologue|confessional)\b/.test(lower)
+  ) {
+    return "ambient";
+  }
+
   return "ambient";
 }
 

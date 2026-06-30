@@ -8,6 +8,10 @@ import { listSceneSheets, bindSheetToScene } from "@/lib/db/scene-sheets";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import type { VideoReferenceImage } from "@/lib/ai/video/types";
+import {
+  isIngredientReadyForBinding,
+  isSheetReadyForBinding,
+} from "@/lib/production/reference-readiness";
 
 import type { ResolvedReference } from "@/lib/production/types";
 
@@ -56,7 +60,7 @@ export async function resolveSceneReferences(input: {
       characterId: character.id,
     });
 
-    if (sheet) {
+    if (sheet && isSheetReadyForBinding(sheet)) {
       const assetUrls: string[] = [];
       const priorityAngles = ["front", "left_profile", "right_profile", "three_quarter"];
       for (const angleLabel of priorityAngles) {
@@ -82,7 +86,7 @@ export async function resolveSceneReferences(input: {
       if (input.autoBind) {
         await bindSheetToScene(input.sceneId, sheet.id, "identity_lock");
       }
-    } else if (character.assets) {
+    } else if (character.assets && isIngredientReadyForBinding(character)) {
       const url = await getSignedUrl(character.assets.bucket, character.assets.storage_path);
       resolved.push({
         type: "ingredient",
@@ -99,7 +103,7 @@ export async function resolveSceneReferences(input: {
 
   for (const locName of extractLocationNames(prompt, ingredients)) {
     const location = ingredients.find((i) => i.kind === "location" && i.name === locName);
-    if (!location?.assets) continue;
+    if (!location?.assets || !isIngredientReadyForBinding(location)) continue;
     const url = await getSignedUrl(location.assets.bucket, location.assets.storage_path);
     resolved.push({
       type: "location",
@@ -198,12 +202,13 @@ export async function collectBoundVideoReferenceAssets(sceneId: string): Promise
     const sheet = binding.character_sheets as {
       id: string;
       name: string;
+      status?: string;
       character_id: string;
       character?: { id: string; name: string } | null;
       costume?: { name: string } | null;
       angles?: Array<{ angle_label: string; assets?: { bucket: string; storage_path: string } | null }>;
     } | null;
-    if (!sheet?.angles?.length) continue;
+    if (!sheet?.angles?.length || !isSheetReadyForBinding(sheet)) continue;
 
     const asset = pickSheetAngleAsset(sheet.angles);
     if (!asset) continue;
@@ -235,7 +240,7 @@ export async function collectBoundVideoReferenceAssets(sceneId: string): Promise
   const supabase = await getDbClient();
   const { data, error } = await supabase
     .from("ingredients")
-    .select("id, name, kind, primary_asset_id, assets:primary_asset_id(bucket, storage_path)")
+    .select("id, name, kind, primary_asset_id, generation_status, assets:primary_asset_id(bucket, storage_path)")
     .in("id", ingredientIds);
 
   if (error) throw new Error(error.message);
@@ -247,6 +252,13 @@ export async function collectBoundVideoReferenceAssets(sceneId: string): Promise
     const rawAsset = row.assets as { bucket: string; storage_path: string } | { bucket: string; storage_path: string }[] | null;
     const asset = Array.isArray(rawAsset) ? rawAsset[0] : rawAsset;
     if (!asset) continue;
+
+    const ingredientRow = {
+      generation_status: (row as { generation_status?: string }).generation_status,
+      primary_asset_id: (row as { primary_asset_id?: string }).primary_asset_id,
+      assets: asset,
+    };
+    if (!isIngredientReadyForBinding(ingredientRow)) continue;
 
     if (row.kind === "location" && binding.role === "reference") {
       const signedUrl = await getSignedUrl(asset.bucket, asset.storage_path);

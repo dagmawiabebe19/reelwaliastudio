@@ -14,11 +14,14 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
     case "draft_storyboard": {
       const created = Array.isArray(result.created) ? result.created.length : 0;
       const updated = Array.isArray(result.updated) ? result.updated.length : 0;
+      const locked = Number(result.fully_locked_count ?? 0);
+      const total = Number(result.segment_count ?? created + updated);
       const parts: string[] = [];
-      if (created) parts.push(`Built ${created} segment${created === 1 ? "" : "s"} on storyboard (ready to generate)`);
+      if (created) parts.push(`Built ${created} segment${created === 1 ? "" : "s"}`);
       if (updated) parts.push(`Updated ${updated} scene${updated === 1 ? "" : "s"}`);
+      if (total) parts.push(`${locked}/${total} fully locked`);
       return parts.length
-        ? `${toolDisplayName(name)} — ${parts.join(", ")}`
+        ? `${toolDisplayName(name)} — ${parts.join(", ")} — output LOCK REPORT`
         : `${toolDisplayName(name)} — no scenes changed`;
     }
     case "add_ingredient": {

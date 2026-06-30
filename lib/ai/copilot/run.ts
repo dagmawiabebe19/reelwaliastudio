@@ -42,6 +42,7 @@ import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
 import { createCharacterSheet } from "@/lib/db/character-sheets";
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
 import { resolveSceneReferences } from "@/lib/production/resolve-references";
+import { assessSegmentLock, assertIngredientReadyForBinding, assertSheetReadyForBinding } from "@/lib/production/reference-readiness";
 import { createIngredient, getIngredient } from "@/lib/db/ingredients";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
 import { bindSheetToScene } from "@/lib/db/scene-sheets";
@@ -141,6 +142,7 @@ async function executeTool(
       const segments = (args.segments as Array<Record<string, unknown>>) ?? [];
       const created: string[] = [];
       const updated: string[] = [];
+      const builtSceneIds: string[] = [];
       const resolved: Array<{ scene_id: string; references: unknown[] }> = [];
       const total = segments.filter((s) => String(s.title ?? "").trim()).length;
       let index = 0;
@@ -220,7 +222,14 @@ async function executeTool(
           autoBind: true,
         });
         resolved.push({ scene_id: targetSceneId, references: refs });
+        builtSceneIds.push(targetSceneId);
       }
+
+      const lockReport = await Promise.all(
+        builtSceneIds.map((sceneId) =>
+          assessSegmentLock({ sceneId, seriesId: context.seriesId, episodeId }),
+        ),
+      );
 
       revalidatePath(`/series/${context.seriesId}/episodes/${episodeId}`);
 
@@ -230,6 +239,9 @@ async function executeTool(
         updated,
         count: created.length + updated.length,
         resolved,
+        lock_report: lockReport,
+        fully_locked_count: lockReport.filter((row) => row.fully_locked).length,
+        segment_count: lockReport.length,
       };
     }
 
@@ -355,6 +367,19 @@ async function executeTool(
       const sheetIds = (args.character_sheet_ids as string[]) ?? [];
       const ingredientIds = (args.ingredient_ids as string[]) ?? [];
       const total = sheetIds.length + ingredientIds.length;
+
+      for (const sheetId of sheetIds) {
+        const block = await assertSheetReadyForBinding(sheetId);
+        if (block) {
+          return { error: block, sheet_id: sheetId, bound: false };
+        }
+      }
+      for (const ingredientId of ingredientIds) {
+        const block = await assertIngredientReadyForBinding(ingredientId);
+        if (block) {
+          return { error: block, ingredient_id: ingredientId, bound: false };
+        }
+      }
 
       emitProgress("binding identity locks…", 0, total || 1);
 

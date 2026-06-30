@@ -1,6 +1,7 @@
 import "server-only";
 
 import { collectBoundVideoReferenceAssets } from "@/lib/production/resolve-references";
+import { validateSceneReferencesForVideoGeneration } from "@/lib/production/reference-readiness";
 import type { VideoReferenceImage } from "@/lib/ai/video/types";
 import { getStorageClient } from "@/lib/storage/client";
 
@@ -29,6 +30,11 @@ export async function validateSeedanceVideoGeneration(
   | { ok: true; references: VideoReferenceImage[] }
   | { ok: false; error: string }
 > {
+  const readiness = await validateSceneReferencesForVideoGeneration(sceneId);
+  if (!readiness.ok) {
+    return readiness;
+  }
+
   const references = await collectBoundVideoReferenceAssets(sceneId);
   if (!references.length) {
     return {
@@ -38,5 +44,14 @@ export async function validateSeedanceVideoGeneration(
     };
   }
 
-  return { ok: true, references };
+  const usable = references.filter((ref) => ref.signedUrl || ref.bucket);
+  if (!usable.length) {
+    return {
+      ok: false,
+      error:
+        "Bound references are missing usable images (failed, generating, or not uploaded). Regenerate or re-bind ready assets before video.",
+    };
+  }
+
+  return { ok: true, references: usable };
 }
