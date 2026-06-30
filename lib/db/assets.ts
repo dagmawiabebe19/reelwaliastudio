@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "crypto";
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { getDbClient } from "@/lib/db/client";
 import type { Asset, AssetMediaType, TablesInsert } from "@/lib/db/database.types";
 

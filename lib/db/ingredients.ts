@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { getDbClient } from "@/lib/db/client";
 import type { AssetMediaType, Ingredient, IngredientKind, TablesInsert } from "@/lib/db/database.types";
 import {

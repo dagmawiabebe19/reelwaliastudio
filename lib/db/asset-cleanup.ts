@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { getDbClient } from "@/lib/db/client";
 import { deleteStorageObjects } from "@/lib/storage/delete-files";
 

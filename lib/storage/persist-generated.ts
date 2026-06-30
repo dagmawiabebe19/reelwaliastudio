@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "crypto";
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { buildGeneratedAssetPath } from "@/lib/db/assets";
 import { detectMediaType } from "@/lib/storage/buckets";
 import { getStorageClient } from "@/lib/storage/client";

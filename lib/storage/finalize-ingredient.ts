@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { createAsset } from "@/lib/db/assets";
 import { createIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
 import type { IngredientKind } from "@/lib/db/types";

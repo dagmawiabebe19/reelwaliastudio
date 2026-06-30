@@ -51,20 +51,6 @@ async function uploadDirectToStorage(
   );
 }
 
-async function uploadViaSignedUrl(
-  signedUrl: string,
-  file: File,
-  onProgress?: (percent: number) => void,
-): Promise<void> {
-  await xhrUpload(
-    signedUrl,
-    "PUT",
-    file,
-    { "Content-Type": file.type || "application/octet-stream" },
-    onProgress,
-  );
-}
-
 export async function uploadIngredientFromClient(
   seriesId: string,
   file: File,
@@ -93,14 +79,7 @@ export async function uploadIngredientFromClient(
     throw new Error(prepare.error);
   }
 
-  if (prepare.uploadMethod === "signed") {
-    if (!prepare.signedUrl) {
-      throw new Error("Signed upload URL was not provided.");
-    }
-    await uploadViaSignedUrl(prepare.signedUrl, file, report);
-  } else {
-    await uploadDirectToStorage(prepare.bucket, prepare.storagePath, file, report);
-  }
+  await uploadDirectToStorage(prepare.bucket, prepare.storagePath, file, report);
 
   const dimensions = await readImageDimensions(file);
 

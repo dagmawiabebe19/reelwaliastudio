@@ -13,7 +13,7 @@ import {
 } from "@/lib/db/scenes";
 import { bucketForAudioLine, buildStoragePath, detectMediaType } from "@/lib/storage/buckets";
 import { getStorageClient } from "@/lib/storage/client";
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { randomUUID } from "crypto";
 import type { Orientation } from "@/lib/db/types";
 

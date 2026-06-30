@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
-import { isDevNoAuth } from "@/lib/auth/dev";
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { createEpisode, updateEpisodeStatus } from "@/lib/db/episodes";
 import { deleteIngredientWithCleanup } from "@/lib/db/delete";
 import { updateIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
@@ -15,7 +14,6 @@ import { updateSeriesMemoryMarkdown } from "@/lib/db/series-memory";
 import { finalizeIngredientUpload } from "@/lib/storage/finalize-ingredient";
 import { bucketForIngredient } from "@/lib/storage/buckets";
 import { buildIngredientStoragePath } from "@/lib/storage/paths";
-import { getStorageClient } from "@/lib/storage/client";
 import type { IngredientKind, Orientation } from "@/lib/db/types";
 import type { StorageBucket } from "@/lib/storage/buckets";
 
@@ -53,25 +51,6 @@ export async function prepareIngredientUploadAction(
       input.filename,
       randomUUID(),
     );
-
-    if (isDevNoAuth()) {
-      const supabase = await getStorageClient();
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .createSignedUploadUrl(storagePath);
-
-      if (error || !data) {
-        return { error: error?.message ?? "Failed to create signed upload URL." };
-      }
-
-      return {
-        uploadMethod: "signed" as const,
-        bucket,
-        storagePath,
-        signedUrl: data.signedUrl,
-        token: data.token,
-      };
-    }
 
     return {
       uploadMethod: "direct" as const,

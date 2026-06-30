@@ -2,7 +2,8 @@ import "server-only";
 
 import { randomUUID } from "crypto";
 import { after } from "next/server";
-import { getActiveUserId } from "@/lib/auth/active-user";
+import { isDevAuthBypassActive } from "@/lib/auth/bypass";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { createAsset, buildGeneratedAssetPath } from "@/lib/db/assets";
 import { createEpisodeExport, updateEpisodeExport } from "@/lib/db/episode-exports";
 import { listStarredTakesByEpisode } from "@/lib/db/takes";
@@ -10,7 +11,6 @@ import { getEpisode } from "@/lib/db/episodes";
 import { getSeries } from "@/lib/db/series";
 import { getStorageClient } from "@/lib/storage/client";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isDevNoAuth } from "@/lib/auth/dev";
 
 async function downloadAssetBuffer(bucket: string, path: string): Promise<Buffer> {
   const supabase = await getStorageClient();
@@ -54,7 +54,8 @@ async function concatEpisodeStarredTakes(episodeId: string, seriesId: string): P
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (supabaseUrl && serviceKey && !isDevNoAuth()) {
+  // FLAG: service-role invokes edge function (RLS bypassed server-side). Not user-scoped DB reads.
+  if (supabaseUrl && serviceKey && !isDevAuthBypassActive()) {
     const admin = createAdminClient();
     const { data, error } = await admin.functions.invoke("concat-episode", {
       body: {
