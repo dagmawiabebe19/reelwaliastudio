@@ -179,7 +179,14 @@ export type CopilotContext = {
   };
 };
 
-export function buildSystemPrompt(context: CopilotContext): string {
+export type CopilotSystemBlocks = {
+  /** Stable prefix — series memory, rules, library lists (prompt-cached). */
+  stable: string;
+  /** Per-turn workspace / focus context (not cached). */
+  volatile: string;
+};
+
+export function buildCopilotSystemBlocks(context: CopilotContext): CopilotSystemBlocks {
   const characters = (context.ingredients ?? []).filter((i) => i.kind === "character");
   const costumes = (context.ingredients ?? []).filter((i) => i.kind === "outfit");
   const locations = (context.ingredients ?? []).filter((i) => i.kind === "location");
@@ -301,18 +308,16 @@ ${workspace.activeTakeSummary ? `- Render status: ${workspace.activeTakeSummary}
 `
     : "";
 
-  return `You are the ReelWalia Studio co-pilot — an AI production partner (director, writer, cinematographer, script supervisor, producer, editor, showrunner). The creator directs; you handle production.
+  const stable = `You are the ReelWalia Studio co-pilot — an AI production partner (director, writer, cinematographer, script supervisor, producer, editor, showrunner). The creator directs; you handle production.
 
 ## Series memory (persistent — always follow)
 ${context.seriesMemoryMarkdown?.trim() || "(empty — use update_series_memory when the user confirms canonical facts)"}
-${workspaceSection}
-Series: ${context.seriesTitle} (${context.seriesId})
-Default orientation: ${context.defaultOrientation} (portrait = 9:16, landscape = 16:9)
-${context.episodeId ? `Active episode id (use this for draft_storyboard): ${context.episodeId}${workspace?.episodeTitle ? ` — ${workspace.episodeTitle}` : ""}` : "No active episode — open an episode studio before building segments."}
-${context.sceneId ? `Active scene id: ${context.sceneId}` : ""}
 ${standingRules}
 ${divisionOfLabor}
 ${pipelineNotes}
+
+Series: ${context.seriesTitle} (${context.seriesId})
+Default orientation: ${context.defaultOrientation} (portrait = 9:16, landscape = 16:9)
 
 When drafting storyboard scenes (Beat 2 only):
 - Respect the series default orientation unless a scene needs an override.
@@ -343,4 +348,13 @@ ${(context.ingredients ?? []).filter((i) => !["character", "outfit", "location",
 
 Current scenes:
 ${(context.scenes ?? []).map((s) => `- [${s.id}] ${s.act_label ?? "Storyboard-only"}: ${s.title}`).join("\n") || "(none)"}`;
+
+  const volatile = `${workspaceSection}${context.episodeId ? `Active episode id (use this for draft_storyboard): ${context.episodeId}${workspace?.episodeTitle ? ` — ${workspace.episodeTitle}` : ""}\n` : "No active episode — open an episode studio before building segments.\n"}${context.sceneId ? `Active scene id: ${context.sceneId}\n` : ""}`.trim();
+
+  return { stable, volatile };
+}
+
+export function buildSystemPrompt(context: CopilotContext): string {
+  const { stable, volatile } = buildCopilotSystemBlocks(context);
+  return volatile ? `${stable}\n\n${volatile}` : stable;
 }

@@ -1,7 +1,10 @@
 import "server-only";
 
 import type Anthropic from "@anthropic-ai/sdk";
-import { COPILOT_TURN_CREDITS } from "@/lib/credits/pricing";
+import {
+  copilotTurnCreditsFromUsage,
+  estimateCopilotTurnCredits,
+} from "@/lib/credits/pricing";
 import { commitReservation, releaseReservation } from "@/lib/credits/mutations";
 
 export type CopilotTurnBillingSnapshot = {
@@ -10,47 +13,41 @@ export type CopilotTurnBillingSnapshot = {
 };
 
 /**
- * Derive co-pilot turn commit amount from partial usage.
- * Flat COPILOT_TURN_CREDITS when any tokens were generated; 0 when none.
- * When usage is missing but work clearly started, commit the estimate (err on commit side).
+ * Derive co-pilot turn commit amount from accumulated Anthropic usage.
+ * Falls back to reserve estimate when billable but usage telemetry is missing.
  */
-export function copilotTurnCreditsFromUsage(
-  estimate: number,
+export function resolveCopilotTurnCommitCredits(
+  modelId: string,
+  reserveEstimate: number,
   billing: CopilotTurnBillingSnapshot,
 ): number {
   if (!billing.anthropicBillable) return 0;
 
-  const input = billing.usage?.input_tokens ?? 0;
-  const output = billing.usage?.output_tokens ?? 0;
-  if (input + output > 0) {
-    return Math.min(estimate, COPILOT_TURN_CREDITS);
+  if (billing.usage) {
+    const input = billing.usage.input_tokens ?? 0;
+    const output = billing.usage.output_tokens ?? 0;
+    const cacheCreate = billing.usage.cache_creation_input_tokens ?? 0;
+    const cacheRead = billing.usage.cache_read_input_tokens ?? 0;
+    if (input + output + cacheCreate + cacheRead > 0) {
+      return copilotTurnCreditsFromUsage(modelId, billing.usage);
+    }
   }
 
-  // Billable invocation without retrievable usage — commit estimate, do not refund.
-  return estimate;
+  return reserveEstimate;
 }
 
 /**
- * Settle a co-pilot turn reservation after completion or abort.
+ * Settle a co-pilot turn reservation after completion, abort, or error.
  * Never refunds provider work that already occurred.
  */
 export async function settleCopilotTurnReservation(
   reservationId: string,
-  estimate: number,
+  modelId: string,
   billing: CopilotTurnBillingSnapshot,
-  aborted: boolean,
 ): Promise<"released" | "committed"> {
-  if (!aborted) {
-    await commitReservation(reservationId, estimate);
-    return "committed";
-  }
+  const reserveEstimate = estimateCopilotTurnCredits(modelId);
+  const actual = resolveCopilotTurnCommitCredits(modelId, reserveEstimate, billing);
 
-  if (!billing.anthropicBillable) {
-    await releaseReservation(reservationId);
-    return "released";
-  }
-
-  const actual = copilotTurnCreditsFromUsage(estimate, billing);
   if (actual <= 0) {
     await releaseReservation(reservationId);
     return "released";

@@ -2,12 +2,32 @@ import "server-only";
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { CopilotAbortError, isAbortError, throwIfAborted } from "@/lib/ai/copilot/abort";
+import type { CopilotSystemBlocks } from "@/lib/ai/copilot/tools";
 import type { TurnBillingState } from "@/lib/ai/copilot/turn-billing";
+
+function buildCachedSystemParam(
+  blocks: CopilotSystemBlocks,
+): Anthropic.Messages.MessageCreateParams["system"] {
+  const parts: Anthropic.Messages.TextBlockParam[] = [
+    {
+      type: "text",
+      text: blocks.stable,
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+  if (blocks.volatile.trim()) {
+    parts.push({
+      type: "text",
+      text: blocks.volatile,
+    });
+  }
+  return parts;
+}
 
 export async function streamAnthropicTurn(input: {
   client: Anthropic;
   model: string;
-  system: string;
+  system: CopilotSystemBlocks;
   tools: Anthropic.Tool[];
   messages: Anthropic.MessageParam[];
   abortSignal?: AbortSignal;
@@ -22,7 +42,7 @@ export async function streamAnthropicTurn(input: {
     {
       model: input.model,
       max_tokens: 4096,
-      system: input.system,
+      system: buildCachedSystemParam(input.system),
       tools: input.tools,
       messages: input.messages,
     },

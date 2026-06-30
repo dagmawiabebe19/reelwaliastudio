@@ -4,6 +4,21 @@ import type Anthropic from "@anthropic-ai/sdk";
 
 export type PaidToolKind = "image" | "sheet";
 
+function addUsage(
+  current: Anthropic.Messages.Usage | undefined,
+  next: Anthropic.Messages.Usage,
+): Anthropic.Messages.Usage {
+  return {
+    ...next,
+    input_tokens: (current?.input_tokens ?? 0) + (next.input_tokens ?? 0),
+    output_tokens: (current?.output_tokens ?? 0) + (next.output_tokens ?? 0),
+    cache_creation_input_tokens:
+      (current?.cache_creation_input_tokens ?? 0) + (next.cache_creation_input_tokens ?? 0),
+    cache_read_input_tokens:
+      (current?.cache_read_input_tokens ?? 0) + (next.cache_read_input_tokens ?? 0),
+  };
+}
+
 export class TurnBillingState {
   anthropicBillable = false;
   usage?: Anthropic.Messages.Usage;
@@ -12,7 +27,7 @@ export class TurnBillingState {
   markAnthropicBillable(usage?: Anthropic.Messages.Usage): void {
     this.anthropicBillable = true;
     if (usage) {
-      this.usage = usage;
+      this.usage = addUsage(this.usage, usage);
     }
   }
 

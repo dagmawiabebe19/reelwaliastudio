@@ -8,7 +8,7 @@ import { streamAnthropicTurn } from "@/lib/ai/copilot/stream-turn";
 import type { TurnBillingState } from "@/lib/ai/copilot/turn-billing";
 import { TurnBillingState as TurnBillingTracker } from "@/lib/ai/copilot/turn-billing";
 import { assertSufficientCredits } from "@/lib/credits/meter";
-import { settleCopilotTurnReservation } from "@/lib/credits/copilot-settle";
+import { settleCopilotTurnReservation, resolveCopilotTurnCommitCredits } from "@/lib/credits/copilot-settle";
 import { reserveCredits, releaseReservation } from "@/lib/credits/mutations";
 import { getBalance } from "@/lib/credits/balance";
 import { isAdmin } from "@/lib/auth/isAdmin";
@@ -19,9 +19,10 @@ import {
   toInsufficientCreditsPayload,
 } from "@/lib/credits/errors";
 import {
-  COPILOT_TURN_CREDITS,
+  estimateCopilotTurnCredits,
   estimateImageCredits,
   estimateSheetCredits,
+  formatCopilotUsageCostLog,
 } from "@/lib/credits/pricing";
 import {
   executeIngredientImageGeneration,
@@ -50,7 +51,7 @@ import { createScene, getScene, updateScene } from "@/lib/db/scenes";
 import { resolveCopilotModel } from "@/lib/ai/copilot/resolve-model";
 import { formatToolDoneSummary, formatToolRunningLabel } from "@/lib/ai/copilot/progress";
 import {
-  buildSystemPrompt,
+  buildCopilotSystemBlocks,
   COPILOT_TOOLS,
   type CopilotContext,
 } from "@/lib/ai/copilot/tools";
@@ -579,8 +580,11 @@ export async function runCopilotStream(input: {
     return;
   }
 
+  const model = resolveCopilotModel(input.modelId);
+  const turnEstimate = estimateCopilotTurnCredits(model);
+
   try {
-    await assertSufficientCredits(userId, COPILOT_TURN_CREDITS);
+    await assertSufficientCredits(userId, turnEstimate);
   } catch (error) {
     if (isInsufficientCreditsError(error)) {
       input.onEvent({
@@ -598,14 +602,20 @@ export async function runCopilotStream(input: {
   let turnSettled = false;
   const billing = new TurnBillingTracker();
 
-  const settleTurn = async (aborted: boolean) => {
+  const settleTurn = async () => {
     if (!reservationId || turnSettled) return;
     turnSettled = true;
-    await settleCopilotTurnReservation(
-      reservationId,
-      COPILOT_TURN_CREDITS,
-      billing,
-      aborted,
+    const creditsCommitted = resolveCopilotTurnCommitCredits(model, turnEstimate, billing);
+    const outcome = await settleCopilotTurnReservation(reservationId, model, billing);
+    console.log(
+      "[copilot-meter]",
+      formatCopilotUsageCostLog({
+        modelId: model,
+        usage: billing.usage ?? {},
+        creditsCommitted,
+        turnLabel: `session:${input.sessionId}`,
+      }),
+      `settle=${outcome}`,
     );
   };
 
@@ -613,7 +623,7 @@ export async function runCopilotStream(input: {
     try {
       reservationId = await reserveCredits(
         userId,
-        COPILOT_TURN_CREDITS,
+        turnEstimate,
         `copilot:session:${input.sessionId}`,
       );
     } catch (error) {
@@ -628,12 +638,12 @@ export async function runCopilotStream(input: {
       const message = error instanceof Error ? error.message : String(error);
       if (message === "insufficient_credits") {
         const { available } = await getBalance(userId);
-        throw new InsufficientCreditsError(COPILOT_TURN_CREDITS, available);
+        throw new InsufficientCreditsError(turnEstimate, available);
       }
-      const parsed = insufficientCreditsFromMessage(message, COPILOT_TURN_CREDITS, 0);
+      const parsed = insufficientCreditsFromMessage(message, turnEstimate, 0);
       if (parsed) {
         const { available } = await getBalance(userId);
-        throw new InsufficientCreditsError(COPILOT_TURN_CREDITS, available);
+        throw new InsufficientCreditsError(turnEstimate, available);
       }
       throw error;
     }
@@ -648,8 +658,7 @@ export async function runCopilotStream(input: {
 
     const history = await listChatMessages(input.sessionId);
     const client = new Anthropic({ apiKey });
-    const model = resolveCopilotModel(input.modelId);
-    const system = buildSystemPrompt(input.context);
+    const system = buildCopilotSystemBlocks(input.context);
 
     const messages: Anthropic.MessageParam[] = history
       .filter((m) => m.role === "user" || m.role === "assistant")
@@ -801,11 +810,11 @@ export async function runCopilotStream(input: {
       input.onEvent({ type: "turn_complete", summary: turnSummary });
     }
 
-    await settleTurn(false);
+    await settleTurn();
     input.onEvent({ type: "done" });
   } catch (error) {
     if (isAbortError(error)) {
-      await settleTurn(true);
+      await settleTurn();
       input.onEvent({
         type: "aborted",
         message: "Stopped.",
