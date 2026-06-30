@@ -6,15 +6,17 @@ import { Sidebar } from "@/components/sidebar/Sidebar";
 import { StudioNavProvider } from "@/components/sidebar/studio-nav-context";
 import { CopilotShellHost } from "@/components/copilot/CopilotShellHost";
 import { CopilotWorkspaceProvider } from "@/components/copilot/CopilotWorkspaceProvider";
+import type { CreditBalance } from "@/lib/credits/types";
 
 const EPISODE_STUDIO_PATH = /^\/series\/[^/]+\/episodes\/[^/]+\/?$/;
 
 interface ShellLayoutProps {
   children: ReactNode;
   userEmail: string | null;
+  creditBalance: CreditBalance | null;
 }
 
-export function ShellLayout({ children, userEmail }: ShellLayoutProps) {
+export function ShellLayout({ children, userEmail, creditBalance }: ShellLayoutProps) {
   const pathname = usePathname();
   const isEpisodeStudio = EPISODE_STUDIO_PATH.test(pathname);
   const [navOpen, setNavOpen] = useState(false);
@@ -40,7 +42,11 @@ export function ShellLayout({ children, userEmail }: ShellLayoutProps) {
                   aria-label="Close navigation"
                 />
                 <div className="fixed inset-y-0 left-0 z-50 shadow-2xl">
-                  <Sidebar userEmail={userEmail} onNavigate={() => setNavOpen(false)} />
+                  <Sidebar
+                    userEmail={userEmail}
+                    creditBalance={creditBalance}
+                    onNavigate={() => setNavOpen(false)}
+                  />
                 </div>
               </>
             ) : null}
@@ -56,7 +62,7 @@ export function ShellLayout({ children, userEmail }: ShellLayoutProps) {
   return (
     <CopilotWorkspaceProvider>
       <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-foreground">
-        <Sidebar userEmail={userEmail} />
+        <Sidebar userEmail={userEmail} creditBalance={creditBalance} />
         <CopilotShellHost layout="sidebar">
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-6xl px-10 py-12">{children}</div>

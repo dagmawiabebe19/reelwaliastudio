@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BrandWordmark } from "@/components/brand/BrandWordmark";
+import { CreditBalanceBadge } from "@/components/credits/CreditBalanceBadge";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import type { CreditBalance } from "@/lib/credits/types";
 
 const navItems = [
   { href: "/", label: "Home" },
   { href: "/projects", label: "Projects" },
   { href: "/series", label: "Shorts" },
+  { href: "/credits", label: "Credits" },
   { href: "/ai-training", label: "AI Training" },
   { href: "/utilities", label: "Utilities" },
   { href: "/favorites", label: "Favorites" },
@@ -17,10 +20,11 @@ const navItems = [
 
 interface SidebarProps {
   userEmail?: string | null;
+  creditBalance?: CreditBalance | null;
   onNavigate?: () => void;
 }
 
-export function Sidebar({ userEmail, onNavigate }: SidebarProps) {
+export function Sidebar({ userEmail, creditBalance, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -77,6 +81,23 @@ export function Sidebar({ userEmail, onNavigate }: SidebarProps) {
           New Project
         </Link>
         <ThemeToggle />
+        {creditBalance ? (
+          <Link
+            href="/credits"
+            onClick={onNavigate}
+            className="block rounded-md border border-border bg-surface-elevated px-3 py-2 transition-colors hover:border-accent/40"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Credits</p>
+            <p className="mt-0.5">
+              <CreditBalanceBadge available={creditBalance.available} compact />
+            </p>
+            {creditBalance.reserved > 0 ? (
+              <p className="mt-0.5 text-xs text-muted">
+                {creditBalance.reserved.toLocaleString()} reserved
+              </p>
+            ) : null}
+          </Link>
+        ) : null}
         {userEmail ? (
           <p className="truncate px-3 text-xs text-muted" title={userEmail}>
             {userEmail}

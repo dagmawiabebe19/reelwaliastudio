@@ -10,7 +10,9 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "gen:types": "supabase gen types typescript --local > lib/db/database.types.ts"
+    "gen:types": "supabase gen types typescript --local > lib/db/database.types.ts",
+    "test:credits": "node scripts/test-credits.mjs",
+    "simulate:credits": "node scripts/simulate-credits-lifecycle.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",

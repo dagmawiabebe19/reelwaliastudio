@@ -277,6 +277,66 @@ export type Database = {
         };
         Relationships: [];
       };
+      credit_balances: {
+        Row: {
+          user_id: string;
+          available: number;
+          reserved: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          available?: number;
+          reserved?: number;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          available?: number;
+          reserved?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      credit_ledger: {
+        Row: {
+          id: string;
+          user_id: string;
+          amount: number;
+          balance_after: number;
+          type: string;
+          status: string;
+          reservation_id: string | null;
+          reference: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          amount: number;
+          balance_after: number;
+          type: string;
+          status?: string;
+          reservation_id?: string | null;
+          reference?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          amount?: number;
+          balance_after?: number;
+          type?: string;
+          status?: string;
+          reservation_id?: string | null;
+          reference?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       episode_exports: {
         Row: {
           id: string;
@@ -714,7 +774,40 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      grant_credits: {
+        Args: {
+          p_user_id: string;
+          p_amount: number;
+          p_type: string;
+          p_reference?: string | null;
+          p_metadata?: Json;
+        };
+        Returns: string;
+      };
+      reserve_credits: {
+        Args: {
+          p_user_id: string;
+          p_amount: number;
+          p_reference?: string | null;
+          p_metadata?: Json;
+        };
+        Returns: string;
+      };
+      commit_reservation: {
+        Args: {
+          p_reservation_id: string;
+          p_actual_amount: number;
+        };
+        Returns: undefined;
+      };
+      release_reservation: {
+        Args: {
+          p_reservation_id: string;
+        };
+        Returns: undefined;
+      };
+    };
     Enums: {
       asset_media_type: "image" | "video" | "audio";
       asset_source: "generated" | "uploaded";
