@@ -2,6 +2,11 @@
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
+import { getActiveUserId } from "@/lib/auth/getUser";
+import { formatActionError } from "@/lib/credits/action-result";
+import { assertSufficientCredits } from "@/lib/credits/meter";
+import { estimateVideoCredits } from "@/lib/credits/pricing";
+import { isInsufficientCreditsError } from "@/lib/credits/errors";
 import { logGenerationError } from "@/lib/ai/generation/errors";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
 import { SEGMENT_VIDEO_MODEL_ID } from "@/lib/ai/registry";
@@ -46,6 +51,14 @@ export async function generateTakesAction(input: {
   shotIntent?: string | null;
 }) {
   try {
+    const userId = await getActiveUserId();
+    const estimate = estimateVideoCredits({
+      tier: input.seedanceTier ?? "fast",
+      resolution: input.resolution,
+      durationSeconds: input.durationSeconds ?? 6,
+    });
+    await assertSufficientCredits(userId, estimate);
+
     if (input.shotIntent != null) {
       await updateScene(input.sceneId, { shot_intent: input.shotIntent });
     }
@@ -62,19 +75,31 @@ export async function generateTakesAction(input: {
       try {
         await executeGenerationJob(params, takeIds);
       } catch (error) {
-        logGenerationError("background-job", error, {
-          takeIds,
-          sceneId: input.sceneId,
-          modelId: SEGMENT_VIDEO_MODEL_ID,
-        });
+        if (isInsufficientCreditsError(error)) {
+          const { markTakeFailed } = await import("@/lib/db/takes");
+          await Promise.all(
+            takeIds.map((id) =>
+              markTakeFailed(
+                id,
+                `Not enough credits (need ${error.needed}, have ${error.available}).`,
+              ),
+            ),
+          );
+        } else {
+          logGenerationError("background-job", error, {
+            takeIds,
+            sceneId: input.sceneId,
+            modelId: SEGMENT_VIDEO_MODEL_ID,
+          });
+        }
       }
       revalidatePath(path);
     });
 
     revalidatePath(path);
-    return { takeIds, status: "pending" as const };
+    return { takeIds, status: "pending" as const, estimatedCredits: estimate };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Generation failed to start." };
+    return formatActionError(error, "Generation failed to start.");
   }
 }
 

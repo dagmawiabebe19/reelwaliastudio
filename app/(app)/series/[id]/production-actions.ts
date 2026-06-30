@@ -1,6 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getActiveUserId } from "@/lib/auth/getUser";
+import { formatActionError } from "@/lib/credits/action-result";
+import { assertSufficientCredits } from "@/lib/credits/meter";
+import {
+  estimateImageCredits,
+  estimateSheetCredits,
+} from "@/lib/credits/pricing";
 import {
   CHARACTER_HEADSHOT_PREFIX,
   LOCATION_ESTABLISHING_PREFIX,
@@ -20,6 +27,10 @@ export async function generateCharacterAction(seriesId: string, formData: FormDa
 
   try {
     await verifySeriesOwnership(seriesId);
+    const userId = await getActiveUserId();
+    const estimate = estimateImageCredits(1);
+    await assertSufficientCredits(userId, estimate);
+
     const ingredient = await createIngredient({
       seriesId,
       kind: "character",
@@ -36,9 +47,9 @@ export async function generateCharacterAction(seriesId: string, formData: FormDa
     });
 
     revalidatePath(`/series/${seriesId}`);
-    return { ingredientId: ingredient.id, ref_tag: ingredient.ref_tag };
+    return { ingredientId: ingredient.id, ref_tag: ingredient.ref_tag, estimatedCredits: estimate };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to generate character." };
+    return formatActionError(error, "Failed to generate character.");
   }
 }
 
@@ -49,6 +60,10 @@ export async function generateLocationAction(seriesId: string, formData: FormDat
 
   try {
     await verifySeriesOwnership(seriesId);
+    const userId = await getActiveUserId();
+    const estimate = estimateImageCredits(1);
+    await assertSufficientCredits(userId, estimate);
+
     const ingredient = await createIngredient({
       seriesId,
       kind: "location",
@@ -65,9 +80,9 @@ export async function generateLocationAction(seriesId: string, formData: FormDat
     });
 
     revalidatePath(`/series/${seriesId}`);
-    return { ingredientId: ingredient.id, ref_tag: ingredient.ref_tag };
+    return { ingredientId: ingredient.id, ref_tag: ingredient.ref_tag, estimatedCredits: estimate };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to generate location." };
+    return formatActionError(error, "Failed to generate location.");
   }
 }
 
@@ -81,6 +96,10 @@ export async function generateCostumeAction(seriesId: string, formData: FormData
 
   try {
     await verifySeriesOwnership(seriesId);
+    const userId = await getActiveUserId();
+    const estimate = estimateImageCredits(1);
+    await assertSufficientCredits(userId, estimate);
+
     const { getIngredient } = await import("@/lib/db/ingredients");
     const character = await getIngredient(characterId);
     if (!character || character.kind !== "character") {
@@ -110,9 +129,9 @@ export async function generateCostumeAction(seriesId: string, formData: FormData
     });
 
     revalidatePath(`/series/${seriesId}`);
-    return { ingredientId: ingredient.id, ref_tag: ingredient.ref_tag };
+    return { ingredientId: ingredient.id, ref_tag: ingredient.ref_tag, estimatedCredits: estimate };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to generate costume." };
+    return formatActionError(error, "Failed to generate costume.");
   }
 }
 
@@ -126,6 +145,10 @@ export async function createCharacterSheetAction(seriesId: string, formData: For
 
   try {
     await verifySeriesOwnership(seriesId);
+    const userId = await getActiveUserId();
+    const estimate = estimateSheetCredits();
+    await assertSufficientCredits(userId, estimate);
+
     const sheet = await createCharacterSheet({
       seriesId,
       characterId,
@@ -136,9 +159,9 @@ export async function createCharacterSheetAction(seriesId: string, formData: For
 
     await queueSheetGeneration(sheet.id, `/series/${seriesId}`);
     revalidatePath(`/series/${seriesId}`);
-    return { sheetId: sheet.id };
+    return { sheetId: sheet.id, estimatedCredits: estimate };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to create sheet." };
+    return formatActionError(error, "Failed to create sheet.");
   }
 }
 

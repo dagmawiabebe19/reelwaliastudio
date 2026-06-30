@@ -4,6 +4,9 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { generateLocationAction } from "@/app/(app)/series/[id]/production-actions";
 import { generateVoiceAction } from "@/app/(app)/series/[id]/voice-actions";
+import { CreditCostHint } from "@/components/credits/CreditCostHint";
+import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
+import { estimateImageCredits } from "@/lib/credits/pricing";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -21,6 +24,10 @@ export function LocationsSection({ seriesId, locations }: LocationsSectionProps)
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [insufficientCredits, setInsufficientCredits] = useState<{
+    needed: number;
+    available: number;
+  } | null>(null);
 
   usePollWhilePending(locations.some((l) => l.generationStatus === "pending"));
 
@@ -35,10 +42,16 @@ export function LocationsSection({ seriesId, locations }: LocationsSectionProps)
           onSubmit={(e) => {
             e.preventDefault();
             setError(null);
+            setInsufficientCredits(null);
             startTransition(async () => {
               const result = await generateLocationAction(seriesId, new FormData(e.currentTarget));
-              if (result.error) setError(result.error);
-              else router.refresh();
+              if ("insufficientCredits" in result && result.insufficientCredits) {
+                setInsufficientCredits(result.insufficientCredits);
+              } else if ("error" in result && result.error) {
+                setError(result.error);
+              } else {
+                router.refresh();
+              }
             });
           }}
         >
@@ -61,8 +74,15 @@ export function LocationsSection({ seriesId, locations }: LocationsSectionProps)
           >
             Generate from description
           </button>
+          <CreditCostHint cost={estimateImageCredits(1)} available={null} />
         </form>
       </div>
+      {insufficientCredits ? (
+        <InsufficientCreditsWall
+          needed={insufficientCredits.needed}
+          available={insufficientCredits.available}
+        />
+      ) : null}
       {error ? <p className="text-sm text-accent">{error}</p> : null}
       {locations.length === 0 ? (
         <p className="text-sm text-muted">No locations yet.</p>

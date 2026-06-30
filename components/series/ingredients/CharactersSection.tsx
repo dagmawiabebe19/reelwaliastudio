@@ -11,7 +11,10 @@ import {
   generateCharacterAction,
   generateCostumeAction,
 } from "@/app/(app)/series/[id]/production-actions";
+import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
+import { CreditCostHint } from "@/components/credits/CreditCostHint";
 import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
+import { estimateImageCredits, estimateSheetCredits } from "@/lib/credits/pricing";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
@@ -47,6 +50,10 @@ export function CharactersSection({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [insufficientCredits, setInsufficientCredits] = useState<{
+    needed: number;
+    available: number;
+  } | null>(null);
   const [expandedSheet, setExpandedSheet] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,12 +71,21 @@ export function CharactersSection({
 
   usePollWhilePending(hasPending);
 
-  function runAction(action: () => Promise<{ error?: string }>) {
+  function runAction(action: () => Promise<Record<string, unknown>>) {
     setError(null);
+    setInsufficientCredits(null);
     startTransition(async () => {
       const result = await action();
-      if (result.error) setError(result.error);
-      else router.refresh();
+      const insufficient = result.insufficientCredits as
+        | { needed: number; available: number }
+        | undefined;
+      if (insufficient) {
+        setInsufficientCredits(insufficient);
+      } else if (typeof result.error === "string") {
+        setError(result.error);
+      } else {
+        router.refresh();
+      }
     });
   }
 
@@ -105,8 +121,16 @@ export function CharactersSection({
           >
             Generate from description
           </button>
+          <CreditCostHint cost={estimateImageCredits(1)} available={null} />
         </form>
       </div>
+
+      {insufficientCredits ? (
+        <InsufficientCreditsWall
+          needed={insufficientCredits.needed}
+          available={insufficientCredits.available}
+        />
+      ) : null}
 
       {error ? (
         <p className="rounded-md border border-accent/40 bg-accent-muted/30 px-3 py-2 text-sm text-accent">
@@ -285,6 +309,7 @@ export function CharactersSection({
                         >
                           Generate sheet
                         </button>
+                        <CreditCostHint cost={estimateSheetCredits()} available={null} />
                       </form>
                       <p className="text-[10px] text-muted">
                         Hold ⌘/Ctrl to select multiple episodes. One sheet applies across all selected episodes.

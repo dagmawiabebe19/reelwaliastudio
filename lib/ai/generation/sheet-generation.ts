@@ -1,9 +1,18 @@
 import "server-only";
 
 import { after } from "next/server";
+import { getActiveUserId } from "@/lib/auth/getUser";
+import { isInsufficientCreditsError } from "@/lib/credits/errors";
+import { estimateSheetCredits } from "@/lib/credits/pricing";
+import { withCredits } from "@/lib/credits/meter";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
 import { runWithConcurrency } from "@/lib/ai/generation/concurrency";
-import { defaultAspectRatioForIngredients, sheetAnglePrompt, SHEET_ANGLE_LABELS, type SheetAngle } from "@/lib/production/prompts";
+import {
+  defaultAspectRatioForIngredients,
+  sheetAnglePrompt,
+  SHEET_ANGLE_LABELS,
+  type SheetAngle,
+} from "@/lib/production/prompts";
 import { createAsset } from "@/lib/db/assets";
 import {
   addSheetAngle,
@@ -21,10 +30,10 @@ const SHEET_ANGLES: SheetAngle[] = [
   "back",
 ];
 
-export async function executeSheetGeneration(
+async function runSheetGenerationCore(
   sheetId: string,
   onProgress?: GenerationProgressCallback,
-): Promise<{ status: "ready" | "failed"; error?: string }> {
+): Promise<{ status: "ready" }> {
   const sheet = await getCharacterSheet(sheetId);
   if (!sheet) throw new Error("Character sheet not found.");
 
@@ -42,70 +51,84 @@ export async function executeSheetGeneration(
   }
 
   if (!refUrls.length) {
-    const error = "Character headshot is required before generating a sheet.";
-    await updateCharacterSheetStatus(sheetId, "failed", error);
-    return { status: "failed", error };
+    throw new Error("Character headshot is required before generating a sheet.");
   }
 
   const total = SHEET_ANGLES.length;
   let completed = 0;
   const failures: Array<{ angle: SheetAngle; error: string }> = [];
 
-  try {
-    await runWithConcurrency(SHEET_ANGLES, 3, async (angle) => {
-      try {
-        const prompt = sheetAnglePrompt(angle, characterName, costumeNote);
-        const result = await runOpenAiImage({
-          prompt,
-          refImageUrls: refUrls,
-          aspectRatio: defaultAspectRatioForIngredients(),
-          count: 1,
-          resolution: "720p",
-          safety: "sfw",
-          sceneId: sheetId,
-        });
+  await runWithConcurrency(SHEET_ANGLES, 3, async (angle) => {
+    try {
+      const prompt = sheetAnglePrompt(angle, characterName, costumeNote);
+      const result = await runOpenAiImage({
+        prompt,
+        refImageUrls: refUrls,
+        aspectRatio: defaultAspectRatioForIngredients(),
+        count: 1,
+        resolution: "720p",
+        safety: "sfw",
+        sceneId: sheetId,
+      });
 
-        if (result.error || !result.persistedAssets?.[0]) {
-          throw new Error(result.error ?? `Failed to generate ${angle} angle.`);
-        }
-
-        const persisted = result.persistedAssets[0];
-        const asset = await createAsset({
-          bucket: persisted.bucket,
-          storagePath: persisted.storagePath,
-          mediaType: persisted.mediaType,
-          width: persisted.width ?? null,
-          height: persisted.height ?? null,
-          source: "generated",
-          model: "openai-image",
-          prompt,
-        });
-
-        await addSheetAngle({ sheetId, assetId: asset.id, angleLabel: angle });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : `Failed to generate ${angle} angle.`;
-        failures.push({ angle, error: message });
-      } finally {
-        completed += 1;
-        onProgress?.(`generating angle ${completed}/${total}…`, completed, total);
+      if (result.error || !result.persistedAssets?.[0]) {
+        throw new Error(result.error ?? `Failed to generate ${angle} angle.`);
       }
-    });
 
-    if (failures.length > 0) {
-      const failedLabels = failures
-        .map((failure) => SHEET_ANGLE_LABELS[failure.angle])
-        .join(", ");
-      const detail = failures
-        .map((failure) => `${SHEET_ANGLE_LABELS[failure.angle]}: ${failure.error}`)
-        .join(" ");
-      const error = `Failed angle(s): ${failedLabels}. ${detail}`;
-      await updateCharacterSheetStatus(sheetId, "failed", error);
-      return { status: "failed", error };
+      const persisted = result.persistedAssets[0];
+      const asset = await createAsset({
+        bucket: persisted.bucket,
+        storagePath: persisted.storagePath,
+        mediaType: persisted.mediaType,
+        width: persisted.width ?? null,
+        height: persisted.height ?? null,
+        source: "generated",
+        model: "openai-image",
+        prompt,
+      });
+
+      await addSheetAngle({ sheetId, assetId: asset.id, angleLabel: angle });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Failed to generate ${angle} angle.`;
+      failures.push({ angle, error: message });
+    } finally {
+      completed += 1;
+      onProgress?.(`generating angle ${completed}/${total}…`, completed, total);
+    }
+  });
+
+  if (failures.length > 0) {
+    const failedLabels = failures
+      .map((failure) => SHEET_ANGLE_LABELS[failure.angle])
+      .join(", ");
+    const detail = failures
+      .map((failure) => `${SHEET_ANGLE_LABELS[failure.angle]}: ${failure.error}`)
+      .join(" ");
+    throw new Error(`Failed angle(s): ${failedLabels}. ${detail}`);
+  }
+
+  await updateCharacterSheetStatus(sheetId, "ready", null);
+  return { status: "ready" };
+}
+
+export async function executeSheetGeneration(
+  sheetId: string,
+  onProgress?: GenerationProgressCallback,
+): Promise<{ status: "ready" | "failed"; error?: string }> {
+  const userId = await getActiveUserId();
+  const estimate = estimateSheetCredits();
+  const reference = `openai-image:sheet:${sheetId}`;
+
+  try {
+    return await withCredits(userId, estimate, reference, async () => {
+      const result = await runSheetGenerationCore(sheetId, onProgress);
+      return { result, actualCredits: estimate };
+    });
+  } catch (error) {
+    if (isInsufficientCreditsError(error)) {
+      throw error;
     }
 
-    await updateCharacterSheetStatus(sheetId, "ready", null);
-    return { status: "ready" };
-  } catch (error) {
     const message = error instanceof Error ? error.message : "Sheet generation failed.";
     await updateCharacterSheetStatus(sheetId, "failed", message);
     return { status: "failed", error: message };
@@ -116,7 +139,17 @@ export async function queueSheetGeneration(sheetId: string, revalidatePath?: str
   await updateCharacterSheetStatus(sheetId, "pending", null);
 
   after(async () => {
-    await executeSheetGeneration(sheetId);
+    try {
+      await executeSheetGeneration(sheetId);
+    } catch (error) {
+      if (isInsufficientCreditsError(error)) {
+        await updateCharacterSheetStatus(
+          sheetId,
+          "failed",
+          `Not enough credits (need ${error.needed}, have ${error.available}).`,
+        );
+      }
+    }
     if (revalidatePath) {
       const { revalidatePath: revalidate } = await import("next/cache");
       revalidate(revalidatePath);

@@ -2,6 +2,17 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
+import { getActiveUserId } from "@/lib/auth/getUser";
+import {
+  isInsufficientCreditsError,
+  toInsufficientCreditsPayload,
+} from "@/lib/credits/errors";
+import { assertSufficientCredits, withCredits } from "@/lib/credits/meter";
+import {
+  COPILOT_TURN_CREDITS,
+  estimateImageCredits,
+  estimateSheetCredits,
+} from "@/lib/credits/pricing";
 import {
   executeIngredientImageGeneration,
   getIngredientRefUrl,
@@ -47,7 +58,11 @@ export type CopilotStreamEvent =
   | { type: "tool_done"; toolId: string; name: string; result: Record<string, unknown>; summary: string }
   | { type: "copilot_output"; payload: CopilotOutputEvent }
   | { type: "turn_complete"; summary: string }
-  | { type: "error"; message: string }
+  | {
+      type: "error";
+      message: string;
+      insufficientCredits?: { needed: number; available: number };
+    }
   | { type: "done" };
 
 type ToolProgressEmitter = (detail: string, step?: number, total?: number) => void;
@@ -220,6 +235,19 @@ async function executeTool(
         let prompt = description;
         let refImageUrls: string[] | undefined;
 
+        try {
+          const userId = await getActiveUserId();
+          await assertSufficientCredits(userId, estimateImageCredits(1));
+        } catch (error) {
+          if (isInsufficientCreditsError(error)) {
+            return {
+              error: `Not enough credits (need ${error.needed}, have ${error.available}).`,
+              insufficientCredits: toInsufficientCreditsPayload(error),
+            };
+          }
+          throw error;
+        }
+
         if (kind === "character") {
           prompt = `${CHARACTER_HEADSHOT_PREFIX}${description}`;
           emitProgress("generating headshot…", 2, 2);
@@ -240,12 +268,24 @@ async function executeTool(
           return { ingredient_id: ingredient.id, ref_tag: ingredient.ref_tag, note: "Generate not supported for this kind." };
         }
 
-        const genResult = await executeIngredientImageGeneration({
-          ingredientId: ingredient.id,
-          prompt,
-          refImageUrls,
-          onProgress: (msg, step, total) => emitProgress(msg, step, total),
-        });
+        let genResult;
+        try {
+          genResult = await executeIngredientImageGeneration({
+            ingredientId: ingredient.id,
+            prompt,
+            refImageUrls,
+            onProgress: (msg, step, total) => emitProgress(msg, step, total),
+          });
+        } catch (error) {
+          if (isInsufficientCreditsError(error)) {
+            return {
+              error: `Not enough credits (need ${error.needed}, have ${error.available}).`,
+              insufficientCredits: toInsufficientCreditsPayload(error),
+              ingredient_id: ingredient.id,
+            };
+          }
+          throw error;
+        }
 
         emitOutput({
           type: "ingredient_updated",
@@ -310,6 +350,19 @@ async function executeTool(
 
       if (!name) return { error: "name is required." };
 
+      try {
+        const userId = await getActiveUserId();
+        await assertSufficientCredits(userId, estimateSheetCredits());
+      } catch (error) {
+        if (isInsufficientCreditsError(error)) {
+          return {
+            error: `Not enough credits (need ${error.needed}, have ${error.available}).`,
+            insufficientCredits: toInsufficientCreditsPayload(error),
+          };
+        }
+        throw error;
+      }
+
       emitProgress("creating character sheet…", 0, 5);
 
       const character = await getIngredient(characterId);
@@ -333,12 +386,24 @@ async function executeTool(
         status: "pending",
       });
 
-      const genResult = await executeSheetGeneration(sheet.id, (msg, step, total) => {
-        emitProgress(msg, step, total);
-        if (step && total) {
-          emitOutput({ type: "sheet_progress", sheetId: sheet.id, step, total });
+      let genResult;
+      try {
+        genResult = await executeSheetGeneration(sheet.id, (msg, step, total) => {
+          emitProgress(msg, step, total);
+          if (step && total) {
+            emitOutput({ type: "sheet_progress", sheetId: sheet.id, step, total });
+          }
+        });
+      } catch (error) {
+        if (isInsufficientCreditsError(error)) {
+          return {
+            error: `Not enough credits (need ${error.needed}, have ${error.available}).`,
+            insufficientCredits: toInsufficientCreditsPayload(error),
+            sheet_id: sheet.id,
+          };
         }
-      });
+        throw error;
+      }
 
       emitOutput({
         type: "sheet_updated",
@@ -413,160 +478,201 @@ export async function runCopilotStream(input: {
     input.context.seriesMemoryMarkdown = freshSeries.memory_markdown ?? "";
   }
 
-  await appendChatMessage({
-    sessionId: input.sessionId,
-    role: "user",
-    content: input.userMessage,
-  });
-
-  const history = await listChatMessages(input.sessionId);
-  const client = new Anthropic({ apiKey });
-  const model = resolveCopilotModel(input.modelId);
-
-  const messages: Anthropic.MessageParam[] = history
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
-
-  let assistantText = "";
-  const turnSummaries: string[] = [];
+  let userId: string;
+  try {
+    userId = await getActiveUserId();
+  } catch {
+    input.onEvent({ type: "error", message: "Not authenticated." });
+    input.onEvent({ type: "done" });
+    return;
+  }
 
   try {
-    let response = await client.messages.create({
-      model,
-      max_tokens: 4096,
-      system: buildSystemPrompt(input.context),
-      tools: COPILOT_TOOLS,
-      messages,
-    });
+    await assertSufficientCredits(userId, COPILOT_TURN_CREDITS);
+  } catch (error) {
+    if (isInsufficientCreditsError(error)) {
+      input.onEvent({
+        type: "error",
+        message: `Not enough credits. Need ${error.needed}, you have ${error.available}.`,
+        insufficientCredits: toInsufficientCreditsPayload(error),
+      });
+      input.onEvent({ type: "done" });
+      return;
+    }
+    throw error;
+  }
 
-    while (response.stop_reason === "tool_use") {
-      const toolBlocks = response.content.filter(
-        (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
-      );
-      const textBlocks = response.content.filter(
-        (block): block is Anthropic.TextBlock => block.type === "text",
-      );
-
-      for (const text of textBlocks) {
-        assistantText += text.text;
-        input.onEvent({ type: "text", content: text.text });
-      }
-
-      const toolResults: Anthropic.ToolResultBlockParam[] = [];
-
-      for (const tool of toolBlocks) {
-        const args = tool.input as Record<string, unknown>;
-        const toolId = tool.id;
-
-        input.onEvent({
-          type: "tool_start",
-          toolId,
-          name: tool.name,
-          args,
-        });
-
+  try {
+    await withCredits(
+      userId,
+      COPILOT_TURN_CREDITS,
+      `copilot:session:${input.sessionId}`,
+      async () => {
         await appendChatMessage({
           sessionId: input.sessionId,
-          role: "tool",
-          content: formatToolRunningLabel(tool.name),
-          toolName: tool.name,
-          toolArgs: args,
+          role: "user",
+          content: input.userMessage,
         });
 
-        const emitProgress: ToolProgressEmitter = (detail, step, total) => {
-          input.onEvent({
-            type: "tool_progress",
-            toolId,
-            name: tool.name,
-            message: formatToolRunningLabel(tool.name, detail),
-            step,
-            total,
-          });
-        };
+        const history = await listChatMessages(input.sessionId);
+        const client = new Anthropic({ apiKey });
+        const model = resolveCopilotModel(input.modelId);
 
-        const emitOutput: OutputEmitter = (payload) => {
-          if (payload.type === "ingredient_created" || payload.type === "sheet_created") {
-            payload.toolId = toolId;
+        const messages: Anthropic.MessageParam[] = history
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          }));
+
+        let assistantText = "";
+        const turnSummaries: string[] = [];
+
+        let response = await client.messages.create({
+          model,
+          max_tokens: 4096,
+          system: buildSystemPrompt(input.context),
+          tools: COPILOT_TOOLS,
+          messages,
+        });
+
+        while (response.stop_reason === "tool_use") {
+          const toolBlocks = response.content.filter(
+            (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
+          );
+          const textBlocks = response.content.filter(
+            (block): block is Anthropic.TextBlock => block.type === "text",
+          );
+
+          for (const text of textBlocks) {
+            assistantText += text.text;
+            input.onEvent({ type: "text", content: text.text });
           }
-          input.onEvent({ type: "copilot_output", payload });
-        };
 
-        const result = await executeTool(
-          tool.name,
-          args,
-          input.context,
-          emitProgress,
-          emitOutput,
-        );
-        const summary = formatToolDoneSummary(tool.name, result);
-        turnSummaries.push(summary);
+          const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
-        input.onEvent({
-          type: "tool_done",
-          toolId,
-          name: tool.name,
-          result,
-          summary,
-        });
+          for (const tool of toolBlocks) {
+            const args = tool.input as Record<string, unknown>;
+            const toolId = tool.id;
 
-        await appendChatMessage({
-          sessionId: input.sessionId,
-          role: "tool",
-          content: summary,
-          toolName: tool.name,
-          toolArgs: args,
-          toolResult: result,
-        });
+            input.onEvent({
+              type: "tool_start",
+              toolId,
+              name: tool.name,
+              args,
+            });
 
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: tool.id,
-          content: JSON.stringify(result),
-        });
-      }
+            await appendChatMessage({
+              sessionId: input.sessionId,
+              role: "tool",
+              content: formatToolRunningLabel(tool.name),
+              toolName: tool.name,
+              toolArgs: args,
+            });
 
-      response = await client.messages.create({
-        model,
-        max_tokens: 4096,
-        system: buildSystemPrompt(input.context),
-        tools: COPILOT_TOOLS,
-        messages: [
-          ...messages,
-          { role: "assistant", content: response.content },
-          { role: "user", content: toolResults },
-        ],
-      });
-    }
+            const emitProgress: ToolProgressEmitter = (detail, step, total) => {
+              input.onEvent({
+                type: "tool_progress",
+                toolId,
+                name: tool.name,
+                message: formatToolRunningLabel(tool.name, detail),
+                step,
+                total,
+              });
+            };
 
-    for (const block of response.content) {
-      if (block.type === "text") {
-        assistantText += block.text;
-        input.onEvent({ type: "text", content: block.text });
-      }
-    }
+            const emitOutput: OutputEmitter = (payload) => {
+              if (payload.type === "ingredient_created" || payload.type === "sheet_created") {
+                payload.toolId = toolId;
+              }
+              input.onEvent({ type: "copilot_output", payload });
+            };
 
-    if (assistantText.trim()) {
-      await appendChatMessage({
-        sessionId: input.sessionId,
-        role: "assistant",
-        content: assistantText.trim(),
-      });
-    }
+            const result = await executeTool(
+              tool.name,
+              args,
+              input.context,
+              emitProgress,
+              emitOutput,
+            );
+            const summary = formatToolDoneSummary(tool.name, result);
+            turnSummaries.push(summary);
 
-    if (turnSummaries.length) {
-      const turnSummary = turnSummaries.join(" · ");
-      input.onEvent({ type: "turn_complete", summary: turnSummary });
-    }
+            input.onEvent({
+              type: "tool_done",
+              toolId,
+              name: tool.name,
+              result,
+              summary,
+            });
+
+            await appendChatMessage({
+              sessionId: input.sessionId,
+              role: "tool",
+              content: summary,
+              toolName: tool.name,
+              toolArgs: args,
+              toolResult: result,
+            });
+
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: tool.id,
+              content: JSON.stringify(result),
+            });
+          }
+
+          response = await client.messages.create({
+            model,
+            max_tokens: 4096,
+            system: buildSystemPrompt(input.context),
+            tools: COPILOT_TOOLS,
+            messages: [
+              ...messages,
+              { role: "assistant", content: response.content },
+              { role: "user", content: toolResults },
+            ],
+          });
+        }
+
+        for (const block of response.content) {
+          if (block.type === "text") {
+            assistantText += block.text;
+            input.onEvent({ type: "text", content: block.text });
+          }
+        }
+
+        if (assistantText.trim()) {
+          await appendChatMessage({
+            sessionId: input.sessionId,
+            role: "assistant",
+            content: assistantText.trim(),
+          });
+        }
+
+        if (turnSummaries.length) {
+          const turnSummary = turnSummaries.join(" · ");
+          input.onEvent({ type: "turn_complete", summary: turnSummary });
+        }
+
+        return { result: true, actualCredits: COPILOT_TURN_CREDITS };
+      },
+    );
 
     input.onEvent({ type: "done" });
   } catch (error) {
-    input.onEvent({
-      type: "error",
-      message: error instanceof Error ? error.message : "Co-pilot request failed.",
-    });
+    if (isInsufficientCreditsError(error)) {
+      input.onEvent({
+        type: "error",
+        message: `Not enough credits. Need ${error.needed}, you have ${error.available}.`,
+        insufficientCredits: toInsufficientCreditsPayload(error),
+      });
+    } else {
+      input.onEvent({
+        type: "error",
+        message: error instanceof Error ? error.message : "Co-pilot request failed.",
+      });
+    }
     input.onEvent({ type: "done" });
   }
 }

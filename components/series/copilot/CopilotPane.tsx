@@ -297,6 +297,7 @@ export function CopilotPane({
                 content: `✓ Turn complete — ${event.summary}`,
               },
             ]);
+            router.refresh();
           }
 
           if (event.type === "error" && event.message) {
@@ -304,6 +305,13 @@ export function CopilotPane({
               ...prev,
               { id: `err-${Date.now()}`, role: "assistant", content: event.message! },
             ]);
+            if ("insufficientCredits" in event && event.insufficientCredits) {
+              router.refresh();
+            }
+          }
+
+          if (event.type === "done") {
+            router.refresh();
           }
         }
       }

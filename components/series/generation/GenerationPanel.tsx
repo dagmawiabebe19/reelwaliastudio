@@ -4,7 +4,11 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { generateTakesAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
+import { getMyCreditBalanceAction } from "@/app/(app)/credits/balance-action";
 import { Button } from "@/components/ui/Button";
+import { CreditCostHint } from "@/components/credits/CreditCostHint";
+import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
+import { estimateVideoCredits } from "@/lib/credits/pricing";
 import {
   SEEDANCE_AUDIO_MODE_OPTIONS,
   SEEDANCE_DURATION_OPTIONS,
@@ -82,6 +86,21 @@ export function GenerationPanel({
       inferDefaultShotIntent(scenePrompt ?? ""),
   );
   const [startedMessage, setStartedMessage] = useState<string | null>(null);
+  const [availableCredits, setAvailableCredits] = useState<number | null>(null);
+  const [insufficientCredits, setInsufficientCredits] = useState<{
+    needed: number;
+    available: number;
+  } | null>(null);
+
+  const estimatedCost = useMemo(
+    () =>
+      estimateVideoCredits({
+        tier: seedanceTier as "standard" | "fast",
+        resolution,
+        durationSeconds: duration,
+      }),
+    [seedanceTier, resolution, duration],
+  );
 
   const seedanceRefLabels = useMemo(
     () => seedanceReferenceLabels(resolvedReferences),
@@ -96,11 +115,20 @@ export function GenerationPanel({
     );
   }, [sceneId, initialShotIntent, scenePrompt]);
 
+  useEffect(() => {
+    void getMyCreditBalanceAction().then((result) => {
+      if (result.balance) {
+        setAvailableCredits(result.balance.available);
+      }
+    });
+  }, []);
+
   function handleGenerate() {
     if (!canGenerate) return;
 
     startTransition(async () => {
       setStartedMessage(null);
+      setInsufficientCredits(null);
       const result = await generateTakesAction({
         sceneId,
         seriesId,
@@ -113,11 +141,19 @@ export function GenerationPanel({
       });
 
       if ("error" in result && result.error) {
-        alert(result.error);
+        if (result.insufficientCredits) {
+          setInsufficientCredits(result.insufficientCredits);
+        } else {
+          alert(result.error);
+        }
       } else {
         setStartedMessage(
           `Generating video from ${seedanceRefLabels.length} reference${seedanceRefLabels.length === 1 ? "" : "s"}… may take several minutes`,
         );
+        const balance = await getMyCreditBalanceAction();
+        if (balance.balance) {
+          setAvailableCredits(balance.balance.available);
+        }
         router.refresh();
       }
     });
@@ -246,6 +282,19 @@ export function GenerationPanel({
           </select>
         </div>
       </div>
+
+      <CreditCostHint
+        cost={estimatedCost}
+        available={availableCredits}
+        label={`This ${duration}s ${resolution} shot`}
+      />
+
+      {insufficientCredits ? (
+        <InsufficientCreditsWall
+          needed={insufficientCredits.needed}
+          available={insufficientCredits.available}
+        />
+      ) : null}
 
       <Button
         type="button"

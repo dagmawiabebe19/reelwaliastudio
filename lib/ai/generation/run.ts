@@ -1,5 +1,9 @@
 import "server-only";
 
+import { getActiveUserId } from "@/lib/auth/getUser";
+import { isInsufficientCreditsError } from "@/lib/credits/errors";
+import { estimateVideoCredits } from "@/lib/credits/pricing";
+import { withCredits } from "@/lib/credits/meter";
 import { formatGenerationError, logGenerationError } from "@/lib/ai/generation/errors";
 import { orientationToAspectRatio } from "@/lib/ai/orientation";
 import { runVideoModel } from "@/lib/ai/router";
@@ -100,158 +104,175 @@ export async function createPendingTakes(params: GenerateTakeParams): Promise<st
   return [take.id];
 }
 
+async function runVideoGenerationCore(
+  params: GenerateTakeParams,
+  takeIds: string[],
+  onProgress?: GenerationProgressCallback,
+): Promise<{ videoDurationSeconds: number }> {
+  const scene = await getScene(params.sceneId);
+  if (!scene) throw new Error("Scene not found.");
+
+  const series = await getSeries(params.seriesId);
+  if (!series) throw new Error("Series not found.");
+
+  const model = getModelById(params.modelId || SEGMENT_VIDEO_MODEL_ID);
+  if (!model) throw new Error("Unknown model.");
+
+  onProgress?.("resolving references…", 0, takeIds.length);
+
+  const aspectRatio = orientationToAspectRatio(
+    effectiveOrientation(scene.orientation, series.default_orientation),
+  );
+  const scenePrompt = scene.prompt?.trim() || scene.title;
+  const prompt = composeVideoPrompt({
+    scenePrompt,
+    shotIntent: scene.shot_intent,
+  });
+
+  await resolveSceneReferences({
+    sceneId: params.sceneId,
+    seriesId: params.seriesId,
+    episodeId: params.episodeId,
+    autoBind: true,
+  });
+
+  const seedanceAudioMode = params.seedanceAudioMode ?? "off";
+  const durationSeconds = params.durationSeconds ?? 6;
+
+  const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
+  if (!seedanceCheck.ok) {
+    throw new Error(seedanceCheck.error);
+  }
+
+  onProgress?.("generating video…", 0, takeIds.length);
+
+  let result;
+  try {
+    result = await runVideoModel(params.modelId || SEGMENT_VIDEO_MODEL_ID, {
+      prompt,
+      referenceImages: seedanceCheck.references,
+      durationSeconds,
+      aspectRatio,
+      resolution: params.resolution,
+      sceneId: params.sceneId,
+      seedanceTier: params.seedanceTier,
+      seedanceAudioMode,
+    });
+  } catch (error) {
+    const message = formatGenerationError(error, `${model.label}: generation request failed.`);
+    logGenerationError("provider", error, {
+      modelId: params.modelId,
+      sceneId: params.sceneId,
+      takeIds,
+    });
+    throw new Error(message);
+  }
+
+  if (result.error || (result.assetUrls.length === 0 && !result.persistedAssets?.length)) {
+    const message = formatGenerationError(result.error, "Generation returned no assets.");
+    logGenerationError("provider-result", message, {
+      modelId: params.modelId,
+      sceneId: params.sceneId,
+      takeIds,
+      configured: result.configured,
+    });
+    throw new Error(message);
+  }
+
+  const takeDurationSeconds = result.videoDurationSeconds ?? durationSeconds;
+
+  for (let i = 0; i < takeIds.length; i++) {
+    const takeId = takeIds[i];
+    onProgress?.("saving video…", i + 1, takeIds.length);
+    const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
+    const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
+    const takeDurationMs = takeDurationSeconds * 1000;
+    const takeHasAudio = seedanceGenerateAudio(seedanceAudioMode);
+
+    if (persisted) {
+      const asset = await createAsset({
+        bucket: persisted.bucket,
+        storagePath: persisted.storagePath,
+        mediaType: persisted.mediaType,
+        width: persisted.width ?? null,
+        height: persisted.height ?? null,
+        durationMs: takeDurationMs,
+        source: "generated",
+        model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
+        prompt,
+      });
+
+      await markTakeReady(takeId, asset.id, {
+        duration_seconds: takeDurationSeconds,
+        has_audio: takeHasAudio,
+      });
+      continue;
+    }
+
+    if (!remoteUrl) {
+      throw new Error("No asset URL returned for this take.");
+    }
+
+    const stored = await persistRemoteAsset({
+      sceneId: params.sceneId,
+      remoteUrl,
+      model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
+      prompt,
+    });
+
+    const asset = await createAsset({
+      bucket: stored.bucket,
+      storagePath: stored.storagePath,
+      mediaType: stored.mediaType,
+      durationMs: takeDurationMs,
+      source: "generated",
+      model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
+      prompt,
+    });
+
+    await markTakeReady(takeId, asset.id, {
+      duration_seconds: takeDurationSeconds,
+      has_audio: takeHasAudio,
+    });
+  }
+
+  return { videoDurationSeconds: takeDurationSeconds };
+}
+
 export async function executeGenerationJob(
   params: GenerateTakeParams,
   takeIds: string[],
   onProgress?: GenerationProgressCallback,
 ): Promise<GenerationJobOutcome> {
+  const userId = await getActiveUserId();
+  const seedanceTier = params.seedanceTier ?? "fast";
+  const durationSeconds = params.durationSeconds ?? 6;
+  const estimate = estimateVideoCredits({
+    tier: seedanceTier,
+    resolution: params.resolution,
+    durationSeconds,
+  });
+  const reference = `seedance:take:${takeIds[0]}`;
+
   try {
-    const scene = await getScene(params.sceneId);
-    if (!scene) throw new Error("Scene not found.");
-
-    const series = await getSeries(params.seriesId);
-    if (!series) throw new Error("Series not found.");
-
-    const model = getModelById(params.modelId || SEGMENT_VIDEO_MODEL_ID);
-    if (!model) throw new Error("Unknown model.");
-
-    onProgress?.("resolving references…", 0, takeIds.length);
-
-    const aspectRatio = orientationToAspectRatio(
-      effectiveOrientation(scene.orientation, series.default_orientation),
-    );
-    const scenePrompt = scene.prompt?.trim() || scene.title;
-    const prompt = composeVideoPrompt({
-      scenePrompt,
-      shotIntent: scene.shot_intent,
-    });
-
-    await resolveSceneReferences({
-      sceneId: params.sceneId,
-      seriesId: params.seriesId,
-      episodeId: params.episodeId,
-      autoBind: true,
-    });
-
-    const seedanceAudioMode = params.seedanceAudioMode ?? "off";
-    const durationSeconds = params.durationSeconds ?? 6;
-    const durationMs = durationSeconds * 1000;
-
-    const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
-    if (!seedanceCheck.ok) {
-      await Promise.all(takeIds.map((id) => markTakeFailed(id, seedanceCheck.error)));
-      return buildOutcome(takeIds);
-    }
-
-    onProgress?.("generating video…", 0, takeIds.length);
-
-    let result;
-    try {
-      result = await runVideoModel(params.modelId || SEGMENT_VIDEO_MODEL_ID, {
-        prompt,
-        referenceImages: seedanceCheck.references,
-        durationSeconds,
-        aspectRatio,
+    return await withCredits(userId, estimate, reference, async () => {
+      const { videoDurationSeconds } = await runVideoGenerationCore(params, takeIds, onProgress);
+      const actualCredits = estimateVideoCredits({
+        tier: seedanceTier,
         resolution: params.resolution,
-        sceneId: params.sceneId,
-        seedanceTier: params.seedanceTier,
-        seedanceAudioMode,
+        durationSeconds: videoDurationSeconds,
       });
-    } catch (error) {
-      const message = formatGenerationError(error, `${model.label}: generation request failed.`);
-      logGenerationError("provider", error, {
-        modelId: params.modelId,
-        sceneId: params.sceneId,
-        takeIds,
-      });
-      await Promise.all(takeIds.map((id) => markTakeFailed(id, message)));
-      return buildOutcome(takeIds);
-    }
-
-    if (result.error || (result.assetUrls.length === 0 && !result.persistedAssets?.length)) {
-      const message = formatGenerationError(result.error, "Generation returned no assets.");
-      logGenerationError("provider-result", message, {
-        modelId: params.modelId,
-        sceneId: params.sceneId,
-        takeIds,
-        configured: result.configured,
-      });
-      await Promise.all(takeIds.map((id) => markTakeFailed(id, message)));
-      return buildOutcome(takeIds);
-    }
-
-    for (let i = 0; i < takeIds.length; i++) {
-      const takeId = takeIds[i];
-      onProgress?.("saving video…", i + 1, takeIds.length);
-      const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
-      const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
-      const takeDurationSeconds = result.videoDurationSeconds ?? durationSeconds;
-      const takeDurationMs =
-        takeDurationSeconds != null ? takeDurationSeconds * 1000 : durationMs;
-      const takeHasAudio = seedanceGenerateAudio(seedanceAudioMode);
-
-      try {
-        if (persisted) {
-          const asset = await createAsset({
-            bucket: persisted.bucket,
-            storagePath: persisted.storagePath,
-            mediaType: persisted.mediaType,
-            width: persisted.width ?? null,
-            height: persisted.height ?? null,
-            durationMs: takeDurationMs,
-            source: "generated",
-            model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
-            prompt,
-          });
-
-          await markTakeReady(takeId, asset.id, {
-            duration_seconds: takeDurationSeconds,
-            has_audio: takeHasAudio,
-          });
-          continue;
-        }
-
-        if (!remoteUrl) {
-          const message = "No asset URL returned for this take.";
-          logGenerationError("persist", message, { takeId, modelId: params.modelId, sceneId: params.sceneId });
-          await markTakeFailed(takeId, message);
-          continue;
-        }
-
-        const stored = await persistRemoteAsset({
-          sceneId: params.sceneId,
-          remoteUrl,
-          model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
-          prompt,
-        });
-
-        const asset = await createAsset({
-          bucket: stored.bucket,
-          storagePath: stored.storagePath,
-          mediaType: stored.mediaType,
-          durationMs: takeDurationMs,
-          source: "generated",
-          model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
-          prompt,
-        });
-
-        await markTakeReady(takeId, asset.id, {
-          duration_seconds: takeDurationSeconds,
-          has_audio: takeHasAudio,
-        });
-      } catch (error) {
-        const message = formatGenerationError(error, "Failed to persist generated asset.");
-        logGenerationError("persist", error, {
-          takeId,
-          modelId: params.modelId,
-          sceneId: params.sceneId,
-        });
-        await markTakeFailed(takeId, message);
+      const jobOutcome = await buildOutcome(takeIds);
+      if (jobOutcome.ready === 0) {
+        throw new Error("Video generation did not produce a usable take.");
       }
+      return { result: jobOutcome, actualCredits };
+    });
+  } catch (error) {
+    if (isInsufficientCreditsError(error)) {
+      throw error;
     }
 
-    return buildOutcome(takeIds);
-  } catch (error) {
     const message = formatGenerationError(error, "Generation job failed.");
     logGenerationError("job", error, {
       takeIds,
