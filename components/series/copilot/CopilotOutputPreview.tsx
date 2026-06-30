@@ -2,18 +2,18 @@
 
 import { useCallback, useEffect } from "react";
 import { pollCopilotOutputAction } from "@/app/(app)/series/[id]/copilot-output-actions";
+import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { SHEET_ANGLE_LABELS } from "@/lib/production/prompts";
+import {
+  buildSheetLightboxGallery,
+  sheetGalleryIndex,
+  SHEET_GALLERY_ANGLES,
+} from "@/lib/ui/lightbox-gallery";
 import type { CopilotOutputItem } from "@/lib/copilot/output";
 
-const SHEET_ANGLES = [
-  "front",
-  "left_profile",
-  "right_profile",
-  "three_quarter",
-  "back",
-] as const;
+const SHEET_ANGLES = SHEET_GALLERY_ANGLES;
 
 interface CopilotOutputPreviewProps {
   seriesId: string;
@@ -40,28 +40,35 @@ function kindLabel(kind: string): string {
 function IngredientOutputCard({
   item,
   onOpen,
+  onOpenGallery,
 }: {
   item: Extract<CopilotOutputItem, { type: "ingredient" }>;
   onOpen: () => void;
+  onOpenGallery: ReturnType<typeof useLightbox>["openGallery"];
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-full rounded-lg border border-border bg-surface-elevated p-3 text-left transition-colors hover:border-accent/50"
-    >
+    <div className="w-full rounded-lg border border-border bg-surface-elevated p-3">
       <div className="flex gap-3">
         <div className="aspect-[3/4] w-20 shrink-0 overflow-hidden rounded-md bg-background">
           {item.assetUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={item.assetUrl} alt={item.name} className="h-full w-full object-cover" />
+            <LightboxImageButton
+              src={item.assetUrl}
+              alt={item.name}
+              caption={item.name}
+              onOpenGallery={onOpenGallery}
+              className="h-full w-full"
+            />
           ) : (
             <div className="flex h-full items-center justify-center px-1 text-center text-[10px] text-muted">
               {item.status === "pending" ? "Generating…" : "No preview"}
             </div>
           )}
         </div>
-        <div className="min-w-0 flex-1 space-y-1">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 space-y-1 text-left transition-colors hover:text-accent"
+        >
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-background px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted">
               {kindLabel(item.ingredientKind)}
@@ -75,53 +82,61 @@ function IngredientOutputCard({
             showReady={item.status === "ready"}
           />
           <p className="text-[10px] text-muted">Click to open in Ingredients</p>
-        </div>
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
 
 function SheetOutputCard({
   item,
   onOpen,
+  onOpenGallery,
 }: {
   item: Extract<CopilotOutputItem, { type: "sheet" }>;
   onOpen: () => void;
+  onOpenGallery: ReturnType<typeof useLightbox>["openGallery"];
 }) {
   const filled = SHEET_ANGLES.filter((a) => item.angleUrls[a]).length;
+  const gallery = buildSheetLightboxGallery(item.angleUrls);
   const progressLabel =
     item.status === "pending"
       ? `Angle ${Math.max(filled, item.angleProgress)}/${item.angleTotal}`
       : `${filled}/${SHEET_ANGLES.length} angles`;
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-full rounded-lg border border-border bg-surface-elevated p-3 text-left transition-colors hover:border-accent/50"
-    >
+    <div className="w-full rounded-lg border border-border bg-surface-elevated p-3">
       <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="rounded bg-background px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted">
-            Character sheet
-          </span>
-          <span className="text-[10px] text-amber-400">{progressLabel}</span>
-        </div>
-        <p className="font-medium text-foreground">{item.name}</p>
-        <p className="text-xs text-muted">
-          {item.characterName}
-          {item.costumeName ? ` · ${item.costumeName}` : ""}
-        </p>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="w-full space-y-2 text-left transition-colors hover:text-accent"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted">
+              Character sheet
+            </span>
+            <span className="text-[10px] text-amber-400">{progressLabel}</span>
+          </div>
+          <p className="font-medium text-foreground">{item.name}</p>
+          <p className="text-xs text-muted">
+            {item.characterName}
+            {item.costumeName ? ` · ${item.costumeName}` : ""}
+          </p>
+        </button>
         <div className="flex gap-1 overflow-x-auto">
           {SHEET_ANGLES.map((angle) => (
             <div key={angle} className="w-14 shrink-0">
               <div className="aspect-[3/4] overflow-hidden rounded bg-background">
                 {item.angleUrls[angle] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <LightboxImageButton
                     src={item.angleUrls[angle]!}
                     alt={SHEET_ANGLE_LABELS[angle]}
-                    className="h-full w-full object-cover"
+                    caption={SHEET_ANGLE_LABELS[angle]}
+                    gallery={gallery}
+                    galleryIndex={sheetGalleryIndex(item.angleUrls, angle)}
+                    onOpenGallery={onOpenGallery}
+                    className="h-full w-full"
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center text-[8px] text-muted">
@@ -140,9 +155,15 @@ function SheetOutputCard({
           error={item.generationError}
           showReady={item.status === "ready"}
         />
-        <p className="text-[10px] text-muted">Click to open in Ingredients</p>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-[10px] text-muted transition-colors hover:text-accent"
+        >
+          Click to open in Ingredients
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -152,6 +173,7 @@ export function CopilotOutputPreview({
   onOpenInLibrary,
   onItemsUpdate,
 }: CopilotOutputPreviewProps) {
+  const lightbox = useLightbox();
   const hasPending = items.some(
     (item) => item.status === "pending" || item.status === "draft",
   );
@@ -228,17 +250,20 @@ export function CopilotOutputPreview({
                 key={`ingredient-${item.id}`}
                 item={item}
                 onOpen={() => onOpenInLibrary(item)}
+                onOpenGallery={lightbox.openGallery}
               />
             ) : (
               <SheetOutputCard
                 key={`sheet-${item.id}`}
                 item={item}
                 onOpen={() => onOpenInLibrary(item)}
+                onOpenGallery={lightbox.openGallery}
               />
             ),
           )}
         </div>
       )}
+      <Lightbox state={lightbox.state} onClose={lightbox.close} />
     </div>
   );
 }

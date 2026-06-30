@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import type { ResolvedReference } from "@/lib/production/types";
 
 interface SceneReferencesPanelProps {
@@ -8,7 +9,15 @@ interface SceneReferencesPanelProps {
   boundSheetIds: string[];
 }
 
-function RefThumb({ url, label }: { url: string; label: string }) {
+function RefThumb({
+  url,
+  label,
+  onOpenGallery,
+}: {
+  url: string;
+  label: string;
+  onOpenGallery: ReturnType<typeof useLightbox>["openGallery"];
+}) {
   const [broken, setBroken] = useState(false);
 
   if (broken) {
@@ -23,13 +32,23 @@ function RefThumb({ url, label }: { url: string; label: string }) {
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <LightboxImageButton
       src={url}
-      alt=""
-      className="h-8 w-8 shrink-0 rounded-sm object-cover"
-      onError={() => setBroken(true)}
-    />
+      alt={label}
+      caption={label}
+      onOpenGallery={onOpenGallery}
+      className="h-8 w-8 shrink-0 rounded-sm"
+      imageClassName="h-8 w-8 rounded-sm object-cover"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={label}
+        className="h-8 w-8 rounded-sm object-cover"
+        onError={() => setBroken(true)}
+        draggable={false}
+      />
+    </LightboxImageButton>
   );
 }
 
@@ -48,6 +67,8 @@ export function SceneReferencesPanel({
   resolvedReferences,
   boundSheetIds,
 }: SceneReferencesPanelProps) {
+  const lightbox = useLightbox();
+
   if (!resolvedReferences.length && !boundSheetIds.length) {
     return (
       <p className="text-xs text-muted">
@@ -65,7 +86,7 @@ export function SceneReferencesPanel({
           return (
             <div key={`${ref.type}-${ref.id}`} className="studio-ref-chip">
               {thumbUrl ? (
-                <RefThumb url={thumbUrl} label={ref.label} />
+                <RefThumb url={thumbUrl} label={ref.label} onOpenGallery={lightbox.openGallery} />
               ) : (
                 <RefPlaceholder type={ref.type} label={ref.label} />
               )}
@@ -85,6 +106,7 @@ export function SceneReferencesPanel({
           generation.
         </p>
       ) : null}
+      <Lightbox state={lightbox.state} onClose={lightbox.close} />
     </div>
   );
 }

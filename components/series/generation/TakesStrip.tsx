@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   starTakeAction,
@@ -13,6 +13,7 @@ import {
 import { VideoTakePlayer } from "@/components/series/generation/VideoTakePlayer";
 import { Button } from "@/components/ui/Button";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
+import { Lightbox, LightboxImageButton, useLightbox, type LightboxImage } from "@/components/ui/Lightbox";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { Orientation } from "@/lib/db/types";
 import {
@@ -86,23 +87,57 @@ function ContactSheetThumb({
   active,
   orientation,
   onSelect,
+  imageGallery,
+  galleryIndex,
+  onOpenGallery,
 }: {
   take: TakeCardData;
   active: boolean;
   orientation: Orientation;
   onSelect: () => void;
+  imageGallery: LightboxImage[];
+  galleryIndex: number;
+  onOpenGallery: ReturnType<typeof useLightbox>["openGallery"];
 }) {
   const thumbWidth = orientation === "portrait" ? "w-[3.25rem]" : "w-[5rem]";
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
       className={`studio-contact-thumb ${thumbWidth} ${takeStatusRingClass(take.status, active)}`}
       aria-label={`Take ${take.take_number}`}
     >
-      <div className={`${orientationAspectClass(orientation)} w-full`}>
+      <div className={`${orientationAspectClass(orientation)} relative w-full`}>
         <TakeThumbMedia take={take} />
+        {take.media_type === "image" && take.assetUrl ? (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={`View take ${take.take_number} larger`}
+            className="absolute bottom-0.5 right-0.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-background/90 text-[10px] text-foreground opacity-0 ring-1 ring-border/60 transition-opacity hover:ring-accent/50 group-hover/strip:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenGallery(imageGallery, galleryIndex, e.currentTarget);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenGallery(imageGallery, galleryIndex, e.currentTarget);
+              }
+            }}
+          >
+            ⤢
+          </span>
+        ) : null}
       </div>
       {take.starred ? (
         <span className="absolute left-1 top-1 text-[10px] text-amber-400">★</span>
@@ -113,7 +148,7 @@ function ContactSheetThumb({
       <span className="absolute bottom-1 left-1 rounded bg-background/80 px-1 text-[9px] text-muted">
         {take.take_number}
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -131,6 +166,28 @@ export function TakesStrip({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [internalIndex, setInternalIndex] = useState(0);
+  const lightbox = useLightbox();
+
+  const imageTakeGallery = useMemo(
+    () =>
+      takes
+        .filter((take) => take.media_type === "image" && take.assetUrl)
+        .map((take) => ({
+          src: take.assetUrl!,
+          alt: `${sceneTitle} take ${take.take_number}`,
+          caption: `Take ${take.take_number}`,
+        })),
+    [sceneTitle, takes],
+  );
+
+  const imageTakeGalleryIndex = useMemo(() => {
+    const map = new Map(
+      takes
+        .filter((take) => take.media_type === "image" && take.assetUrl)
+        .map((take, index) => [take.id, index]),
+    );
+    return map;
+  }, [takes]);
 
   const activeIndex = controlledIndex ?? internalIndex;
   const setActiveIndex = onActiveIndexChange ?? setInternalIndex;
@@ -239,7 +296,7 @@ export function TakesStrip({
             </div>
           </div>
 
-          <div className="studio-contact-scroll">
+          <div className="studio-contact-scroll group/strip">
             {takes.map((take, index) => (
               <ContactSheetThumb
                 key={take.id}
@@ -247,6 +304,9 @@ export function TakesStrip({
                 active={activeIndex === index}
                 orientation={orientation}
                 onSelect={() => setActiveIndex(index)}
+                imageGallery={imageTakeGallery}
+                galleryIndex={imageTakeGalleryIndex.get(take.id) ?? 0}
+                onOpenGallery={lightbox.openGallery}
               />
             ))}
           </div>
@@ -328,11 +388,15 @@ export function TakesStrip({
                   hasAudio={Boolean(activeTake.has_audio)}
                 />
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <LightboxImageButton
                   src={activeTake.assetUrl}
                   alt={`${sceneTitle} take ${activeTake.take_number}`}
-                  className="h-full w-full object-contain"
+                  caption={`Take ${activeTake.take_number}`}
+                  gallery={imageTakeGallery}
+                  galleryIndex={imageTakeGalleryIndex.get(activeTake.id) ?? 0}
+                  onOpenGallery={lightbox.openGallery}
+                  className="h-full w-full"
+                  imageClassName="h-full w-full object-contain"
                 />
               )
             ) : (
@@ -354,6 +418,7 @@ export function TakesStrip({
           ) : null}
         </div>
       ) : null}
+      <Lightbox state={lightbox.state} onClose={lightbox.close} />
     </div>
   );
 }

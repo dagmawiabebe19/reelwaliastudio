@@ -14,6 +14,7 @@ import {
   getSceneDeletePreviewAction,
 } from "@/app/(app)/series/[id]/delete-actions";
 import { Button } from "@/components/ui/Button";
+import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { Episode, Orientation } from "@/lib/db/types";
 import {
@@ -56,6 +57,8 @@ function SegmentThumbnail({
   mediaType: "image" | "video" | null;
   title: string;
 }) {
+  const lightbox = useLightbox();
+
   if (!url) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-background px-2 text-center">
@@ -78,8 +81,16 @@ function SegmentThumbnail({
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt="" className="h-full w-full object-cover" />
+    <>
+      <LightboxImageButton
+        src={url}
+        alt={title}
+        caption={title}
+        onOpenGallery={lightbox.openGallery}
+        className="h-full w-full"
+      />
+      <Lightbox state={lightbox.state} onClose={lightbox.close} />
+    </>
   );
 }
 

@@ -16,11 +16,17 @@ import { CreditCostHint } from "@/components/credits/CreditCostHint";
 import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
 import { estimateImageCredits, estimateSheetCredits } from "@/lib/credits/pricing";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
+import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import { SHEET_ANGLE_LABELS } from "@/lib/production/prompts";
+import {
+  buildSheetLightboxGallery,
+  sheetGalleryIndex,
+  SHEET_GALLERY_ANGLES,
+} from "@/lib/ui/lightbox-gallery";
 import type { CharacterSheetCardData, EpisodeOption, IngredientCardData } from "@/lib/production/types";
 
 interface CharactersSectionProps {
@@ -55,6 +61,7 @@ export function CharactersSection({
     available: number;
   } | null>(null);
   const [expandedSheet, setExpandedSheet] = useState<string | null>(null);
+  const lightbox = useLightbox();
 
   useEffect(() => {
     if (highlightSheetId) setExpandedSheet(highlightSheetId);
@@ -155,11 +162,12 @@ export function CharactersSection({
                 <div className="grid gap-4 p-4 md:grid-cols-[10rem_1fr]">
                   <div className="aspect-[3/4] overflow-hidden rounded-md bg-background">
                     {character.assetUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <LightboxImageButton
                         src={character.assetUrl}
                         alt={character.name}
-                        className="h-full w-full object-cover"
+                        caption={character.name}
+                        onOpenGallery={lightbox.openGallery}
+                        className="h-full w-full"
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center text-xs text-muted">
@@ -235,11 +243,12 @@ export function CharactersSection({
                               </div>
                               <div className="aspect-[3/4] bg-background">
                                 {costume.assetUrl ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
+                                  <LightboxImageButton
                                     src={costume.assetUrl}
                                     alt={costume.name}
-                                    className="h-full w-full object-cover"
+                                    caption={costume.name}
+                                    onOpenGallery={lightbox.openGallery}
+                                    className="h-full w-full"
                                   />
                                 ) : (
                                   <div className="flex h-full items-center justify-center text-[10px] text-muted">
@@ -359,35 +368,33 @@ export function CharactersSection({
                               ) : null}
                               {expandedSheet === sheet.id || sheet.status === "ready" ? (
                                 <div className="mt-3 flex gap-1 overflow-x-auto">
-                                  {(
-                                    [
-                                      "front",
-                                      "left_profile",
-                                      "right_profile",
-                                      "three_quarter",
-                                      "back",
-                                    ] as const
-                                  ).map((angle) => (
-                                    <div key={angle} className="w-20 shrink-0">
-                                      <div className="aspect-[3/4] overflow-hidden rounded bg-surface">
-                                        {sheet.angleUrls[angle] ? (
-                                          // eslint-disable-next-line @next/next/no-img-element
-                                          <img
-                                            src={sheet.angleUrls[angle]!}
-                                            alt={SHEET_ANGLE_LABELS[angle]}
-                                            className="h-full w-full object-cover"
-                                          />
-                                        ) : (
-                                          <div className="flex h-full items-center justify-center text-[9px] text-muted">
-                                            {sheet.status === "pending" ? "…" : "—"}
-                                          </div>
-                                        )}
+                                  {SHEET_GALLERY_ANGLES.map((angle) => {
+                                    const gallery = buildSheetLightboxGallery(sheet.angleUrls);
+                                    return (
+                                      <div key={angle} className="w-20 shrink-0">
+                                        <div className="aspect-[3/4] overflow-hidden rounded bg-surface">
+                                          {sheet.angleUrls[angle] ? (
+                                            <LightboxImageButton
+                                              src={sheet.angleUrls[angle]!}
+                                              alt={SHEET_ANGLE_LABELS[angle]}
+                                              caption={SHEET_ANGLE_LABELS[angle]}
+                                              gallery={gallery}
+                                              galleryIndex={sheetGalleryIndex(sheet.angleUrls, angle)}
+                                              onOpenGallery={lightbox.openGallery}
+                                              className="h-full w-full"
+                                            />
+                                          ) : (
+                                            <div className="flex h-full items-center justify-center text-[9px] text-muted">
+                                              {sheet.status === "pending" ? "…" : "—"}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <p className="mt-0.5 text-center text-[9px] text-muted">
+                                          {SHEET_ANGLE_LABELS[angle]}
+                                        </p>
                                       </div>
-                                      <p className="mt-0.5 text-center text-[9px] text-muted">
-                                        {SHEET_ANGLE_LABELS[angle]}
-                                      </p>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               ) : null}
                             </div>
@@ -402,6 +409,7 @@ export function CharactersSection({
           })}
         </div>
       )}
+      <Lightbox state={lightbox.state} onClose={lightbox.close} />
     </section>
   );
 }

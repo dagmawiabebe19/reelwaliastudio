@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
+import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { MediaPlayer } from "@/components/ui/MediaPlayer";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { IngredientKind } from "@/lib/db/types";
@@ -32,6 +33,7 @@ interface IngredientCardProps {
 
 export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
   const isAudio = ingredient.mediaType === "audio" || ingredient.kind === "voice";
+  const lightbox = useLightbox();
 
   return (
     <article
@@ -47,8 +49,13 @@ export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
           ingredient.mediaType === "video" ? (
             <video src={ingredient.assetUrl} className="h-full w-full object-cover" controls />
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={ingredient.assetUrl} alt={ingredient.name} className="h-full w-full object-cover" />
+            <LightboxImageButton
+              src={ingredient.assetUrl}
+              alt={ingredient.name}
+              caption={ingredient.name}
+              onOpenGallery={lightbox.openGallery}
+              className="h-full w-full"
+            />
           )
         ) : (
           <div className="flex h-full items-center justify-center text-xs text-muted">No asset</div>
@@ -70,6 +77,7 @@ export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
           error={ingredient.generationError}
         />
       </div>
+      <Lightbox state={lightbox.state} onClose={lightbox.close} />
     </article>
   );
 }
