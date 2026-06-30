@@ -58,8 +58,9 @@ async function readOpenAiResponse(response: Response): Promise<OpenAiImageRespon
 export async function fetchReferenceImageBuffer(
   url: string,
   index: number,
+  signal?: AbortSignal,
 ): Promise<{ buffer: Buffer; filename: string; mimeType: string }> {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch reference image (${response.status}).`);
   }
@@ -78,6 +79,7 @@ export async function openAiGenerateImages(input: {
   prompt: string;
   size: OpenAiImageSize;
   count: number;
+  signal?: AbortSignal;
 }): Promise<OpenAiImageResponse> {
   const response = await fetch(`${OPENAI_API_BASE}/images/generations`, {
     method: "POST",
@@ -92,6 +94,7 @@ export async function openAiGenerateImages(input: {
       size: input.size,
       quality: "high",
     }),
+    signal: input.signal,
   });
 
   const body = await readOpenAiResponse(response);
@@ -106,9 +109,12 @@ export async function openAiEditImages(input: {
   size: OpenAiImageSize;
   count: number;
   referenceUrls: string[];
+  signal?: AbortSignal;
 }): Promise<OpenAiImageResponse> {
   const referenceImages = await Promise.all(
-    input.referenceUrls.map((url, index) => fetchReferenceImageBuffer(url, index)),
+    input.referenceUrls.map((url, index) =>
+      fetchReferenceImageBuffer(url, index, input.signal),
+    ),
   );
 
   const form = new FormData();
@@ -129,6 +135,7 @@ export async function openAiEditImages(input: {
     method: "POST",
     headers: { Authorization: `Bearer ${input.apiKey}` },
     body: form,
+    signal: input.signal,
   });
 
   const body = await readOpenAiResponse(response);

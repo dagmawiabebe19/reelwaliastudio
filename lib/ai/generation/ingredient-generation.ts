@@ -2,9 +2,10 @@ import "server-only";
 
 import { after } from "next/server";
 import { getActiveUserId } from "@/lib/auth/getUser";
+import { CopilotAbortError } from "@/lib/ai/copilot/abort";
 import { isInsufficientCreditsError } from "@/lib/credits/errors";
 import { estimateImageCredits } from "@/lib/credits/pricing";
-import { withCredits } from "@/lib/credits/meter";
+import { withCredits, withCreditsAbortable } from "@/lib/credits/meter";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
 import { defaultAspectRatioForIngredients } from "@/lib/production/prompts";
 import { createAsset } from "@/lib/db/assets";
@@ -16,6 +17,8 @@ async function runIngredientImageCore(input: {
   prompt: string;
   refImageUrls?: string[];
   onProgress?: GenerationProgressCallback;
+  abortSignal?: AbortSignal;
+  onBillableWorkStarted?: () => void;
 }): Promise<{ status: "ready" }> {
   input.onProgress?.("Rendering image…", 1, 1);
 
@@ -27,6 +30,8 @@ async function runIngredientImageCore(input: {
     resolution: "720p",
     safety: "sfw",
     sceneId: input.ingredientId,
+    abortSignal: input.abortSignal,
+    onBillableWorkStarted: input.onBillableWorkStarted,
   });
 
   if (result.error || !result.persistedAssets?.[0]) {
@@ -60,17 +65,41 @@ export async function executeIngredientImageGeneration(input: {
   prompt: string;
   refImageUrls?: string[];
   onProgress?: GenerationProgressCallback;
+  abortSignal?: AbortSignal;
+  onBillableWorkStarted?: () => void;
 }): Promise<{ status: "ready" | "failed"; error?: string }> {
   const userId = await getActiveUserId();
   const estimate = estimateImageCredits(1);
   const reference = `openai-image:ingredient:${input.ingredientId}`;
 
   try {
+    if (input.abortSignal) {
+      return await withCreditsAbortable(
+        userId,
+        estimate,
+        reference,
+        async (ctx) => {
+          const result = await runIngredientImageCore({
+            ...input,
+            onBillableWorkStarted: () => {
+              ctx.markBillableWorkStarted();
+              input.onBillableWorkStarted?.();
+            },
+          });
+          return { result, actualCredits: estimate };
+        },
+        { abortSignal: input.abortSignal },
+      );
+    }
+
     return await withCredits(userId, estimate, reference, async () => {
       const result = await runIngredientImageCore(input);
       return { result, actualCredits: estimate };
     });
   } catch (error) {
+    if (error instanceof CopilotAbortError) {
+      throw error;
+    }
     if (isInsufficientCreditsError(error)) {
       throw error;
     }

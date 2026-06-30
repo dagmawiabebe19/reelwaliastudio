@@ -117,9 +117,16 @@ export function CopilotPane({
 
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [abortNote, setAbortNote] = useState<string | null>(null);
   const [copilotModel, setCopilotModel] = useState<string>(DEFAULT_ANTHROPIC_MODEL);
   const [mentionOpen, setMentionOpen] = useState(false);
   const messageLogRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  function handleStop() {
+    abortRef.current?.abort();
+    setStreaming(false);
+  }
 
   useEffect(() => {
     const log = messageLogRef.current;
@@ -133,6 +140,8 @@ export function CopilotPane({
 
     setInput("");
     setStreaming(true);
+    setAbortNote(null);
+    abortRef.current = new AbortController();
     setMessages((prev) => [
       ...prev,
       { id: `local-${Date.now()}`, role: "user", content: text },
@@ -172,6 +181,7 @@ export function CopilotPane({
           modelId: copilotModel,
           context: resolvedContext,
         }),
+        signal: abortRef.current.signal,
       });
 
       if (!response.ok || !response.body) {
@@ -204,6 +214,7 @@ export function CopilotPane({
             result?: Record<string, unknown>;
             summary?: string;
             payload?: CopilotOutputEvent;
+            inFlightNote?: string;
           };
 
           if (event.type === "text" && event.content) {
@@ -300,6 +311,21 @@ export function CopilotPane({
             router.refresh();
           }
 
+          if (event.type === "aborted") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: `abort-${Date.now()}`,
+                role: "system",
+                content: event.message ?? "Stopped.",
+              },
+            ]);
+            if (event.inFlightNote) {
+              setAbortNote(event.inFlightNote);
+            }
+            router.refresh();
+          }
+
           if (event.type === "error" && event.message) {
             setMessages((prev) => [
               ...prev,
@@ -316,6 +342,9 @@ export function CopilotPane({
         }
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
       setMessages((prev) => [
         ...prev,
         {
@@ -325,6 +354,7 @@ export function CopilotPane({
         },
       ]);
     } finally {
+      abortRef.current = null;
       setStreaming(false);
     }
   }
@@ -426,17 +456,33 @@ export function CopilotPane({
             rows={3}
             placeholder="Plan the episode, revise a breakdown, or approve building segments…"
             className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm"
+            disabled={streaming}
           />
         </div>
 
-        <button
-          type="button"
-          onClick={() => void handleSend()}
-          disabled={streaming || !input.trim()}
-          className="w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {streaming ? "Working…" : "Send"}
-        </button>
+        {abortNote ? (
+          <p className="text-xs text-amber-400">{abortNote}</p>
+        ) : null}
+
+        <div className="flex gap-2">
+          {streaming ? (
+            <button
+              type="button"
+              onClick={handleStop}
+              className="flex-1 rounded-md border border-border bg-surface-elevated px-4 py-2 text-sm font-medium text-foreground"
+            >
+              Stop
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void handleSend()}
+            disabled={streaming || !input.trim()}
+            className={`rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${streaming ? "flex-1" : "w-full"}`}
+          >
+            {streaming ? "Working…" : "Send"}
+          </button>
+        </div>
       </div>
     </div>
   );

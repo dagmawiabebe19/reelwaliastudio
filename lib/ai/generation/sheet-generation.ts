@@ -2,9 +2,10 @@ import "server-only";
 
 import { after } from "next/server";
 import { getActiveUserId } from "@/lib/auth/getUser";
+import { CopilotAbortError, throwIfAborted } from "@/lib/ai/copilot/abort";
 import { isInsufficientCreditsError } from "@/lib/credits/errors";
 import { estimateSheetCredits } from "@/lib/credits/pricing";
-import { withCredits } from "@/lib/credits/meter";
+import { withCredits, withCreditsAbortable } from "@/lib/credits/meter";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
 import { runWithConcurrency } from "@/lib/ai/generation/concurrency";
 import {
@@ -33,6 +34,7 @@ const SHEET_ANGLES: SheetAngle[] = [
 async function runSheetGenerationCore(
   sheetId: string,
   onProgress?: GenerationProgressCallback,
+  options?: { abortSignal?: AbortSignal; onBillableWorkStarted?: () => void },
 ): Promise<{ status: "ready" }> {
   const sheet = await getCharacterSheet(sheetId);
   if (!sheet) throw new Error("Character sheet not found.");
@@ -60,6 +62,7 @@ async function runSheetGenerationCore(
 
   await runWithConcurrency(SHEET_ANGLES, 3, async (angle) => {
     try {
+      throwIfAborted(options?.abortSignal);
       const prompt = sheetAnglePrompt(angle, characterName, costumeNote);
       const result = await runOpenAiImage({
         prompt,
@@ -69,6 +72,8 @@ async function runSheetGenerationCore(
         resolution: "720p",
         safety: "sfw",
         sceneId: sheetId,
+        abortSignal: options?.abortSignal,
+        onBillableWorkStarted: options?.onBillableWorkStarted,
       });
 
       if (result.error || !result.persistedAssets?.[0]) {
@@ -114,17 +119,40 @@ async function runSheetGenerationCore(
 export async function executeSheetGeneration(
   sheetId: string,
   onProgress?: GenerationProgressCallback,
+  options?: { abortSignal?: AbortSignal; onBillableWorkStarted?: () => void },
 ): Promise<{ status: "ready" | "failed"; error?: string }> {
   const userId = await getActiveUserId();
   const estimate = estimateSheetCredits();
   const reference = `openai-image:sheet:${sheetId}`;
 
   try {
+    if (options?.abortSignal) {
+      return await withCreditsAbortable(
+        userId,
+        estimate,
+        reference,
+        async (ctx) => {
+          const result = await runSheetGenerationCore(sheetId, onProgress, {
+            abortSignal: options.abortSignal,
+            onBillableWorkStarted: () => {
+              ctx.markBillableWorkStarted();
+              options.onBillableWorkStarted?.();
+            },
+          });
+          return { result, actualCredits: estimate };
+        },
+        { abortSignal: options.abortSignal },
+      );
+    }
+
     return await withCredits(userId, estimate, reference, async () => {
       const result = await runSheetGenerationCore(sheetId, onProgress);
       return { result, actualCredits: estimate };
     });
   } catch (error) {
+    if (error instanceof CopilotAbortError) {
+      throw error;
+    }
     if (isInsufficientCreditsError(error)) {
       throw error;
     }

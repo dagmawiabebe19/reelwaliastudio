@@ -30,6 +30,7 @@ export async function POST(request: Request) {
         modelId: body.modelId,
         scopeType: body.scopeType,
         scopeId: body.scopeId,
+        abortSignal: request.signal,
         onEvent: (event) => send(event),
       });
 

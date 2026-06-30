@@ -3,11 +3,21 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { revalidatePath } from "next/cache";
 import { getActiveUserId } from "@/lib/auth/getUser";
+import { CopilotAbortError, isAbortError, throwIfAborted } from "@/lib/ai/copilot/abort";
+import { streamAnthropicTurn } from "@/lib/ai/copilot/stream-turn";
+import type { TurnBillingState } from "@/lib/ai/copilot/turn-billing";
+import { TurnBillingState as TurnBillingTracker } from "@/lib/ai/copilot/turn-billing";
+import { assertSufficientCredits } from "@/lib/credits/meter";
+import { settleCopilotTurnReservation } from "@/lib/credits/copilot-settle";
+import { reserveCredits, releaseReservation } from "@/lib/credits/mutations";
+import { getBalance } from "@/lib/credits/balance";
+import { isAdmin } from "@/lib/auth/isAdmin";
 import {
   isInsufficientCreditsError,
+  insufficientCreditsFromMessage,
+  InsufficientCreditsError,
   toInsufficientCreditsPayload,
 } from "@/lib/credits/errors";
-import { assertSufficientCredits, withCredits } from "@/lib/credits/meter";
 import {
   COPILOT_TURN_CREDITS,
   estimateImageCredits,
@@ -58,6 +68,7 @@ export type CopilotStreamEvent =
   | { type: "tool_done"; toolId: string; name: string; result: Record<string, unknown>; summary: string }
   | { type: "copilot_output"; payload: CopilotOutputEvent }
   | { type: "turn_complete"; summary: string }
+  | { type: "aborted"; message: string; inFlightNote?: string }
   | {
       type: "error";
       message: string;
@@ -95,13 +106,21 @@ async function resolveDraftStoryboardEpisodeId(
   return { episodeId };
 }
 
+type ToolExecutionOptions = {
+  abortSignal?: AbortSignal;
+  billing?: TurnBillingState;
+};
+
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
   context: CopilotContext,
   emitProgress: ToolProgressEmitter,
   emitOutput: OutputEmitter,
+  options?: ToolExecutionOptions,
 ): Promise<Record<string, unknown>> {
+  throwIfAborted(options?.abortSignal);
+
   switch (name) {
     case "draft_storyboard": {
       const episodeResolution = await resolveDraftStoryboardEpisodeId(context, args);
@@ -275,8 +294,14 @@ async function executeTool(
             prompt,
             refImageUrls,
             onProgress: (msg, step, total) => emitProgress(msg, step, total),
+            abortSignal: options?.abortSignal,
+            onBillableWorkStarted: () =>
+              options?.billing?.markPaidToolStarted("image", ingredient.id),
           });
         } catch (error) {
+          if (error instanceof CopilotAbortError) {
+            throw error;
+          }
           if (isInsufficientCreditsError(error)) {
             return {
               error: `Not enough credits (need ${error.needed}, have ${error.available}).`,
@@ -388,13 +413,24 @@ async function executeTool(
 
       let genResult;
       try {
-        genResult = await executeSheetGeneration(sheet.id, (msg, step, total) => {
-          emitProgress(msg, step, total);
-          if (step && total) {
-            emitOutput({ type: "sheet_progress", sheetId: sheet.id, step, total });
-          }
-        });
+        genResult = await executeSheetGeneration(
+          sheet.id,
+          (msg, step, total) => {
+            emitProgress(msg, step, total);
+            if (step && total) {
+              emitOutput({ type: "sheet_progress", sheetId: sheet.id, step, total });
+            }
+          },
+          {
+            abortSignal: options?.abortSignal,
+            onBillableWorkStarted: () =>
+              options?.billing?.markPaidToolStarted("sheet", sheet.id),
+          },
+        );
       } catch (error) {
+        if (error instanceof CopilotAbortError) {
+          throw error;
+        }
         if (isInsufficientCreditsError(error)) {
           return {
             error: `Not enough credits (need ${error.needed}, have ${error.available}).`,
@@ -457,6 +493,7 @@ export async function runCopilotStream(input: {
   modelId?: string;
   scopeType?: "series" | "episode" | "scene";
   scopeId?: string;
+  abortSignal?: AbortSignal;
   onEvent: (event: CopilotStreamEvent) => void;
 }): Promise<void> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
@@ -502,165 +539,232 @@ export async function runCopilotStream(input: {
     throw error;
   }
 
-  try {
-    await withCredits(
-      userId,
+  let reservationId: string | null = null;
+  let turnSettled = false;
+  const billing = new TurnBillingTracker();
+
+  const settleTurn = async (aborted: boolean) => {
+    if (!reservationId || turnSettled) return;
+    turnSettled = true;
+    await settleCopilotTurnReservation(
+      reservationId,
       COPILOT_TURN_CREDITS,
-      `copilot:session:${input.sessionId}`,
-      async () => {
+      billing,
+      aborted,
+    );
+  };
+
+  try {
+    try {
+      reservationId = await reserveCredits(
+        userId,
+        COPILOT_TURN_CREDITS,
+        `copilot:session:${input.sessionId}`,
+      );
+    } catch (error) {
+      const admin = await isAdmin(userId);
+      if (admin) {
+        throw error instanceof Error
+          ? new Error(
+              `Admin credit reserve failed unexpectedly (apply migration 013): ${error.message}`,
+            )
+          : error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "insufficient_credits") {
+        const { available } = await getBalance(userId);
+        throw new InsufficientCreditsError(COPILOT_TURN_CREDITS, available);
+      }
+      const parsed = insufficientCreditsFromMessage(message, COPILOT_TURN_CREDITS, 0);
+      if (parsed) {
+        const { available } = await getBalance(userId);
+        throw new InsufficientCreditsError(COPILOT_TURN_CREDITS, available);
+      }
+      throw error;
+    }
+
+    throwIfAborted(input.abortSignal);
+
+    await appendChatMessage({
+      sessionId: input.sessionId,
+      role: "user",
+      content: input.userMessage,
+    });
+
+    const history = await listChatMessages(input.sessionId);
+    const client = new Anthropic({ apiKey });
+    const model = resolveCopilotModel(input.modelId);
+    const system = buildSystemPrompt(input.context);
+
+    const messages: Anthropic.MessageParam[] = history
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
+
+    let assistantText = "";
+    const turnSummaries: string[] = [];
+
+    let response = await streamAnthropicTurn({
+      client,
+      model,
+      system,
+      tools: COPILOT_TOOLS,
+      messages,
+      abortSignal: input.abortSignal,
+      billing,
+      onText: (text) => {
+        assistantText += text;
+        input.onEvent({ type: "text", content: text });
+      },
+    });
+
+    while (response.stop_reason === "tool_use") {
+      throwIfAborted(input.abortSignal);
+
+      const toolBlocks = response.content.filter(
+        (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
+      );
+
+      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+      for (const tool of toolBlocks) {
+        throwIfAborted(input.abortSignal);
+
+        const args = tool.input as Record<string, unknown>;
+        const toolId = tool.id;
+
+        input.onEvent({
+          type: "tool_start",
+          toolId,
+          name: tool.name,
+          args,
+        });
+
         await appendChatMessage({
           sessionId: input.sessionId,
-          role: "user",
-          content: input.userMessage,
+          role: "tool",
+          content: formatToolRunningLabel(tool.name),
+          toolName: tool.name,
+          toolArgs: args,
         });
 
-        const history = await listChatMessages(input.sessionId);
-        const client = new Anthropic({ apiKey });
-        const model = resolveCopilotModel(input.modelId);
+        const emitProgress: ToolProgressEmitter = (detail, step, total) => {
+          input.onEvent({
+            type: "tool_progress",
+            toolId,
+            name: tool.name,
+            message: formatToolRunningLabel(tool.name, detail),
+            step,
+            total,
+          });
+        };
 
-        const messages: Anthropic.MessageParam[] = history
-          .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({
-            role: m.role as "user" | "assistant",
-            content: m.content,
-          }));
+        const emitOutput: OutputEmitter = (payload) => {
+          if (payload.type === "ingredient_created" || payload.type === "sheet_created") {
+            payload.toolId = toolId;
+          }
+          input.onEvent({ type: "copilot_output", payload });
+        };
 
-        let assistantText = "";
-        const turnSummaries: string[] = [];
+        let result: Record<string, unknown>;
+        try {
+          result = await executeTool(
+            tool.name,
+            args,
+            input.context,
+            emitProgress,
+            emitOutput,
+            { abortSignal: input.abortSignal, billing },
+          );
+        } catch (error) {
+          if (error instanceof CopilotAbortError) {
+            throw error;
+          }
+          throw error;
+        }
 
-        let response = await client.messages.create({
-          model,
-          max_tokens: 4096,
-          system: buildSystemPrompt(input.context),
-          tools: COPILOT_TOOLS,
-          messages,
+        const summary = formatToolDoneSummary(tool.name, result);
+        turnSummaries.push(summary);
+
+        input.onEvent({
+          type: "tool_done",
+          toolId,
+          name: tool.name,
+          result,
+          summary,
         });
 
-        while (response.stop_reason === "tool_use") {
-          const toolBlocks = response.content.filter(
-            (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
-          );
-          const textBlocks = response.content.filter(
-            (block): block is Anthropic.TextBlock => block.type === "text",
-          );
+        await appendChatMessage({
+          sessionId: input.sessionId,
+          role: "tool",
+          content: summary,
+          toolName: tool.name,
+          toolArgs: args,
+          toolResult: result,
+        });
 
-          for (const text of textBlocks) {
-            assistantText += text.text;
-            input.onEvent({ type: "text", content: text.text });
-          }
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tool.id,
+          content: JSON.stringify(result),
+        });
+      }
 
-          const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      throwIfAborted(input.abortSignal);
 
-          for (const tool of toolBlocks) {
-            const args = tool.input as Record<string, unknown>;
-            const toolId = tool.id;
+      response = await streamAnthropicTurn({
+        client,
+        model,
+        system,
+        tools: COPILOT_TOOLS,
+        messages: [
+          ...messages,
+          { role: "assistant", content: response.content },
+          { role: "user", content: toolResults },
+        ],
+        abortSignal: input.abortSignal,
+        billing,
+        onText: (text) => {
+          assistantText += text;
+          input.onEvent({ type: "text", content: text });
+        },
+      });
+    }
 
-            input.onEvent({
-              type: "tool_start",
-              toolId,
-              name: tool.name,
-              args,
-            });
+    if (assistantText.trim()) {
+      await appendChatMessage({
+        sessionId: input.sessionId,
+        role: "assistant",
+        content: assistantText.trim(),
+      });
+    }
 
-            await appendChatMessage({
-              sessionId: input.sessionId,
-              role: "tool",
-              content: formatToolRunningLabel(tool.name),
-              toolName: tool.name,
-              toolArgs: args,
-            });
+    if (turnSummaries.length) {
+      const turnSummary = turnSummaries.join(" · ");
+      input.onEvent({ type: "turn_complete", summary: turnSummary });
+    }
 
-            const emitProgress: ToolProgressEmitter = (detail, step, total) => {
-              input.onEvent({
-                type: "tool_progress",
-                toolId,
-                name: tool.name,
-                message: formatToolRunningLabel(tool.name, detail),
-                step,
-                total,
-              });
-            };
-
-            const emitOutput: OutputEmitter = (payload) => {
-              if (payload.type === "ingredient_created" || payload.type === "sheet_created") {
-                payload.toolId = toolId;
-              }
-              input.onEvent({ type: "copilot_output", payload });
-            };
-
-            const result = await executeTool(
-              tool.name,
-              args,
-              input.context,
-              emitProgress,
-              emitOutput,
-            );
-            const summary = formatToolDoneSummary(tool.name, result);
-            turnSummaries.push(summary);
-
-            input.onEvent({
-              type: "tool_done",
-              toolId,
-              name: tool.name,
-              result,
-              summary,
-            });
-
-            await appendChatMessage({
-              sessionId: input.sessionId,
-              role: "tool",
-              content: summary,
-              toolName: tool.name,
-              toolArgs: args,
-              toolResult: result,
-            });
-
-            toolResults.push({
-              type: "tool_result",
-              tool_use_id: tool.id,
-              content: JSON.stringify(result),
-            });
-          }
-
-          response = await client.messages.create({
-            model,
-            max_tokens: 4096,
-            system: buildSystemPrompt(input.context),
-            tools: COPILOT_TOOLS,
-            messages: [
-              ...messages,
-              { role: "assistant", content: response.content },
-              { role: "user", content: toolResults },
-            ],
-          });
-        }
-
-        for (const block of response.content) {
-          if (block.type === "text") {
-            assistantText += block.text;
-            input.onEvent({ type: "text", content: block.text });
-          }
-        }
-
-        if (assistantText.trim()) {
-          await appendChatMessage({
-            sessionId: input.sessionId,
-            role: "assistant",
-            content: assistantText.trim(),
-          });
-        }
-
-        if (turnSummaries.length) {
-          const turnSummary = turnSummaries.join(" · ");
-          input.onEvent({ type: "turn_complete", summary: turnSummary });
-        }
-
-        return { result: true, actualCredits: COPILOT_TURN_CREDITS };
-      },
-    );
-
+    await settleTurn(false);
     input.onEvent({ type: "done" });
   } catch (error) {
+    if (isAbortError(error)) {
+      await settleTurn(true);
+      input.onEvent({
+        type: "aborted",
+        message: "Stopped.",
+        inFlightNote: billing.inFlightNote,
+      });
+      input.onEvent({ type: "done" });
+      return;
+    }
+
+    if (reservationId && !turnSettled) {
+      await releaseReservation(reservationId);
+      turnSettled = true;
+    }
+
     if (isInsufficientCreditsError(error)) {
       input.onEvent({
         type: "error",

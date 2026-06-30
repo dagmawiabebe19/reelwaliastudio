@@ -30,6 +30,7 @@ export const generateImage: ImageAdapter = async (input) => {
   const count = Math.min(5, Math.max(1, input.count));
 
   try {
+    input.onBillableWorkStarted?.();
     const response =
       input.refImageUrls.length > 0
         ? await openAiEditImages({
@@ -39,6 +40,7 @@ export const generateImage: ImageAdapter = async (input) => {
             size,
             count,
             referenceUrls: input.refImageUrls,
+            signal: input.abortSignal,
           })
         : await openAiGenerateImages({
             apiKey,
@@ -46,6 +48,7 @@ export const generateImage: ImageAdapter = async (input) => {
             prompt: input.prompt,
             size,
             count,
+            signal: input.abortSignal,
           });
 
     const b64Images = extractB64Images(response);

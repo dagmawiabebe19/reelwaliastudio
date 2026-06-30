@@ -9,6 +9,8 @@ export interface GenerateImageInput {
   resolution: string;
   safety: SafetyTag;
   sceneId: string;
+  abortSignal?: AbortSignal;
+  onBillableWorkStarted?: () => void;
 }
 
 export type { GenerationResult };
