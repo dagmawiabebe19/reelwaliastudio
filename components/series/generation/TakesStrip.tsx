@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Maximize2, Star } from "lucide-react";
 import {
   starTakeAction,
   clearFailedTakesAction,
@@ -13,6 +14,7 @@ import {
 import { VideoTakePlayer } from "@/components/series/generation/VideoTakePlayer";
 import { Button } from "@/components/ui/Button";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
+import { ICON_MD, ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 import { Lightbox, LightboxImageButton, useLightbox, type LightboxImage } from "@/components/ui/Lightbox";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { Orientation } from "@/lib/db/types";
@@ -45,6 +47,37 @@ interface TakesStripProps {
   layout?: TakesStripLayout;
   activeIndex?: number;
   onActiveIndexChange?: (index: number) => void;
+}
+
+function StarToggleButton({
+  starred,
+  disabled,
+  onClick,
+  size = "md",
+}: {
+  starred: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  size?: "sm" | "md";
+}) {
+  const iconClass = size === "sm" ? ICON_SM : ICON_MD;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`focus-ring studio-icon-btn !border-transparent !bg-transparent ${
+        starred ? "!text-amber-400" : ""
+      }`}
+      aria-label={starred ? "Unstar take" : "Star take"}
+    >
+      <Star
+        className={`${iconClass} ${starred ? "fill-amber-400" : ""}`}
+        strokeWidth={ICON_STROKE}
+        aria-hidden
+      />
+    </button>
+  );
 }
 
 function TakeThumbMedia({ take }: { take: TakeCardData }) {
@@ -122,7 +155,7 @@ function ContactSheetThumb({
             role="button"
             tabIndex={0}
             aria-label={`View take ${take.take_number} larger`}
-            className="absolute bottom-0.5 right-0.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-background/90 text-[10px] text-foreground opacity-0 ring-1 ring-border/60 transition-opacity hover:ring-accent/50 group-hover/strip:opacity-100"
+            className="studio-icon-btn absolute bottom-0.5 right-0.5 z-10 !min-h-5 !min-w-5 opacity-0 group-hover/strip:opacity-100"
             onClick={(e) => {
               e.stopPropagation();
               onOpenGallery(imageGallery, galleryIndex, e.currentTarget);
@@ -135,12 +168,14 @@ function ContactSheetThumb({
               }
             }}
           >
-            ⤢
+            <Maximize2 className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
           </span>
         ) : null}
       </div>
       {take.starred ? (
-        <span className="absolute left-1 top-1 text-[10px] text-amber-400">★</span>
+        <span className="absolute left-1 top-1 text-amber-400" aria-hidden>
+          <Star className={`${ICON_SM} fill-amber-400`} strokeWidth={ICON_STROKE} />
+        </span>
       ) : null}
       {take.status === "failed" ? (
         <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-accent" />
@@ -313,15 +348,11 @@ export function TakesStrip({
 
           {activeTake && layout === "strip" ? (
             <div className="flex flex-wrap items-center gap-3 border-t border-border/60 pt-3">
-              <button
-                type="button"
+              <StarToggleButton
+                starred={activeTake.starred}
                 disabled={pending}
                 onClick={() => toggleStar(activeTake.id, activeTake.starred)}
-                className={`text-lg ${activeTake.starred ? "text-amber-400" : "text-muted"}`}
-                aria-label={activeTake.starred ? "Unstar take" : "Star take"}
-              >
-                {activeTake.starred ? "★" : "☆"}
-              </button>
+              />
               <span className="text-xs text-muted">{activeTake.model ?? "—"}</span>
               <DeleteConfirmButton
                 ariaLabel="Delete take"
@@ -347,20 +378,19 @@ export function TakesStrip({
         <div className={isOutputPreview ? "min-w-0 max-w-full space-y-4" : "grid gap-4 md:grid-cols-[1fr_auto]"}>
           {isOutputPreview ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="studio-section-label">
+              <p className="studio-section-label inline-flex items-center gap-1.5">
                 Take {activeTake.take_number}
-                {activeTake.starred ? <span className="ml-2 text-amber-400">★</span> : null}
+                {activeTake.starred ? (
+                  <Star className={`${ICON_SM} fill-amber-400 text-amber-400`} strokeWidth={ICON_STROKE} aria-hidden />
+                ) : null}
               </p>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
+                <StarToggleButton
+                  starred={activeTake.starred}
                   disabled={pending}
                   onClick={() => toggleStar(activeTake.id, activeTake.starred)}
-                  className={`text-base ${activeTake.starred ? "text-amber-400" : "text-muted"}`}
-                  aria-label={activeTake.starred ? "Unstar take" : "Star take"}
-                >
-                  {activeTake.starred ? "★" : "☆"}
-                </button>
+                  size="sm"
+                />
                 {failedCount > 0 ? (
                   <Button
                     type="button"

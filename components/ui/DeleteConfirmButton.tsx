@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Trash2 } from "lucide-react";
+import { ICON_MD, ICON_STROKE } from "@/components/ui/icon";
 
 interface DeleteConfirmButtonProps {
   ariaLabel?: string;
@@ -61,9 +63,9 @@ export function DeleteConfirmButton({
           e.stopPropagation();
           handleOpen();
         }}
-        className={`rounded p-1 text-muted transition-colors hover:bg-accent-muted/30 hover:text-accent disabled:opacity-50 ${className}`}
+        className={`focus-ring studio-icon-btn studio-icon-btn--danger disabled:opacity-50 ${className}`}
       >
-        ×
+        <Trash2 className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
       </button>
 
       {open && preview ? (
@@ -83,7 +85,7 @@ export function DeleteConfirmButton({
                 type="button"
                 disabled={pending}
                 onClick={() => setOpen(false)}
-                className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-foreground"
+                className="focus-ring studio-btn studio-btn-ghost !min-h-8 !px-3 !py-1.5 !text-sm"
               >
                 Cancel
               </button>
@@ -91,7 +93,7 @@ export function DeleteConfirmButton({
                 type="button"
                 disabled={pending}
                 onClick={handleConfirm}
-                className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                className="focus-ring studio-btn studio-btn-primary !min-h-8 !px-3 !py-1.5 !text-sm"
               >
                 {pending ? "Deleting…" : "Delete"}
               </button>

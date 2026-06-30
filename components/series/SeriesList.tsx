@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { orientationLabel } from "@/components/series/StatTiles";
 import type { Series, SeriesStatus } from "@/lib/db/types";
@@ -56,7 +57,7 @@ export function SeriesList({ series, emptyMessage }: SeriesListProps) {
                 {orientationLabel(item.default_orientation)} · Updated {formatDate(item.updated_at)}
               </p>
             </div>
-            <span className="shrink-0 text-sm text-muted">→</span>
+            <ChevronRight className="size-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
           </Link>
         </li>
       ))}

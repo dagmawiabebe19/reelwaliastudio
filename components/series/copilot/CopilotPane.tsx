@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { Send, Square } from "lucide-react";
 import { writeHighlightSegments } from "@/lib/storyboard/episode-buckets";
 import {
   ANTHROPIC_MODELS,
@@ -10,6 +11,7 @@ import {
 
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
 import { CopilotMessageContent } from "@/components/series/copilot/CopilotMessageContent";
+import { ICON_MD, ICON_STROKE } from "@/components/ui/icon";
 
 export type ChatMessageData = {
   id: string;
@@ -458,7 +460,7 @@ export function CopilotPane({
         <select
           value={copilotModel}
           onChange={(e) => setCopilotModel(e.target.value)}
-          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+          className="studio-select !min-h-8 !py-1.5 !text-xs"
         >
           {ANTHROPIC_MODELS.map((m) => (
             <option key={m.id} value={m.id}>
@@ -497,7 +499,7 @@ export function CopilotPane({
             }}
             rows={3}
             placeholder="Plan the episode, revise a breakdown, or approve building segments…"
-            className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm"
+            className="studio-input resize-none !text-sm"
             disabled={streaming}
           />
         </div>
@@ -511,8 +513,9 @@ export function CopilotPane({
             <button
               type="button"
               onClick={handleStop}
-              className="flex-1 rounded-md border border-border bg-surface-elevated px-4 py-2 text-sm font-medium text-foreground"
+              className="focus-ring studio-btn studio-btn-secondary flex-1"
             >
+              <Square className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
               Stop
             </button>
           ) : null}
@@ -520,9 +523,16 @@ export function CopilotPane({
             type="button"
             onClick={() => void handleSend()}
             disabled={streaming || !input.trim()}
-            className={`rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${streaming ? "flex-1" : "w-full"}`}
+            className={`focus-ring studio-btn studio-btn-primary disabled:opacity-50 ${streaming ? "flex-1" : "w-full"}`}
           >
-            {streaming ? "Working…" : "Send"}
+            {streaming ? (
+              "Working…"
+            ) : (
+              <>
+                <Send className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
+                Send
+              </>
+            )}
           </button>
         </div>
       </div>

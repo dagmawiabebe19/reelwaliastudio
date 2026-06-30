@@ -1,9 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  LayoutPanelLeft,
+  Lightbulb,
+  Minus,
+  PanelLeft,
+  PanelRight,
+  PictureInPicture2,
+  X,
+} from "lucide-react";
 import { CopilotPane, type ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvider";
 import { CanonMemoryPrompt } from "@/components/copilot/CanonMemoryPrompt";
+import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 
 function PanelChrome({
   body,
@@ -33,30 +43,41 @@ function PanelChrome({
             </p>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="studio-toolbar shrink-0">
           <button
             type="button"
             onClick={() => onDockChange(dock === "left" ? "right" : "left")}
-            className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted hover:text-accent"
+            className="studio-toolbar-btn"
             title="Switch dock side"
+            aria-label="Switch dock side"
           >
-            {dock === "left" ? "→" : "←"}
+            {dock === "left" ? (
+              <PanelRight className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
+            ) : (
+              <PanelLeft className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
+            )}
           </button>
           <button
             type="button"
             onClick={() => onModeChange(mode === "docked" ? "float" : "docked")}
-            className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted hover:text-accent"
+            className="studio-toolbar-btn"
             title={mode === "docked" ? "Float panel" : "Dock panel"}
+            aria-label={mode === "docked" ? "Float panel" : "Dock panel"}
           >
-            {mode === "docked" ? "⧉" : "▣"}
+            {mode === "docked" ? (
+              <PictureInPicture2 className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
+            ) : (
+              <LayoutPanelLeft className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
+            )}
           </button>
           <button
             type="button"
             onClick={onCollapse}
-            className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted hover:text-accent"
+            className="studio-toolbar-btn"
             title="Collapse co-pilot"
+            aria-label="Collapse co-pilot"
           >
-            —
+            <Minus className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
           </button>
         </div>
       </div>
@@ -131,15 +152,15 @@ export function DockableCopilotPanel() {
                 key={suggestion.id}
                 className="flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-xs text-amber-100/90"
               >
-                <span className="shrink-0">💡</span>
+                <Lightbulb className={`${ICON_SM} shrink-0 text-amber-400`} strokeWidth={ICON_STROKE} aria-hidden />
                 <p className="min-w-0 flex-1">{suggestion.message}</p>
                 <button
                   type="button"
                   onClick={() => dismissSuggestion(suggestion.id)}
-                  className="shrink-0 text-muted hover:text-foreground"
+                  className="focus-ring studio-icon-btn !min-h-6 !min-w-6 shrink-0 !border-transparent !bg-transparent"
                   aria-label="Dismiss suggestion"
                 >
-                  ×
+                  <X className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
                 </button>
               </div>
             ))

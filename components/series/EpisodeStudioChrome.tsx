@@ -1,10 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import {
+  BookMarked,
+  ChevronLeft,
+  Menu,
+  PanelRightClose,
+  PanelRightOpen,
+  Volume2,
+} from "lucide-react";
 import { BrandWordmark } from "@/components/brand/BrandWordmark";
 import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvider";
 import { EpisodeFilmExportButton } from "@/components/series/export/EpisodeFilmExportButton";
 import { useStudioNav } from "@/components/sidebar/studio-nav-context";
+import { ICON_MD, ICON_STROKE } from "@/components/ui/icon";
 
 interface EpisodeStudioChromeProps {
   seriesId: string;
@@ -35,23 +44,22 @@ export function EpisodeStudioChrome({
   const { toggleCollapsed, prefs } = useCopilotWorkspace();
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 shadow-[inset_0_-1px_0_var(--border-subtle)]">
       <BrandWordmark size="compact" className="mr-1" />
 
-      <div className="flex shrink-0 items-center gap-1 border-l border-border pl-3">
-        <button
-          type="button"
-          onClick={openNav}
-          className="rounded-md border border-border px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent/50 hover:text-accent"
-        >
+      <div className="studio-toolbar shrink-0">
+        <button type="button" onClick={openNav} className="studio-toolbar-btn">
+          <Menu className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
           Menu
         </button>
+        <span className="studio-toolbar-divider" aria-hidden />
         <Link
           href={`/series/${seriesId}`}
-          className="max-w-[8rem] truncate rounded-md px-2 py-1 text-xs text-muted transition-colors hover:text-accent"
+          className="studio-toolbar-btn max-w-[8rem] truncate"
           title={seriesTitle}
         >
-          ← {seriesTitle}
+          <ChevronLeft className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
+          <span className="truncate">{seriesTitle}</span>
         </Link>
       </div>
 
@@ -61,35 +69,31 @@ export function EpisodeStudioChrome({
         </p>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="studio-toolbar shrink-0">
         <button
           type="button"
           onClick={onToggleIngredients}
-          className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-            showIngredients
-              ? "border-accent bg-accent-muted text-accent"
-              : "border-border text-muted hover:border-accent/50 hover:text-accent"
-          }`}
+          className={`studio-toolbar-btn ${showIngredients ? "studio-toolbar-btn--active" : ""}`}
         >
+          <BookMarked className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
           References{ingredientCount > 0 ? ` (${ingredientCount})` : ""}
         </button>
         <button
           type="button"
           onClick={onToggleAudio}
-          className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-            showAudio
-              ? "border-accent bg-accent-muted text-accent"
-              : "border-border text-muted hover:border-accent/50 hover:text-accent"
-          }`}
+          className={`studio-toolbar-btn ${showAudio ? "studio-toolbar-btn--active" : ""}`}
         >
+          <Volume2 className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
           Audio{audioLineCount > 0 ? ` (${audioLineCount})` : ""}
         </button>
         <EpisodeFilmExportButton episodeId={episodeId} seriesId={seriesId} compact />
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          className="rounded-md border border-border px-2.5 py-1 text-xs text-muted transition-colors hover:border-accent/50 hover:text-accent"
-        >
+        <span className="studio-toolbar-divider" aria-hidden />
+        <button type="button" onClick={toggleCollapsed} className="studio-toolbar-btn">
+          {prefs.collapsed ? (
+            <PanelRightOpen className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
+          ) : (
+            <PanelRightClose className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
+          )}
           {prefs.collapsed ? "Show co-pilot" : "Hide co-pilot"}
         </button>
       </div>

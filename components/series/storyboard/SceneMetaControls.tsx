@@ -72,7 +72,7 @@ export function SceneMetaControls({
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
               placeholder="—"
-              className="w-14 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
+              className="studio-input w-14 !min-h-8 !px-2 !py-1 !text-sm"
             />
           </label>
           <label className="flex items-center gap-2">
@@ -80,7 +80,7 @@ export function SceneMetaControls({
             <select
               value={orientation}
               onChange={(e) => setOrientation(e.target.value as Orientation | "")}
-              className="rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
+              className="studio-select !w-auto !min-h-8 !py-1 !pr-8 !text-sm"
             >
               <option value="">Series default</option>
               <option value="portrait">9:16</option>
@@ -91,7 +91,7 @@ export function SceneMetaControls({
             type="button"
             onClick={saveMeta}
             disabled={pending}
-            className="rounded-md border border-border px-3 py-1 text-xs text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:opacity-50"
+            className="focus-ring studio-btn studio-btn-ghost !min-h-8 !px-3 !py-1 !text-xs"
           >
             {pending ? "Saving…" : "Save"}
           </button>

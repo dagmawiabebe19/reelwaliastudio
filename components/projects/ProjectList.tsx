@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import type { Project } from "@/lib/db/types";
 
 interface ProjectListProps {
@@ -43,7 +44,7 @@ export function ProjectList({ projects }: ProjectListProps) {
               <p className="text-base font-medium text-foreground">{project.name}</p>
               <p className="mt-1 text-xs text-muted">Updated {formatDate(project.updated_at)}</p>
             </div>
-            <span className="text-sm text-muted">→</span>
+            <ChevronRight className="size-4 shrink-0 text-muted" strokeWidth={1.75} aria-hidden />
           </Link>
         </li>
       ))}

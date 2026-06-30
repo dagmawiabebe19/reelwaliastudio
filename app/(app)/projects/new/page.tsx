@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CreateProjectForm } from "@/components/projects/CreateProjectForm";
 
@@ -11,9 +12,10 @@ export default function NewProjectPage() {
         actions={
           <Link
             href="/projects"
-            className="link-muted text-sm"
+            className="link-muted inline-flex items-center gap-1 text-sm"
           >
-            ← All projects
+            <ChevronLeft className="size-4" strokeWidth={1.75} aria-hidden />
+            All projects
           </Link>
         }
       />

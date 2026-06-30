@@ -2,7 +2,9 @@
 
 import type { ReactNode } from "react";
 import { useMemo } from "react";
+import { Check, ImageOff, X } from "lucide-react";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
+import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type {
   CharacterSheetCardData,
@@ -43,7 +45,7 @@ function PanelRow({
   const lightbox = useLightbox();
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background/40 p-2">
+    <div className="studio-ref-row flex items-center gap-2 rounded-md border border-border/60 bg-background/40 p-2">
       <div className="h-10 w-10 shrink-0 overflow-hidden rounded-sm border border-border/80 bg-background">
         {thumbnailUrl ? (
           <LightboxImageButton
@@ -55,7 +57,9 @@ function PanelRow({
             imageClassName="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-[9px] text-muted">—</div>
+          <div className="flex h-full w-full items-center justify-center text-muted">
+            <ImageOff className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
+          </div>
         )}
       </div>
       <button
@@ -70,8 +74,9 @@ function PanelRow({
       <div className="flex shrink-0 flex-col items-end gap-1">
         <ItemStatusBadge status={status} />
         {referenced ? (
-          <span className="text-[10px] text-status-validated" title="Referenced in shot prompt">
-            ✓ in prompt
+          <span className="inline-flex items-center gap-0.5 text-[10px] text-status-validated" title="Referenced in shot prompt">
+            <Check className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
+            in prompt
           </span>
         ) : null}
       </div>
@@ -156,9 +161,10 @@ export function StudioIngredientsPanel({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md border border-border px-2 py-1 text-xs text-muted hover:text-foreground"
+          className="focus-ring studio-icon-btn"
+          aria-label="Close references panel"
         >
-          Close
+          <X className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
         </button>
       </div>
 

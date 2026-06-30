@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ICON_LG, ICON_STROKE } from "@/components/ui/icon";
 
 export type LightboxImage = {
   src: string;
@@ -223,10 +225,10 @@ export function Lightbox({ state, onClose }: LightboxProps) {
         ref={closeRef}
         type="button"
         onClick={onClose}
-        className="focus-ring absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-surface/90 text-lg text-foreground backdrop-blur-sm hover:border-accent/50 hover:text-accent"
+        className="focus-ring studio-icon-btn absolute right-4 top-4 z-10 !min-h-10 !min-w-10 !rounded-full !border-border/60 !bg-surface/90 backdrop-blur-sm"
         aria-label="Close"
       >
-        ×
+        <X className={ICON_LG} strokeWidth={ICON_STROKE} aria-hidden />
       </button>
 
       {hasGallery ? (
@@ -238,10 +240,10 @@ export function Lightbox({ state, onClose }: LightboxProps) {
               e.stopPropagation();
               goPrev();
             }}
-            className="focus-ring absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-surface/90 text-xl text-foreground backdrop-blur-sm hover:border-accent/50 hover:text-accent disabled:pointer-events-none disabled:opacity-30"
+            className="focus-ring studio-icon-btn absolute left-4 top-1/2 z-10 !min-h-11 !min-w-11 -translate-y-1/2 !rounded-full !border-border/60 !bg-surface/90 backdrop-blur-sm disabled:pointer-events-none disabled:opacity-30"
             aria-label="Previous image"
           >
-            ‹
+            <ChevronLeft className={ICON_LG} strokeWidth={ICON_STROKE} aria-hidden />
           </button>
           <button
             type="button"
@@ -250,10 +252,10 @@ export function Lightbox({ state, onClose }: LightboxProps) {
               e.stopPropagation();
               goNext();
             }}
-            className="focus-ring absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-surface/90 text-xl text-foreground backdrop-blur-sm hover:border-accent/50 hover:text-accent disabled:pointer-events-none disabled:opacity-30"
+            className="focus-ring studio-icon-btn absolute right-4 top-1/2 z-10 !min-h-11 !min-w-11 -translate-y-1/2 !rounded-full !border-border/60 !bg-surface/90 backdrop-blur-sm disabled:pointer-events-none disabled:opacity-30"
             aria-label="Next image"
           >
-            ›
+            <ChevronRight className={ICON_LG} strokeWidth={ICON_STROKE} aria-hidden />
           </button>
         </>
       ) : null}

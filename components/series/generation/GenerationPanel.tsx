@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { generateTakesAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import { getMyCreditBalanceAction } from "@/app/(app)/credits/balance-action";
+import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { ICON_MD, ICON_STROKE } from "@/components/ui/icon";
 import { CreditCostHint } from "@/components/credits/CreditCostHint";
 import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
 import { estimateVideoCredits } from "@/lib/credits/pricing";
@@ -87,7 +89,7 @@ function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) 
 }
 
 const selectClass =
-  "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60";
+  "studio-select disabled:cursor-not-allowed disabled:opacity-60";
 
 export function GenerationPanel({
   sceneId,
@@ -257,16 +259,14 @@ export function GenerationPanel({
           <FieldLabel hint="Draft is faster and cheaper; Final is higher quality.">
             Quality
           </FieldLabel>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="studio-segmented w-full">
             {(["draft", "final"] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
                 onClick={() => setQuality(mode)}
-                className={`rounded-md border px-3 py-2 text-sm capitalize transition-colors ${
-                  quality === mode
-                    ? "border-accent bg-accent/10 text-foreground"
-                    : "border-border bg-background text-muted hover:text-foreground"
+                className={`studio-segmented-item studio-segmented-item--accent capitalize ${
+                  quality === mode ? "studio-segmented-item--active" : ""
                 }`}
               >
                 {mode}
@@ -283,7 +283,7 @@ export function GenerationPanel({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-40"
+              className="studio-stepper-btn"
               disabled={duration <= SEEDANCE_DURATION_OPTIONS[0]}
               onClick={() => {
                 const idx = SEEDANCE_DURATION_OPTIONS.indexOf(
@@ -291,13 +291,14 @@ export function GenerationPanel({
                 );
                 if (idx > 0) setDuration(SEEDANCE_DURATION_OPTIONS[idx - 1]);
               }}
+              aria-label="Decrease duration"
             >
-              −
+              <Minus className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
             </button>
             <span className="min-w-[4.5rem] text-center text-sm tabular-nums">{duration}s</span>
             <button
               type="button"
-              className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-40"
+              className="studio-stepper-btn"
               disabled={
                 duration >= SEEDANCE_DURATION_OPTIONS[SEEDANCE_DURATION_OPTIONS.length - 1]
               }
@@ -309,8 +310,9 @@ export function GenerationPanel({
                   setDuration(SEEDANCE_DURATION_OPTIONS[idx + 1]);
                 }
               }}
+              aria-label="Increase duration"
             >
-              +
+              <Plus className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
             </button>
           </div>
         </div>

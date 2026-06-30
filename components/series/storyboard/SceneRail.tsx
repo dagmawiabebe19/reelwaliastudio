@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Archive, ChevronRight, GripVertical, MoreHorizontal, RotateCcw } from "lucide-react";
 import {
   archiveSceneAction,
   createSceneAction,
@@ -37,6 +38,7 @@ import {
   type SegmentBucket,
 } from "@/lib/storyboard/episode-buckets";
 import { effectiveOrientation } from "@/lib/storyboard/orientation";
+import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 
 const ARCHIVE_DROP_ID = "__archive_drop__";
 const STRIP_END_DROP_ID = "__strip_end__";
@@ -206,11 +208,11 @@ function SegmentCard({
               onDragStart={(event) => onDragStart(scene.id, event)}
               onDragEnd={onDragEnd}
               onClick={(event) => event.stopPropagation()}
-              className="studio-segment-drag-handle flex h-5 w-5 items-center justify-center rounded bg-background/90 text-[10px] text-muted ring-1 ring-border/60"
+              className="studio-segment-drag-handle studio-icon-btn !min-h-5 !min-w-5 !border-border/60 !bg-background/90"
               aria-label={`Drag segment ${sceneNumber}`}
               title="Drag to reorder or drop on Archive"
             >
-              ⠿
+              <GripVertical className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
             </span>
             <DeleteConfirmButton
               ariaLabel={`Delete segment ${scene.title}`}
@@ -239,33 +241,35 @@ function SegmentCard({
               event.stopPropagation();
               onToggleMenu();
             }}
-            className="rounded px-1 py-0.5 text-xs text-muted opacity-0 transition-opacity hover:text-accent group-hover:opacity-100"
+            className="studio-icon-btn !min-h-6 !min-w-6 opacity-0 transition-opacity group-hover:opacity-100"
             aria-label="Segment actions"
           >
-            …
+            <MoreHorizontal className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
           </button>
           {menuOpen ? (
             <div className="absolute right-0 top-full z-30 mt-1 min-w-[8.5rem] rounded-md border border-border bg-surface-elevated py-1 shadow-lg">
               {isArchivedView ? (
                 <button
                   type="button"
-                  className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
                   onClick={(event) => {
                     event.stopPropagation();
                     onRestore();
                   }}
                 >
+                  <RotateCcw className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
                   Restore
                 </button>
               ) : (
                 <button
                   type="button"
-                  className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
                   onClick={(event) => {
                     event.stopPropagation();
                     onArchive();
                   }}
                 >
+                  <Archive className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
                   Archive
                 </button>
               )}
@@ -586,12 +590,12 @@ export function SceneRail({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="studio-section-label">Segments</p>
-        <div className="inline-flex rounded-full border border-border p-0.5">
+        <div className="studio-segmented !p-0.5">
           <button
             type="button"
             onClick={() => setShowArchive(false)}
-            className={`rounded-full px-3 py-1 text-[10px] tracking-wide ${
-              !showArchive ? "bg-accent-muted text-accent" : "text-muted"
+            className={`studio-segmented-item !min-h-7 !px-3 !py-1 !text-[10px] tracking-wide ${
+              !showArchive ? "studio-segmented-item--active studio-segmented-item--accent" : ""
             }`}
           >
             Storyboard
@@ -603,14 +607,17 @@ export function SceneRail({
             onDragLeave={() => setArchiveDropActive(false)}
             onDrop={handleArchiveDrop}
             data-drop-id={ARCHIVE_DROP_ID}
-            className={`studio-archive-drop-target rounded-full px-3 py-1 text-[10px] tracking-wide ${
-              showArchive ? "bg-accent-muted text-accent" : "text-muted"
+            className={`studio-segmented-item studio-archive-drop-target !min-h-7 !px-3 !py-1 !text-[10px] tracking-wide ${
+              showArchive ? "studio-segmented-item--active studio-segmented-item--accent" : ""
             } ${archiveDropActive && !showArchive ? "studio-archive-drop-target--active" : ""}`}
             title={showArchive ? undefined : "Drop a segment here to archive"}
           >
-            Archive ({archivedScenes.length})
+            <span className="inline-flex items-center gap-1">
+              <Archive className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
+              Archive ({archivedScenes.length})
+            </span>
             {archiveDropActive && !showArchive ? (
-              <span className="ml-1 text-[9px] normal-case">· drop to archive</span>
+              <span className="ml-1 text-[9px] normal-case">· drop</span>
             ) : null}
           </button>
         </div>
@@ -627,7 +634,7 @@ export function SceneRail({
           name="title"
           required
           placeholder="New segment title"
-          className="min-w-[8rem] flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+          className="studio-input min-w-[8rem] flex-1 !min-h-8 !py-1.5 !text-sm"
         />
         {!showArchive && currentBucket.type === "storyboard-only" ? (
           <input type="hidden" name="actLabel" value={STORYBOARD_ONLY_LABEL} />
@@ -698,9 +705,10 @@ export function SceneRail({
               <button
                 type="button"
                 onClick={scrollToEnd}
-                className="text-[10px] tracking-wide text-muted hover:text-accent"
+                className="inline-flex items-center gap-0.5 text-[10px] tracking-wide text-muted transition-colors hover:text-accent"
               >
-                Newest →
+                Newest
+                <ChevronRight className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
               </button>
             ) : null}
           </div>
