@@ -21,10 +21,11 @@ const navItems = [
 interface SidebarProps {
   userEmail?: string | null;
   creditBalance?: CreditBalance | null;
+  isAdmin?: boolean;
   onNavigate?: () => void;
 }
 
-export function Sidebar({ userEmail, creditBalance, onNavigate }: SidebarProps) {
+export function Sidebar({ userEmail, creditBalance, isAdmin = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -88,7 +89,10 @@ export function Sidebar({ userEmail, creditBalance, onNavigate }: SidebarProps) 
             className="block rounded-md border border-border bg-surface-elevated px-3 py-2 transition-colors hover:border-accent/40"
           >
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Credits</p>
-            <p className="mt-0.5">
+            {isAdmin ? (
+              <p className="mt-0.5 text-[10px] font-medium text-accent">Admin — unlimited</p>
+            ) : null}
+            <p className={`mt-0.5 ${creditBalance.available < 0 ? "text-amber-600" : ""}`}>
               <CreditBalanceBadge available={creditBalance.available} compact />
             </p>
             {creditBalance.reserved > 0 ? (

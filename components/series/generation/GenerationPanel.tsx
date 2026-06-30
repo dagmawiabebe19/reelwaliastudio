@@ -87,6 +87,7 @@ export function GenerationPanel({
   );
   const [startedMessage, setStartedMessage] = useState<string | null>(null);
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
+  const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [insufficientCredits, setInsufficientCredits] = useState<{
     needed: number;
     available: number;
@@ -119,6 +120,9 @@ export function GenerationPanel({
     void getMyCreditBalanceAction().then((result) => {
       if (result.balance) {
         setAvailableCredits(result.balance.available);
+      }
+      if (result.isAdmin) {
+        setUserIsAdmin(true);
       }
     });
   }, []);
@@ -153,6 +157,9 @@ export function GenerationPanel({
         const balance = await getMyCreditBalanceAction();
         if (balance.balance) {
           setAvailableCredits(balance.balance.available);
+        }
+        if (balance.isAdmin) {
+          setUserIsAdmin(true);
         }
         router.refresh();
       }
@@ -286,6 +293,7 @@ export function GenerationPanel({
       <CreditCostHint
         cost={estimatedCost}
         available={availableCredits}
+        isAdmin={userIsAdmin}
         label={`This ${duration}s ${resolution} shot`}
       />
 

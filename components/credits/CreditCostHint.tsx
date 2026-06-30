@@ -3,13 +3,14 @@ import { formatCredits } from "@/lib/credits/format";
 interface CreditCostHintProps {
   cost: number;
   available: number | null;
+  isAdmin?: boolean;
   label?: string;
 }
 
-export function CreditCostHint({ cost, available, label }: CreditCostHintProps) {
+export function CreditCostHint({ cost, available, isAdmin = false, label }: CreditCostHintProps) {
   if (cost <= 0) return null;
 
-  const affordable = available == null || available >= cost;
+  const affordable = isAdmin || available == null || available >= cost;
 
   return (
     <p
@@ -17,7 +18,9 @@ export function CreditCostHint({ cost, available, label }: CreditCostHintProps) 
     >
       {label ? `${label} ` : ""}
       ≈ {formatCredits(cost)} credit{cost === 1 ? "" : "s"}
-      {available != null ? (
+      {isAdmin ? (
+        <span className="text-accent"> · Admin — unlimited</span>
+      ) : available != null ? (
         <>
           {" "}
           · You have {formatCredits(available)}

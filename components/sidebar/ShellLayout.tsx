@@ -14,9 +14,10 @@ interface ShellLayoutProps {
   children: ReactNode;
   userEmail: string | null;
   creditBalance: CreditBalance | null;
+  isAdmin: boolean;
 }
 
-export function ShellLayout({ children, userEmail, creditBalance }: ShellLayoutProps) {
+export function ShellLayout({ children, userEmail, creditBalance, isAdmin }: ShellLayoutProps) {
   const pathname = usePathname();
   const isEpisodeStudio = EPISODE_STUDIO_PATH.test(pathname);
   const [navOpen, setNavOpen] = useState(false);
@@ -45,6 +46,7 @@ export function ShellLayout({ children, userEmail, creditBalance }: ShellLayoutP
                   <Sidebar
                     userEmail={userEmail}
                     creditBalance={creditBalance}
+                    isAdmin={isAdmin}
                     onNavigate={() => setNavOpen(false)}
                   />
                 </div>
@@ -62,7 +64,7 @@ export function ShellLayout({ children, userEmail, creditBalance }: ShellLayoutP
   return (
     <CopilotWorkspaceProvider>
       <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-foreground">
-        <Sidebar userEmail={userEmail} creditBalance={creditBalance} />
+        <Sidebar userEmail={userEmail} creditBalance={creditBalance} isAdmin={isAdmin} />
         <CopilotShellHost layout="sidebar">
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-6xl px-10 py-12">{children}</div>

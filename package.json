@@ -13,7 +13,8 @@
     "gen:types": "supabase gen types typescript --local > lib/db/database.types.ts",
     "test:credits": "node scripts/test-credits.mjs",
     "simulate:credits": "node scripts/simulate-credits-lifecycle.mjs",
-    "test:metering": "node scripts/test-metering.mjs"
+    "test:metering": "node scripts/test-metering.mjs",
+    "test:admin-credits": "node scripts/test-admin-credits.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",

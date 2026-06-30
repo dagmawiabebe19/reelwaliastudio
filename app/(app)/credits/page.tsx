@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/getUser";
+import { isAdmin } from "@/lib/auth/isAdmin";
 import { getBalance, getLedgerHistory } from "@/lib/credits";
 import { formatCredits } from "@/lib/credits/format";
 import { CreditBalanceBadge } from "@/components/credits/CreditBalanceBadge";
@@ -17,9 +18,10 @@ function formatWhen(iso: string): string {
 
 export default async function CreditsPage() {
   const user = await requireUser();
-  const [balance, ledger] = await Promise.all([
+  const [balance, ledger, userIsAdmin] = await Promise.all([
     getBalance(user.id),
     getLedgerHistory(user.id, 50),
+    isAdmin(user.id),
   ]);
 
   return (
@@ -34,7 +36,10 @@ export default async function CreditsPage() {
         </p>
       </header>
 
-      <div className="max-w-xs">
+      <div className="max-w-xs space-y-2">
+        {userIsAdmin ? (
+          <p className="text-sm font-medium text-accent">Admin — unlimited (metering still runs)</p>
+        ) : null}
         <CreditBalanceBadge
           available={balance.available}
           reserved={balance.reserved}
