@@ -957,3 +957,24 @@ body {
   border-color: color-mix(in srgb, var(--accent) 25%, var(--border));
   background: color-mix(in srgb, var(--surface-raised) 80%, transparent);
 }
+
+/* Co-pilot live tool activity */
+.copilot-tool-activity {
+  box-shadow: var(--shadow-sm);
+}
+
+.copilot-status-spinner {
+  animation: copilot-status-spin 0.9s linear infinite;
+}
+
+@keyframes copilot-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copilot-status-spinner {
+    animation: none;
+  }
+}

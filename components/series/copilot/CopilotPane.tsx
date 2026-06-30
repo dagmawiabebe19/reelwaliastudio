@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Send, Square } from "lucide-react";
 import { writeHighlightSegments } from "@/lib/storyboard/episode-buckets";
@@ -11,6 +11,7 @@ import {
 
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
 import { CopilotMessageContent } from "@/components/series/copilot/CopilotMessageContent";
+import { CopilotToolActivity } from "@/components/series/copilot/CopilotToolActivity";
 import { ICON_MD, ICON_STROKE } from "@/components/ui/icon";
 
 export type ChatMessageData = {
@@ -84,11 +85,15 @@ interface CopilotPaneProps {
   className?: string;
 }
 
-function toolMessageClass(message: ChatMessageData): string {
-  if (message.role !== "tool") return "";
-  if (message.tool_status === "running") return "text-amber-400";
-  if (message.content.toLowerCase().includes("failed")) return "text-accent";
-  return "text-emerald-400";
+function isTurnCompleteMessage(message: ChatMessageData): boolean {
+  return message.role === "system" && message.content.startsWith("✓ Turn complete");
+}
+
+function partitionMessages(messages: ChatMessageData[]) {
+  const displayMessages = messages.filter(
+    (message) => message.role !== "tool" && !isTurnCompleteMessage(message),
+  );
+  return { displayMessages };
 }
 
 export function CopilotPane({
@@ -123,10 +128,18 @@ export function CopilotPane({
   const [abortNote, setAbortNote] = useState<string | null>(null);
   const [copilotModel, setCopilotModel] = useState<string>(DEFAULT_ANTHROPIC_MODEL);
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [liveTurnTools, setLiveTurnTools] = useState<ChatMessageData[]>([]);
   const messageLogRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const streamingAssistantIdRef = useRef<string | null>(null);
   const wasStreamingRef = useRef(false);
+
+  const { displayMessages } = useMemo(() => partitionMessages(messages), [messages]);
+
+  const statusContext = useMemo(
+    () => ({ ingredients: ingredients.map((item) => ({ id: item.id, name: item.name })) }),
+    [ingredients],
+  );
 
   function handleStop() {
     abortRef.current?.abort();
@@ -167,6 +180,7 @@ export function CopilotPane({
     setInput("");
     setStreaming(true);
     setAbortNote(null);
+    setLiveTurnTools([]);
     abortRef.current = new AbortController();
     setMessages((prev) => [
       ...prev,
@@ -271,49 +285,46 @@ export function CopilotPane({
           }
 
           if (event.type === "tool_start" && event.name && event.toolId) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: event.toolId!,
-                role: "tool",
-                content: `TOOL ${event.name} — running…`,
-                tool_name: event.name,
-                tool_args: event.args ?? null,
-                tool_status: "running",
-              },
-            ]);
+            const toolMessage: ChatMessageData = {
+              id: event.toolId!,
+              role: "tool",
+              content: `TOOL ${event.name} — running…`,
+              tool_name: event.name,
+              tool_args: event.args ?? null,
+              tool_status: "running",
+            };
+            setLiveTurnTools((prev) => [...prev, toolMessage]);
+            setMessages((prev) => [...prev, toolMessage]);
           }
 
           if (event.type === "tool_progress" && event.toolId && event.message) {
+            const patch = {
+              content: event.message!,
+              tool_status: "running" as const,
+              step: event.step,
+              total: event.total,
+            };
+            setLiveTurnTools((prev) =>
+              prev.map((m) => (m.id === event.toolId ? { ...m, ...patch } : m)),
+            );
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === event.toolId
-                  ? {
-                      ...m,
-                      content: event.message!,
-                      tool_status: "running" as const,
-                      step: event.step,
-                      total: event.total,
-                    }
-                  : m,
-              ),
+              prev.map((m) => (m.id === event.toolId ? { ...m, ...patch } : m)),
             );
           }
 
           if (event.type === "tool_done" && event.toolId && event.name) {
+            const patch = {
+              content: event.summary ?? `TOOL ${event.name} DONE`,
+              tool_result: event.result ?? null,
+              tool_status: "done" as const,
+              step: undefined,
+              total: undefined,
+            };
+            setLiveTurnTools((prev) =>
+              prev.map((m) => (m.id === event.toolId ? { ...m, ...patch } : m)),
+            );
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === event.toolId
-                  ? {
-                      ...m,
-                      content: event.summary ?? `TOOL ${event.name} DONE`,
-                      tool_result: event.result ?? null,
-                      tool_status: "done",
-                      step: undefined,
-                      total: undefined,
-                    }
-                  : m,
-              ),
+              prev.map((m) => (m.id === event.toolId ? { ...m, ...patch } : m)),
             );
             if (event.name === "draft_storyboard") {
               const created = Array.isArray(event.result?.created)
@@ -337,18 +348,11 @@ export function CopilotPane({
           }
 
           if (event.type === "turn_complete" && event.summary) {
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `turn-${Date.now()}`,
-                role: "system",
-                content: `✓ Turn complete — ${event.summary}`,
-              },
-            ]);
             router.refresh();
           }
 
           if (event.type === "aborted") {
+            setLiveTurnTools([]);
             setMessages((prev) => [
               ...prev,
               {
@@ -380,6 +384,7 @@ export function CopilotPane({
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
+        setLiveTurnTools([]);
         return;
       }
       setMessages((prev) => [
@@ -408,41 +413,25 @@ export function CopilotPane({
         className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1"
       >
         {messageBanner ? <div className="space-y-3">{messageBanner}</div> : null}
-        {messages.length === 0 ? (
+        {displayMessages.length === 0 ? (
           <p className="text-sm text-muted">
             Your production partner — ask anything about this series, rewrite scenes, generate storyboards,
             or say &ldquo;generate it&rdquo;. Context updates live as you work.
           </p>
         ) : (
-          messages.map((message) => (
+          displayMessages.map((message) => (
             <div
               key={message.id}
               data-copilot-message-id={message.id}
               className={`rounded-lg border px-3 py-2 text-sm ${
                 message.role === "user"
                   ? "border-border bg-surface-elevated"
-                  : message.role === "tool"
-                    ? "border-accent/30 bg-accent-muted/10 font-mono text-xs"
-                    : message.role === "system"
-                      ? "border-emerald-500/30 bg-emerald-500/5 text-xs"
-                      : "border-border bg-background"
+                  : message.role === "system"
+                    ? "border-border/60 bg-surface/60 text-xs text-muted"
+                    : "border-border bg-background"
               }`}
             >
-              {message.role === "tool" ? (
-                <div>
-                  <p className={toolMessageClass(message)}>
-                    {message.content}
-                    {message.tool_status === "running" && message.step && message.total ? (
-                      <span className="ml-2 text-muted">({message.step}/{message.total})</span>
-                    ) : null}
-                  </p>
-                  {message.tool_result && message.tool_status === "done" ? (
-                    <pre className="mt-2 overflow-x-auto text-[10px] text-muted">
-                      {JSON.stringify(message.tool_result, null, 2)}
-                    </pre>
-                  ) : null}
-                </div>
-              ) : message.role === "assistant" || message.role === "system" ? (
+              {message.role === "assistant" || message.role === "system" ? (
                 message.role === "system" ? (
                   <p className="whitespace-pre-wrap">{message.content}</p>
                 ) : (
@@ -455,6 +444,13 @@ export function CopilotPane({
           ))
         )}
       </div>
+
+      <CopilotToolActivity
+        tools={liveTurnTools}
+        streaming={streaming}
+        statusContext={statusContext}
+        onDismiss={() => setLiveTurnTools([])}
+      />
 
       <div className="shrink-0 space-y-3 border-t border-border bg-surface pt-3">
         <select
