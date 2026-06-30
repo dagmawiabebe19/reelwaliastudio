@@ -133,7 +133,7 @@ export async function archiveScene(id: string): Promise<Scene> {
 }
 
 export async function unarchiveScene(id: string): Promise<Scene> {
-  return updateScene(id, { status: "active" as SceneStatus });
+  return updateScene(id, { status: "storyboard" as SceneStatus });
 }
 
 export function effectiveOrientation(

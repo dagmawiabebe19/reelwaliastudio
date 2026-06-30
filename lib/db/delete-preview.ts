@@ -87,20 +87,24 @@ export async function getSceneDeletePreview(sceneId: string): Promise<DeletePrev
   if (!scene) throw new Error("Scene not found.");
 
   const takes = await listTakesByScene(sceneId);
-  const readyTakes = takes.filter((take) => take.status === "ready");
-  const starredTakes = takes.filter((take) => take.starred);
+  const takeCount = takes.length;
 
-  const takeSummary =
-    takes.length === 0
-      ? "no takes"
-      : `${takes.length} take${takes.length === 1 ? "" : "s"} (${readyTakes.length} ready${
-          starredTakes.length ? `, ${starredTakes.length} starred` : ""
-        })`;
+  if (takeCount > 0) {
+    const readyCount = takes.filter((take) => take.status === "ready").length;
+    const starredCount = takes.filter((take) => take.starred).length;
+    const detail =
+      readyCount > 0 || starredCount > 0
+        ? ` (${readyCount} ready${starredCount > 0 ? `, ${starredCount} starred` : ""})`
+        : "";
+
+    return {
+      title: `Delete segment "${scene.title}"?`,
+      message: `This segment has ${takeCount} take${takeCount === 1 ? "" : "s"}${detail}. Deleting removes them permanently. This cannot be undone.`,
+    };
+  }
 
   return {
     title: `Delete segment "${scene.title}"?`,
-    message:
-      `This permanently removes the segment and all of its takes — ${takeSummary}. ` +
-      "Starred and ready takes are deleted with the segment. This cannot be undone.",
+    message: "This permanently removes the segment. This cannot be undone.",
   };
 }

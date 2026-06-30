@@ -7,13 +7,13 @@ import {
   createSceneAction,
   reorderScenesAction,
   unarchiveSceneAction,
-  updateSceneAction,
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/actions";
 import {
   deleteSceneAction,
   getSceneDeletePreviewAction,
 } from "@/app/(app)/series/[id]/delete-actions";
 import { Button } from "@/components/ui/Button";
+import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { Episode, Orientation } from "@/lib/db/types";
@@ -30,12 +30,17 @@ import {
   STORYBOARD_ONLY_LABEL,
   buildEpisodeBuckets,
   clearHighlightSegments,
+  computeEpisodeOrderAfterBucketReorder,
   episodeBucketLabel,
   readHighlightSegments,
   scenesForBucket,
   type SegmentBucket,
 } from "@/lib/storyboard/episode-buckets";
 import { effectiveOrientation } from "@/lib/storyboard/orientation";
+
+const ARCHIVE_DROP_ID = "__archive_drop__";
+const STRIP_END_DROP_ID = "__strip_end__";
+const SCENE_DRAG_MIME = "application/x-reelwalia-scene-id";
 
 interface SceneRailProps {
   seriesId: string;
@@ -99,34 +104,46 @@ function SegmentCard({
   sceneNumber,
   orientation,
   takes,
+  seriesId,
   isSelected,
   isHighlighted,
   isGenerating,
-  showArchive,
+  isArchivedView,
+  isDragging,
+  isDropTarget,
   menuOpen,
   onToggleMenu,
   onSelect,
   onArchive,
   onRestore,
-  onDelete,
+  onDeleted,
   onDragStart,
+  onDragEnd,
+  onCardDragOver,
+  onCardDrop,
   cardRef,
 }: {
   scene: SceneWithBindings;
   sceneNumber: number;
   orientation: Orientation;
   takes: TakeCardData[];
+  seriesId: string;
   isSelected: boolean;
   isHighlighted: boolean;
   isGenerating: boolean;
-  showArchive: boolean;
+  isArchivedView: boolean;
+  isDragging: boolean;
+  isDropTarget: boolean;
   menuOpen: boolean;
   onToggleMenu: () => void;
   onSelect: () => void;
   onArchive: () => void;
   onRestore: () => void;
-  onDelete: () => void;
-  onDragStart: () => void;
+  onDeleted: () => void;
+  onDragStart: (sceneId: string, event: React.DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  onCardDragOver: (sceneId: string, event: React.DragEvent<HTMLElement>) => void;
+  onCardDrop: (sceneId: string, event: React.DragEvent<HTMLElement>) => void;
   cardRef?: (node: HTMLElement | null) => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -149,12 +166,14 @@ function SegmentCard({
   return (
     <article
       ref={cardRef}
-      draggable={!showArchive}
-      onDragStart={onDragStart}
       onClick={onSelect}
+      onDragOver={(event) => onCardDragOver(scene.id, event)}
+      onDrop={(event) => onCardDrop(scene.id, event)}
       className={`studio-segment-card group w-[7.5rem] ${isSelected ? "studio-segment-card--active" : ""} ${
         isHighlighted ? "studio-segment-card--new" : ""
-      } ${isUngenerated ? "studio-segment-card--ungenerated" : ""}`}
+      } ${isUngenerated ? "studio-segment-card--ungenerated" : ""} ${
+        isDragging ? "studio-segment-card--dragging" : ""
+      } ${isDropTarget ? "studio-segment-card--drop-target" : ""}`}
     >
       <div className={`relative mx-auto mt-2 ${thumbWidth} overflow-hidden rounded-sm border border-border/80 bg-background`}>
         <div className={`${orientationAspectClass(orientation)} w-full`}>
@@ -180,6 +199,30 @@ function SegmentCard({
         >
           {readyCount}
         </span>
+        {!isArchivedView ? (
+          <div className="absolute left-0.5 top-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <span
+              draggable
+              onDragStart={(event) => onDragStart(scene.id, event)}
+              onDragEnd={onDragEnd}
+              onClick={(event) => event.stopPropagation()}
+              className="studio-segment-drag-handle flex h-5 w-5 items-center justify-center rounded bg-background/90 text-[10px] text-muted ring-1 ring-border/60"
+              aria-label={`Drag segment ${sceneNumber}`}
+              title="Drag to reorder or drop on Archive"
+            >
+              ⠿
+            </span>
+            <DeleteConfirmButton
+              ariaLabel={`Delete segment ${scene.title}`}
+              className="!h-5 !w-5 !rounded !bg-background/90 !text-[11px] !ring-1 !ring-border/60 opacity-100"
+              fetchPreview={() =>
+                getSceneDeletePreviewAction(scene.id, scene.episode_id, seriesId)
+              }
+              onDelete={() => deleteSceneAction(scene.id, seriesId)}
+              onSuccess={onDeleted}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="relative px-2 pb-2 pt-1.5">
@@ -203,7 +246,7 @@ function SegmentCard({
           </button>
           {menuOpen ? (
             <div className="absolute right-0 top-full z-30 mt-1 min-w-[8.5rem] rounded-md border border-border bg-surface-elevated py-1 shadow-lg">
-              {scene.status === "archived" ? (
+              {isArchivedView ? (
                 <button
                   type="button"
                   className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
@@ -215,28 +258,16 @@ function SegmentCard({
                   Restore
                 </button>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onArchive();
-                    }}
-                  >
-                    Archive
-                  </button>
-                  <button
-                    type="button"
-                    className="block w-full px-3 py-1.5 text-left text-xs text-accent hover:bg-accent-muted/30"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDelete();
-                    }}
-                  >
-                    Delete segment
-                  </button>
-                </>
+                <button
+                  type="button"
+                  className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-accent-muted/30"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onArchive();
+                  }}
+                >
+                  Archive
+                </button>
               )}
             </div>
           ) : null}
@@ -262,6 +293,8 @@ export function SceneRail({
   const [showArchive, setShowArchive] = useState(false);
   const [pending, startTransition] = useTransition();
   const [dragId, setDragId] = useState<string | null>(null);
+  const [dropBeforeId, setDropBeforeId] = useState<string | null>(null);
+  const [archiveDropActive, setArchiveDropActive] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [activeBucketId, setActiveBucketId] = useState<string>(episodeId);
   const [highlightSceneIds, setHighlightSceneIds] = useState<string[]>([]);
@@ -302,6 +335,24 @@ export function SceneRail({
         };
 
   const bucketScenes = scenesForBucket(scenes, currentBucket);
+
+  const autoScrollStrip = (clientX: number) => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const edge = 56;
+    let delta = 0;
+    if (clientX < rect.left + edge) {
+      delta = -Math.ceil((rect.left + edge - clientX) / 6);
+    } else if (clientX > rect.right - edge) {
+      delta = Math.ceil((clientX - (rect.right - edge)) / 6);
+    }
+
+    if (delta !== 0) {
+      container.scrollLeft += delta;
+    }
+  };
 
   function scrollToScene(sceneId: string) {
     const node = cardRefs.current.get(sceneId);
@@ -391,67 +442,144 @@ export function SceneRail({
     });
   }
 
-  async function handleDeleteScene(scene: SceneWithBindings) {
+  function clearDragState() {
+    setDragId(null);
+    setDropBeforeId(null);
+    setArchiveDropActive(false);
+  }
+
+  function readDraggedSceneId(event: React.DragEvent): string | null {
+    const fromMime = event.dataTransfer.getData(SCENE_DRAG_MIME);
+    if (fromMime) return fromMime;
+    const plain = event.dataTransfer.getData("text/plain");
+    return plain || dragId;
+  }
+
+  function persistBucketOrder(orderedBucketIds: string[]) {
+    const targetEpisodeId =
+      currentBucket.type === "episode" ? currentBucket.episodeId : episodeId;
+    const episodeOrder = computeEpisodeOrderAfterBucketReorder(
+      scenes,
+      currentBucket,
+      orderedBucketIds,
+      episodeId,
+    );
+
+    startTransition(async () => {
+      const result = await reorderScenesAction(targetEpisodeId, seriesId, episodeOrder);
+      if (result.error) alert(result.error);
+      router.refresh();
+    });
+  }
+
+  function reorderWithinBucket(draggedId: string, insertBeforeId: string) {
+    const ids = bucketScenes.map((scene) => scene.id);
+    const fromIndex = ids.indexOf(draggedId);
+    if (fromIndex < 0) return;
+
+    ids.splice(fromIndex, 1);
+    if (insertBeforeId === STRIP_END_DROP_ID) {
+      ids.push(draggedId);
+    } else {
+      const toIndex = ids.indexOf(insertBeforeId);
+      if (toIndex < 0) ids.push(draggedId);
+      else ids.splice(toIndex, 0, draggedId);
+    }
+
+    persistBucketOrder(ids);
+  }
+
+  function handleDragStart(sceneId: string, event: React.DragEvent<HTMLElement>) {
+    event.dataTransfer.setData(SCENE_DRAG_MIME, sceneId);
+    event.dataTransfer.setData("text/plain", sceneId);
+    event.dataTransfer.effectAllowed = "move";
+    setDragId(sceneId);
     setOpenMenuId(null);
-    try {
-      const preview = await getSceneDeletePreviewAction(scene.id, scene.episode_id, seriesId);
-      if ("error" in preview && preview.error) {
-        alert(preview.error);
-        return;
-      }
-      if (!("title" in preview)) return;
+  }
 
-      const confirmed = window.confirm(`${preview.title}\n\n${preview.message}`);
-      if (!confirmed) return;
+  function handleStripDragOver(event: React.DragEvent<HTMLDivElement>) {
+    if (!dragId || showArchive) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    autoScrollStrip(event.clientX);
+  }
 
-      startTransition(async () => {
-        const result = await deleteSceneAction(scene.id, seriesId);
-        if ("error" in result && result.error) {
-          alert(result.error);
-          return;
-        }
-        if (selectedSceneId === scene.id) {
-          onSelectScene("");
-        }
-        router.refresh();
-      });
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Delete failed.");
+  function handleCardDragOver(sceneId: string, event: React.DragEvent<HTMLElement>) {
+    if (!dragId || showArchive || dragId === sceneId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    autoScrollStrip(event.clientX);
+
+    const target = event.currentTarget.getBoundingClientRect();
+    if (event.clientX < target.left + target.width / 2) {
+      setDropBeforeId(sceneId);
+    } else {
+      const index = bucketScenes.findIndex((scene) => scene.id === sceneId);
+      const nextScene = index >= 0 ? bucketScenes[index + 1] : null;
+      setDropBeforeId(nextScene?.id ?? STRIP_END_DROP_ID);
     }
   }
 
-  function handleDrop(targetBucket: SegmentBucket) {
-    if (!dragId || targetBucket.type === "archive") return;
+  function handleCardDrop(sceneId: string, event: React.DragEvent<HTMLElement>) {
+    if (showArchive) return;
+    event.preventDefault();
+    event.stopPropagation();
 
-    const draggedScene = scenes.find((scene) => scene.id === dragId);
-    if (!draggedScene) return;
+    const draggedId = readDraggedSceneId(event);
+    if (!draggedId || draggedId === sceneId) {
+      clearDragState();
+      return;
+    }
+
+    const target = event.currentTarget.getBoundingClientRect();
+    const insertBeforeId =
+      event.clientX < target.left + target.width / 2
+        ? sceneId
+        : bucketScenes[bucketScenes.findIndex((s) => s.id === sceneId) + 1]?.id ??
+          STRIP_END_DROP_ID;
+
+    reorderWithinBucket(draggedId, insertBeforeId);
+    clearDragState();
+  }
+
+  function handleStripDrop(event: React.DragEvent<HTMLDivElement>) {
+    if (!dragId || showArchive) return;
+    event.preventDefault();
+    const draggedId = readDraggedSceneId(event);
+    if (!draggedId) {
+      clearDragState();
+      return;
+    }
+    if (dropBeforeId === STRIP_END_DROP_ID) {
+      reorderWithinBucket(draggedId, STRIP_END_DROP_ID);
+    }
+    clearDragState();
+  }
+
+  function handleArchiveDragOver(event: React.DragEvent<HTMLButtonElement>) {
+    if (!dragId || showArchive) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setArchiveDropActive(true);
+  }
+
+  function handleArchiveDrop(event: React.DragEvent<HTMLButtonElement>) {
+    if (showArchive) return;
+    event.preventDefault();
+    const draggedId = readDraggedSceneId(event);
+    const scene = scenes.find((item) => item.id === draggedId);
+    clearDragState();
+    if (!draggedId || !scene || scene.status === "archived") return;
 
     startTransition(async () => {
-      if (targetBucket.type === "storyboard-only") {
-        await updateSceneAction(dragId, draggedScene.episode_id, seriesId, {
-          act_label: STORYBOARD_ONLY_LABEL,
-        });
-      } else if (targetBucket.type === "episode") {
-        const episode = episodes.find((item) => item.id === targetBucket.episodeId);
-        await updateSceneAction(dragId, targetBucket.episodeId, seriesId, {
-          episode_id: targetBucket.episodeId,
-          act_label: episode ? episodeBucketLabel(episode.sort_order) : undefined,
-        });
-
-        const targetScenes = scenesForBucket(scenes, targetBucket).filter(
-          (scene) => scene.id !== dragId,
-        );
-        targetScenes.push({ ...draggedScene, episode_id: targetBucket.episodeId });
-        await reorderScenesAction(
-          targetBucket.episodeId,
-          seriesId,
-          targetScenes.map((scene) => scene.id),
-        );
+      const result = await archiveSceneAction(draggedId, scene.episode_id, seriesId);
+      if (result.error) alert(result.error);
+      if (selectedSceneId === draggedId) {
+        onSelectScene("");
       }
-
       router.refresh();
     });
-    setDragId(null);
   }
 
   return (
@@ -471,11 +599,19 @@ export function SceneRail({
           <button
             type="button"
             onClick={() => setShowArchive(true)}
-            className={`rounded-full px-3 py-1 text-[10px] tracking-wide ${
+            onDragOver={handleArchiveDragOver}
+            onDragLeave={() => setArchiveDropActive(false)}
+            onDrop={handleArchiveDrop}
+            data-drop-id={ARCHIVE_DROP_ID}
+            className={`studio-archive-drop-target rounded-full px-3 py-1 text-[10px] tracking-wide ${
               showArchive ? "bg-accent-muted text-accent" : "text-muted"
-            }`}
+            } ${archiveDropActive && !showArchive ? "studio-archive-drop-target--active" : ""}`}
+            title={showArchive ? undefined : "Drop a segment here to archive"}
           >
             Archive ({archivedScenes.length})
+            {archiveDropActive && !showArchive ? (
+              <span className="ml-1 text-[9px] normal-case">· drop to archive</span>
+            ) : null}
           </button>
         </div>
       </div>
@@ -554,10 +690,7 @@ export function SceneRail({
         </div>
       ) : null}
 
-      <section
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={() => !showArchive && handleDrop(currentBucket)}
-      >
+      <section>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="studio-section-label">{currentBucket.label.replace("_", " ")}</h3>
           <div className="flex items-center gap-3">
@@ -576,7 +709,12 @@ export function SceneRail({
         {bucketScenes.length === 0 ? (
           <p className="py-4 text-center text-xs text-muted">No segments in this bucket.</p>
         ) : (
-          <div ref={scrollRef} className="studio-timeline-scroll">
+          <div
+            ref={scrollRef}
+            className={`studio-timeline-scroll ${dragId ? "studio-timeline-scroll--dragging" : ""}`}
+            onDragOver={handleStripDragOver}
+            onDrop={handleStripDrop}
+          >
             {bucketScenes.map((scene) => {
               const sceneTakes = takesByScene[scene.id] ?? [];
               const sceneNumber = scene.position ?? scene.sort_order + 1;
@@ -589,10 +727,13 @@ export function SceneRail({
                   sceneNumber={sceneNumber}
                   orientation={orientation}
                   takes={sceneTakes}
+                  seriesId={seriesId}
                   isSelected={selectedSceneId === scene.id}
                   isHighlighted={highlightSceneIds.includes(scene.id)}
                   isGenerating={sceneHasPendingVideoTake(sceneTakes)}
-                  showArchive={showArchive}
+                  isArchivedView={showArchive}
+                  isDragging={dragId === scene.id}
+                  isDropTarget={dropBeforeId === scene.id}
                   menuOpen={openMenuId === scene.id}
                   onToggleMenu={() =>
                     setOpenMenuId((id) => (id === scene.id ? null : scene.id))
@@ -609,11 +750,21 @@ export function SceneRail({
                     setOpenMenuId(null);
                     startTransition(async () => {
                       await unarchiveSceneAction(scene.id, scene.episode_id, seriesId);
+                      setShowArchive(false);
                       router.refresh();
                     });
                   }}
-                  onDelete={() => void handleDeleteScene(scene)}
-                  onDragStart={() => setDragId(scene.id)}
+                  onDeleted={() => {
+                    setOpenMenuId(null);
+                    if (selectedSceneId === scene.id) {
+                      onSelectScene("");
+                    }
+                    router.refresh();
+                  }}
+                  onDragStart={handleDragStart}
+                  onDragEnd={clearDragState}
+                  onCardDragOver={handleCardDragOver}
+                  onCardDrop={handleCardDrop}
                   cardRef={(node) => {
                     if (node) cardRefs.current.set(scene.id, node);
                     else cardRefs.current.delete(scene.id);

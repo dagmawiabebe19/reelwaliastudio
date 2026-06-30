@@ -343,6 +343,47 @@ body {
   scrollbar-width: thin;
 }
 
+.studio-timeline-scroll--dragging {
+  scroll-snap-type: none;
+}
+
+.studio-segment-card--dragging {
+  opacity: 0.45;
+  transform: scale(0.97);
+}
+
+.studio-segment-card--drag-overlay {
+  opacity: 0.92;
+  transform: scale(1.03) rotate(-1deg);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--foreground) 18%, transparent);
+  cursor: grabbing;
+}
+
+.studio-segment-card--drop-target {
+  border-color: var(--status-validated);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-validated) 35%, transparent);
+}
+
+.studio-archive-drop-target {
+  position: relative;
+}
+
+.studio-archive-drop-target--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-muted) 55%, transparent);
+  color: var(--accent);
+}
+
+.studio-segment-drag-handle {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.studio-segment-drag-handle:active {
+  cursor: grabbing;
+}
+
 .studio-timeline-scroll::-webkit-scrollbar {
   height: 4px;
 }

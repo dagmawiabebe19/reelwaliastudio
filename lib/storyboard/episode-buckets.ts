@@ -40,21 +40,57 @@ export function scenesForBucket(
   bucket: SegmentBucket,
 ): SceneWithBindings[] {
   if (bucket.type === "archive") {
-    return scenes.filter((scene) => scene.status === "archived");
+    return scenes
+      .filter((scene) => scene.status === "archived")
+      .sort((a, b) => a.sort_order - b.sort_order || (a.position ?? 0) - (b.position ?? 0));
   }
 
   if (bucket.type === "storyboard-only") {
-    return scenes.filter(
-      (scene) => scene.status !== "archived" && isStoryboardOnlyScene(scene),
-    );
+    return scenes
+      .filter(
+        (scene) => scene.status !== "archived" && isStoryboardOnlyScene(scene),
+      )
+      .sort((a, b) => a.sort_order - b.sort_order || (a.position ?? 0) - (b.position ?? 0));
   }
 
-  return scenes.filter(
-    (scene) =>
-      scene.status !== "archived" &&
-      scene.episode_id === bucket.episodeId &&
-      !isStoryboardOnlyScene(scene),
-  );
+  return scenes
+    .filter(
+      (scene) =>
+        scene.status !== "archived" &&
+        scene.episode_id === bucket.episodeId &&
+        !isStoryboardOnlyScene(scene),
+    )
+    .sort((a, b) => a.sort_order - b.sort_order || (a.position ?? 0) - (b.position ?? 0));
+}
+
+/** Reorder scenes within a bucket while preserving order of scenes outside the bucket. */
+export function computeEpisodeOrderAfterBucketReorder(
+  scenes: SceneWithBindings[],
+  bucket: SegmentBucket,
+  orderedBucketSceneIds: string[],
+  fallbackEpisodeId?: string,
+): string[] {
+  const bucketSceneList = scenesForBucket(scenes, bucket);
+  const bucketIdSet = new Set(bucketSceneList.map((scene) => scene.id));
+  const episodeId =
+    bucket.type === "episode"
+      ? bucket.episodeId
+      : bucketSceneList[0]?.episode_id ?? fallbackEpisodeId;
+
+  if (!episodeId) return orderedBucketSceneIds;
+
+  const episodeOrder = scenes
+    .filter((scene) => scene.episode_id === episodeId)
+    .sort((a, b) => a.sort_order - b.sort_order || (a.position ?? 0) - (b.position ?? 0))
+    .map((scene) => scene.id);
+
+  let bucketIdx = 0;
+  return episodeOrder.map((id) => {
+    if (bucketIdSet.has(id)) {
+      return orderedBucketSceneIds[bucketIdx++] ?? id;
+    }
+    return id;
+  });
 }
 
 export function resolveActLabelForEpisode(
