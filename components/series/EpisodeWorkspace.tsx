@@ -4,7 +4,11 @@ import { StudioShell } from "@/components/series/StudioShell";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
-import type { MentionSheet } from "@/lib/production/types";
+import type {
+  CharacterSheetCardData,
+  IngredientCardData,
+  MentionSheet,
+} from "@/lib/production/types";
 import type { Orientation, Episode } from "@/lib/db/types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 
@@ -34,6 +38,11 @@ interface EpisodeWorkspaceProps {
   seedanceConfigured: boolean;
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
+  libraryIngredients: IngredientCardData[];
+  costumesByCharacter: Record<string, IngredientCardData[]>;
+  sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
+  showIngredients: boolean;
+  onCloseIngredients: () => void;
 }
 
 export function EpisodeWorkspace(props: EpisodeWorkspaceProps) {

@@ -14,6 +14,9 @@ interface EpisodeStudioChromeProps {
   audioLineCount: number;
   showAudio: boolean;
   onToggleAudio: () => void;
+  showIngredients: boolean;
+  onToggleIngredients: () => void;
+  ingredientCount: number;
 }
 
 export function EpisodeStudioChrome({
@@ -24,6 +27,9 @@ export function EpisodeStudioChrome({
   audioLineCount,
   showAudio,
   onToggleAudio,
+  showIngredients,
+  onToggleIngredients,
+  ingredientCount,
 }: EpisodeStudioChromeProps) {
   const { openNav } = useStudioNav();
   const { toggleCollapsed, prefs } = useCopilotWorkspace();
@@ -56,6 +62,17 @@ export function EpisodeStudioChrome({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={onToggleIngredients}
+          className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+            showIngredients
+              ? "border-accent bg-accent-muted text-accent"
+              : "border-border text-muted hover:border-accent/50 hover:text-accent"
+          }`}
+        >
+          References{ingredientCount > 0 ? ` (${ingredientCount})` : ""}
+        </button>
         <button
           type="button"
           onClick={onToggleAudio}

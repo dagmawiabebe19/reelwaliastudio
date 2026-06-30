@@ -4,13 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspaceProvider";
 import { GenerationPanel } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
+import { StudioIngredientsPanel } from "@/components/series/studio/StudioIngredientsPanel";
 import { SceneMetaControls } from "@/components/series/storyboard/SceneMetaControls";
-import { ScenePromptEditor } from "@/components/series/storyboard/ScenePromptEditor";
+import {
+  ScenePromptEditor,
+  type ScenePromptEditorHandle,
+} from "@/components/series/storyboard/ScenePromptEditor";
 import { SceneRail } from "@/components/series/storyboard/SceneRail";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 import type { MentionSheet } from "@/lib/production/types";
-import type { ResolvedReference } from "@/lib/production/types";
+import type { CharacterSheetCardData, IngredientCardData, ResolvedReference } from "@/lib/production/types";
 import type { Orientation, Episode } from "@/lib/db/types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 import { effectiveOrientation } from "@/lib/storyboard/orientation";
@@ -39,6 +43,11 @@ interface StudioShellProps {
   seedanceConfigured: boolean;
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
+  showIngredients: boolean;
+  onCloseIngredients: () => void;
+  libraryIngredients: IngredientCardData[];
+  costumesByCharacter: Record<string, IngredientCardData[]>;
+  sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
 }
 
 export function StudioShell({
@@ -57,10 +66,17 @@ export function StudioShell({
   seedanceConfigured,
   takesByScene,
   chatMessages,
+  showIngredients,
+  onCloseIngredients,
+  libraryIngredients,
+  costumesByCharacter,
+  sheetsByCharacter,
 }: StudioShellProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
   const [activeTakeIndex, setActiveTakeIndex] = useState(0);
+  const [promptDraft, setPromptDraft] = useState("");
   const sceneContentRef = useRef<HTMLDivElement>(null);
+  const promptEditorRef = useRef<ScenePromptEditorHandle>(null);
 
   const selectedScene = scenes.find((s) => s.id === selectedSceneId) ?? null;
   const sceneOrientation = selectedScene
@@ -71,9 +87,10 @@ export function StudioShell({
 
   useEffect(() => {
     setActiveTakeIndex(0);
+    setPromptDraft(selectedScene?.prompt ?? "");
     const panel = sceneContentRef.current;
     if (panel) panel.scrollTop = 0;
-  }, [selectedSceneId]);
+  }, [selectedSceneId, selectedScene?.prompt]);
 
   useEffect(() => {
     if (!scenes.length) {
@@ -158,10 +175,37 @@ export function StudioShell({
     <div className="studio-editing-bay flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="grid h-full min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(240px,5fr)]">
         <main className="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-border xl:border-b-0">
-          <div
-            ref={sceneContentRef}
-            className="min-h-0 flex-1 space-y-8 overflow-y-auto overscroll-contain px-5 py-6"
-          >
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
+            {showIngredients ? (
+              <div className="flex max-h-[38vh] min-h-0 w-full shrink-0 flex-col border-b border-border/80 md:max-h-none md:w-[min(100%,18rem)] md:border-b-0 md:border-r">
+                <StudioIngredientsPanel
+                  ingredients={libraryIngredients}
+                  costumesByCharacter={costumesByCharacter}
+                  sheetsByCharacter={sheetsByCharacter}
+                  mentionSheets={sheets}
+                  prompt={promptDraft}
+                  boundIngredientIds={
+                    selectedScene?.scene_ingredients.map((b) => b.ingredient_id) ?? []
+                  }
+                  boundSheetIds={
+                    (selectedScene?.scene_character_sheets ?? []).map(
+                      (b) => b.character_sheet_id,
+                    )
+                  }
+                  hasActiveScene={Boolean(selectedScene)}
+                  onInsertIngredient={(ingredient) =>
+                    promptEditorRef.current?.insertIngredient(ingredient)
+                  }
+                  onInsertSheet={(sheet) => promptEditorRef.current?.insertSheet(sheet)}
+                  onClose={onCloseIngredients}
+                />
+              </div>
+            ) : null}
+
+            <div
+              ref={sceneContentRef}
+              className="min-h-0 min-w-0 flex-1 space-y-8 overflow-y-auto overscroll-contain px-5 py-6"
+            >
             {selectedScene ? (
               <>
                 <SceneMetaControls
@@ -172,6 +216,7 @@ export function StudioShell({
                 />
 
                 <ScenePromptEditor
+                  ref={promptEditorRef}
                   sceneId={selectedScene.id}
                   episodeId={episodeId}
                   seriesId={seriesId}
@@ -186,6 +231,7 @@ export function StudioShell({
                     selectedScene.displayReferences ??
                     ((selectedScene.resolved_references ?? []) as ResolvedReference[])
                   }
+                  onPromptChange={setPromptDraft}
                 />
 
                 <TakesStrip
@@ -206,6 +252,7 @@ export function StudioShell({
                 <p className="text-sm">Select a segment below to begin.</p>
               </div>
             )}
+            </div>
           </div>
 
           <div className="shrink-0 border-t border-border/80 bg-surface/80 px-5 py-4 backdrop-blur-sm">

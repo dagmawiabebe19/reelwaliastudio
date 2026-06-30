@@ -7,7 +7,11 @@ import { EpisodeWorkspace } from "@/components/series/EpisodeWorkspace";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
-import type { MentionSheet } from "@/lib/production/types";
+import type {
+  CharacterSheetCardData,
+  IngredientCardData,
+  MentionSheet,
+} from "@/lib/production/types";
 import type { Orientation, Episode } from "@/lib/db/types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 
@@ -38,10 +42,14 @@ interface EpisodeStudioPageProps {
   takesByScene: Record<string, TakeCardData[]>;
   chatMessages: ChatMessageData[];
   audioLines: AudioLineCardData[];
+  libraryIngredients: IngredientCardData[];
+  costumesByCharacter: Record<string, IngredientCardData[]>;
+  sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
 }
 
 export function EpisodeStudioPage(props: EpisodeStudioPageProps) {
   const [showAudio, setShowAudio] = useState(false);
+  const [showIngredients, setShowIngredients] = useState(false);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -53,6 +61,9 @@ export function EpisodeStudioPage(props: EpisodeStudioPageProps) {
         audioLineCount={props.audioLines.length}
         showAudio={showAudio}
         onToggleAudio={() => setShowAudio((v) => !v)}
+        showIngredients={showIngredients}
+        onToggleIngredients={() => setShowIngredients((v) => !v)}
+        ingredientCount={props.libraryIngredients.length}
       />
 
       {showAudio ? (
@@ -66,7 +77,11 @@ export function EpisodeStudioPage(props: EpisodeStudioPageProps) {
       ) : null}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <EpisodeWorkspace {...props} />
+        <EpisodeWorkspace
+          {...props}
+          showIngredients={showIngredients}
+          onCloseIngredients={() => setShowIngredients(false)}
+        />
       </div>
     </div>
   );

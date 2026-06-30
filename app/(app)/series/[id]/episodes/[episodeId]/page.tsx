@@ -9,7 +9,7 @@ import { listIngredientsBySeries } from "@/lib/db/ingredients";
 import { listScenesBySeries } from "@/lib/db/scenes";
 import { getSeries } from "@/lib/db/series";
 import { listTakesForScenes } from "@/lib/db/takes";
-import { buildMentionSheets } from "@/lib/production/library-data";
+import { buildMentionSheets, buildProductionLibraryData } from "@/lib/production/library-data";
 import { buildDisplayReferences } from "@/lib/production/enrich-scene-references";
 import { resolveAssetUrl, resolveAssetUrls } from "@/lib/storage/resolve-urls";
 
@@ -33,6 +33,31 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
   ]);
 
   if (!series || !episode || episode.series_id !== seriesId) notFound();
+
+  const ingredientsWithUrls = await resolveAssetUrls(
+    ingredients.map((ingredient) => ({
+      ...ingredient,
+      assets: ingredient.assets,
+    })),
+  );
+
+  const { costumesByCharacter, sheetsByCharacter } = await buildProductionLibraryData({
+    ingredients: ingredientsWithUrls,
+    sheets: sheetsRaw,
+  });
+
+  const libraryIngredients = ingredientsWithUrls.map((item) => ({
+    id: item.id,
+    kind: item.kind,
+    name: item.name,
+    description: item.description,
+    ref_tag: item.ref_tag,
+    assetUrl: item.assetUrl,
+    mediaType: item.assets?.media_type ?? null,
+    characterId: item.character_id,
+    generationStatus: item.generation_status,
+    generationError: item.generation_error,
+  }));
 
   const [audioLines, takes, chatMessages] = await Promise.all([
     resolveAssetUrls(audioLinesRaw),
@@ -139,6 +164,9 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
         assetUrl: line.assetUrl,
         assetId: line.asset_id,
       }))}
+      libraryIngredients={libraryIngredients}
+      costumesByCharacter={costumesByCharacter}
+      sheetsByCharacter={sheetsByCharacter}
     />
   );
 }
