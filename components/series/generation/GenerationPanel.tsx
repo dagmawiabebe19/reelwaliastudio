@@ -11,9 +11,12 @@ import { InsufficientCreditsWall } from "@/components/credits/InsufficientCredit
 import { estimateVideoCredits } from "@/lib/credits/pricing";
 import {
   SEEDANCE_AUDIO_MODE_OPTIONS,
+  SEEDANCE_AUDIO_MODE_SUMMARY,
   SEEDANCE_DURATION_OPTIONS,
-  SEEDANCE_TIER_OPTIONS,
+  type GenerationQualityMode,
   type SeedanceAudioMode,
+  normalizeSeedanceAudioMode,
+  resolveQualitySettings,
 } from "@/lib/ai/video/seedance-constants";
 import {
   SHOT_INTENTS,
@@ -24,6 +27,8 @@ import {
 } from "@/lib/production/prompts";
 import type { ResolvedReference } from "@/lib/production/types";
 
+const MAX_TAKES = 5;
+
 interface GenerationPanelProps {
   sceneId: string;
   seriesId: string;
@@ -31,6 +36,8 @@ interface GenerationPanelProps {
   seedanceConfigured: boolean;
   scenePrompt?: string | null;
   shotIntent?: string | null;
+  audioMode?: string | null;
+  durationSeconds?: number | null;
   resolvedReferences?: ResolvedReference[];
 }
 
@@ -53,6 +60,23 @@ function seedanceReferenceLabels(refs: ResolvedReference[]): string[] {
     .map(formatSeedanceRefLabel);
 }
 
+function clampDuration(seconds: number | null | undefined): number {
+  const fallback = 8;
+  const value = typeof seconds === "number" && Number.isFinite(seconds) ? Math.round(seconds) : fallback;
+  const clamped = Math.min(15, Math.max(4, value));
+  return SEEDANCE_DURATION_OPTIONS.includes(clamped as (typeof SEEDANCE_DURATION_OPTIONS)[number])
+    ? clamped
+    : SEEDANCE_DURATION_OPTIONS.reduce((prev, curr) =>
+        Math.abs(curr - clamped) < Math.abs(prev - clamped) ? curr : prev,
+      );
+}
+
+function shotIntentSummary(intent: ShotIntent): string {
+  const label = SHOT_INTENT_LABELS[intent];
+  const short = label.split("(")[0]?.trim().toLowerCase() ?? intent.replace(/_/g, " ");
+  return short;
+}
+
 function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
     <div className="mb-1.5">
@@ -71,20 +95,19 @@ export function GenerationPanel({
   episodeId,
   seedanceConfigured,
   scenePrompt = "",
-  shotIntent: initialShotIntent = null,
+  shotIntent: segmentShotIntent = null,
+  audioMode: segmentAudioMode = null,
+  durationSeconds: segmentDurationSeconds = null,
   resolvedReferences = [],
 }: GenerationPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [resolution, setResolution] = useState<"480p" | "720p">("720p");
-  const [duration, setDuration] = useState(8);
-  const [seedanceTier, setSeedanceTier] = useState<string>(SEEDANCE_TIER_OPTIONS[0].id);
-  const [seedanceAudioMode, setSeedanceAudioMode] = useState<SeedanceAudioMode>("off");
-  const [shotIntent, setShotIntent] = useState<ShotIntent>(
-    () =>
-      normalizeShotIntent(initialShotIntent) ??
-      inferDefaultShotIntent(scenePrompt ?? ""),
-  );
+  const [takeCount, setTakeCount] = useState(1);
+  const [quality, setQuality] = useState<GenerationQualityMode>("final");
+  const [duration, setDuration] = useState(() => clampDuration(segmentDurationSeconds));
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [shotIntentOverride, setShotIntentOverride] = useState<ShotIntent | null>(null);
+  const [audioModeOverride, setAudioModeOverride] = useState<SeedanceAudioMode | null>(null);
   const [startedMessage, setStartedMessage] = useState<string | null>(null);
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
   const [userIsAdmin, setUserIsAdmin] = useState(false);
@@ -93,15 +116,35 @@ export function GenerationPanel({
     available: number;
   } | null>(null);
 
-  const estimatedCost = useMemo(
+  const resolvedShotIntent = useMemo(
+    () =>
+      shotIntentOverride ??
+      normalizeShotIntent(segmentShotIntent) ??
+      inferDefaultShotIntent(scenePrompt ?? ""),
+    [shotIntentOverride, segmentShotIntent, scenePrompt],
+  );
+
+  const resolvedAudioMode = useMemo(
+    () =>
+      audioModeOverride ??
+      normalizeSeedanceAudioMode(segmentAudioMode) ??
+      ("ambient" as SeedanceAudioMode),
+    [audioModeOverride, segmentAudioMode],
+  );
+
+  const qualitySettings = useMemo(() => resolveQualitySettings(quality), [quality]);
+
+  const estimatedCostPerTake = useMemo(
     () =>
       estimateVideoCredits({
-        tier: seedanceTier as "standard" | "fast",
-        resolution,
+        tier: qualitySettings.tier,
+        resolution: qualitySettings.resolution,
         durationSeconds: duration,
       }),
-    [seedanceTier, resolution, duration],
+    [qualitySettings, duration],
   );
+
+  const estimatedCost = estimatedCostPerTake * takeCount;
 
   const seedanceRefLabels = useMemo(
     () => seedanceReferenceLabels(resolvedReferences),
@@ -110,11 +153,12 @@ export function GenerationPanel({
   const canGenerate = seedanceConfigured && seedanceRefLabels.length > 0;
 
   useEffect(() => {
-    setShotIntent(
-      normalizeShotIntent(initialShotIntent) ??
-        inferDefaultShotIntent(scenePrompt ?? ""),
-    );
-  }, [sceneId, initialShotIntent, scenePrompt]);
+    setDuration(clampDuration(segmentDurationSeconds));
+    setShotIntentOverride(null);
+    setAudioModeOverride(null);
+    setShowAdvanced(false);
+    setTakeCount(1);
+  }, [sceneId, segmentDurationSeconds]);
 
   useEffect(() => {
     void getMyCreditBalanceAction().then((result) => {
@@ -137,11 +181,11 @@ export function GenerationPanel({
         sceneId,
         seriesId,
         episodeId,
-        resolution,
+        quality,
         durationSeconds: duration,
-        seedanceTier: seedanceTier as "standard" | "fast",
-        seedanceAudioMode,
-        shotIntent,
+        takeCount,
+        shotIntentOverride: showAdvanced ? shotIntentOverride ?? resolvedShotIntent : undefined,
+        audioModeOverride: showAdvanced ? audioModeOverride ?? resolvedAudioMode : undefined,
       });
 
       if ("error" in result && result.error) {
@@ -151,8 +195,9 @@ export function GenerationPanel({
           alert(result.error);
         }
       } else {
+        const takeLabel = takeCount === 1 ? "take" : `${takeCount} takes`;
         setStartedMessage(
-          `Generating video from ${seedanceRefLabels.length} reference${seedanceRefLabels.length === 1 ? "" : "s"}… may take several minutes`,
+          `Generating ${takeLabel} from ${seedanceRefLabels.length} reference${seedanceRefLabels.length === 1 ? "" : "s"}… may take several minutes`,
         );
         const balance = await getMyCreditBalanceAction();
         if (balance.balance) {
@@ -172,7 +217,8 @@ export function GenerationPanel({
         <span className="studio-segment-panel-badge">This segment</span>
         <h3 className="studio-section-label mt-2">New take</h3>
         <p className="text-[10px] leading-relaxed text-muted">
-          Seedance generates video from bound ingredient references and your shot prompt.
+          Seedance generates video from bound references and your shot prompt. Shot intent and audio
+          are set by the co-pilot — adjust takes, quality, and duration below.
         </p>
       </div>
 
@@ -180,121 +226,143 @@ export function GenerationPanel({
         <p className="studio-section-label">Model</p>
         <p className="mt-1 text-sm text-foreground">Seedance 2.0</p>
         <p className="mt-1 text-xs leading-relaxed text-muted">
-          References + text → video in one pass. No intermediate still required.
+          {seedanceRefLabels.length
+            ? `References: ${seedanceRefLabels.join(", ")}`
+            : "Bind a character sheet or location — mention them in the prompt to auto-bind."}
+        </p>
+        <p className="mt-2 text-xs text-muted">
+          Shot: {shotIntentSummary(resolvedShotIntent)} · Audio:{" "}
+          {SEEDANCE_AUDIO_MODE_SUMMARY[resolvedAudioMode]}
         </p>
       </div>
 
-      <div className="space-y-3 rounded-md border border-border/60 bg-background/30 p-3">
+      <div className="space-y-4 rounded-md border border-border/60 bg-background/30 p-3">
         <div>
-          <FieldLabel>References</FieldLabel>
-          {seedanceRefLabels.length ? (
-            <p className="text-sm text-foreground">{seedanceRefLabels.join(", ")}</p>
-          ) : (
-            <p className="text-xs leading-relaxed text-muted">
-              Bind a character sheet or location to generate — mention them in the segment prompt to
-              auto-bind references.
-            </p>
-          )}
+          <FieldLabel hint="How many variations to generate this run.">Number of takes</FieldLabel>
+          <input
+            type="number"
+            min={1}
+            max={MAX_TAKES}
+            value={takeCount}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              if (!Number.isFinite(next)) return;
+              setTakeCount(Math.min(MAX_TAKES, Math.max(1, Math.round(next))));
+            }}
+            className={selectClass}
+          />
         </div>
 
         <div>
-          <FieldLabel>Shot intent</FieldLabel>
-          <select
-            value={shotIntent}
-            onChange={(e) => setShotIntent(e.target.value as ShotIntent)}
-            className={selectClass}
-          >
-            {SHOT_INTENTS.map((intent) => (
-              <option key={intent} value={intent}>
-                {SHOT_INTENT_LABELS[intent]}
-              </option>
+          <FieldLabel hint="Draft is faster and cheaper; Final is higher quality.">
+            Quality
+          </FieldLabel>
+          <div className="grid grid-cols-2 gap-2">
+            {(["draft", "final"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setQuality(mode)}
+                className={`rounded-md border px-3 py-2 text-sm capitalize transition-colors ${
+                  quality === mode
+                    ? "border-accent bg-accent/10 text-foreground"
+                    : "border-border bg-background text-muted hover:text-foreground"
+                }`}
+              >
+                {mode}
+                <span className="mt-0.5 block text-[10px] normal-case text-muted">
+                  {mode === "draft" ? "480p · Fast" : "720p · Standard"}
+                </span>
+              </button>
             ))}
-          </select>
+          </div>
         </div>
 
         <div>
-          <FieldLabel>Tier</FieldLabel>
-          <select
-            value={seedanceTier}
-            onChange={(e) => setSeedanceTier(e.target.value)}
-            className={selectClass}
-          >
-            {SEEDANCE_TIER_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <FieldLabel hint="Pre-filled from the co-pilot; adjust if needed.">Duration</FieldLabel>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-40"
+              disabled={duration <= SEEDANCE_DURATION_OPTIONS[0]}
+              onClick={() => {
+                const idx = SEEDANCE_DURATION_OPTIONS.indexOf(
+                  duration as (typeof SEEDANCE_DURATION_OPTIONS)[number],
+                );
+                if (idx > 0) setDuration(SEEDANCE_DURATION_OPTIONS[idx - 1]);
+              }}
+            >
+              −
+            </button>
+            <span className="min-w-[4.5rem] text-center text-sm tabular-nums">{duration}s</span>
+            <button
+              type="button"
+              className="rounded-md border border-border px-3 py-2 text-sm disabled:opacity-40"
+              disabled={
+                duration >= SEEDANCE_DURATION_OPTIONS[SEEDANCE_DURATION_OPTIONS.length - 1]
+              }
+              onClick={() => {
+                const idx = SEEDANCE_DURATION_OPTIONS.indexOf(
+                  duration as (typeof SEEDANCE_DURATION_OPTIONS)[number],
+                );
+                if (idx >= 0 && idx < SEEDANCE_DURATION_OPTIONS.length - 1) {
+                  setDuration(SEEDANCE_DURATION_OPTIONS[idx + 1]);
+                }
+              }}
+            >
+              +
+            </button>
+          </div>
         </div>
 
-        <div className="space-y-2 rounded-md border border-border/40 bg-background/20 p-3">
-          <FieldLabel>Native audio</FieldLabel>
-          <select
-            value={seedanceAudioMode}
-            onChange={(e) => setSeedanceAudioMode(e.target.value as SeedanceAudioMode)}
-            className={selectClass}
-          >
-            {SEEDANCE_AUDIO_MODE_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <p className="text-[10px] leading-relaxed text-muted">
-            {seedanceAudioMode === "off"
-              ? "Silent clip — generate_audio=false."
-              : seedanceAudioMode === "ambient"
-                ? "fal has no SFX-only flag — this enables full native audio; describe ambient sound and SFX in the shot prompt and avoid quoted dialogue."
-                : "Full native audio — dialogue, SFX, and ambient in one pass."}
-          </p>
-          {seedanceAudioMode !== "off" ? (
-            <>
-              <p className="text-[10px] leading-relaxed text-muted">
-                For spoken lines, put dialogue in double quotes in the shot description — Seedance
-                will lip-sync it.
-              </p>
-              <p className="text-[10px] leading-relaxed text-muted">
-                Native voices are model-generated and may vary between shots — for a consistent
-                character voice across episodes, keep dialogue audio off here and use a dedicated
-                voice pass.
-              </p>
-            </>
-          ) : null}
-        </div>
-
-        <div>
-          <FieldLabel>Clip length</FieldLabel>
-          <select
-            value={String(duration)}
-            onChange={(e) => setDuration(Number(e.target.value))}
-            className={selectClass}
-          >
-            {SEEDANCE_DURATION_OPTIONS.map((seconds) => (
-              <option key={seconds} value={String(seconds)}>
-                {seconds} seconds
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <FieldLabel>Resolution</FieldLabel>
-          <select
-            value={resolution}
-            onChange={(e) => setResolution(e.target.value as "480p" | "720p")}
-            className={selectClass}
-          >
-            <option value="480p">480p</option>
-            <option value="720p">720p</option>
-          </select>
-        </div>
+        <details
+          className="rounded-md border border-border/40 bg-background/20 p-3"
+          open={showAdvanced}
+          onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}
+        >
+          <summary className="cursor-pointer text-xs text-muted">Advanced overrides</summary>
+          <div className="mt-3 space-y-3">
+            <div>
+              <FieldLabel>Shot intent</FieldLabel>
+              <select
+                value={shotIntentOverride ?? resolvedShotIntent}
+                onChange={(e) => setShotIntentOverride(e.target.value as ShotIntent)}
+                className={selectClass}
+              >
+                {SHOT_INTENTS.map((intent) => (
+                  <option key={intent} value={intent}>
+                    {SHOT_INTENT_LABELS[intent]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Audio mode</FieldLabel>
+              <select
+                value={audioModeOverride ?? resolvedAudioMode}
+                onChange={(e) => setAudioModeOverride(e.target.value as SeedanceAudioMode)}
+                className={selectClass}
+              >
+                {SEEDANCE_AUDIO_MODE_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </details>
       </div>
 
       <CreditCostHint
         cost={estimatedCost}
         available={availableCredits}
         isAdmin={userIsAdmin}
-        label={`This ${duration}s ${resolution} shot`}
+        label={
+          takeCount > 1
+            ? `${takeCount}× ${duration}s ${qualitySettings.resolution} shots`
+            : `This ${duration}s ${qualitySettings.resolution} shot`
+        }
       />
 
       {insufficientCredits ? (
@@ -310,7 +378,7 @@ export function GenerationPanel({
         disabled={pending || !canGenerate}
         className="w-full"
       >
-        {pending ? "Starting…" : "Generate video"}
+        {pending ? "Starting…" : takeCount > 1 ? `Generate ${takeCount} takes` : "Generate video"}
       </Button>
 
       {startedMessage ? (

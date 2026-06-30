@@ -18,8 +18,12 @@ import {
   markTakeReady,
 } from "@/lib/db/takes";
 import { validateSeedanceVideoGeneration } from "@/lib/ai/generation/video-source";
-import { composeVideoPrompt } from "@/lib/production/prompts";
-import { seedanceGenerateAudio } from "@/lib/ai/video/seedance-constants";
+import { composeVideoPrompt, normalizeShotIntent } from "@/lib/production/prompts";
+import {
+  normalizeSeedanceAudioMode,
+  seedanceGenerateAudio,
+  type SeedanceAudioMode,
+} from "@/lib/ai/video/seedance-constants";
 import { resolveSceneReferences } from "@/lib/production/resolve-references";
 import { persistRemoteAsset } from "@/lib/storage/persist-generated";
 import type { GenerationProgressCallback } from "@/lib/generation/progress";
@@ -32,8 +36,9 @@ export interface GenerateTakeParams {
   resolution: string;
   durationSeconds?: number;
   seedanceTier?: "standard" | "fast";
-  seedanceAudioMode?: "off" | "full" | "ambient";
+  seedanceAudioMode?: SeedanceAudioMode;
   shotIntent?: string | null;
+  takeCount?: number;
 }
 
 export interface TakeGenerationOutcome {
@@ -92,22 +97,30 @@ export async function createPendingTakes(params: GenerateTakeParams): Promise<st
     throw new Error(seedanceCheck.error);
   }
 
-  const take = await createTake({
-    sceneId: params.sceneId,
-    mediaType: "video",
-    model: modelId,
-    resolution: params.resolution,
-    durationSeconds: params.durationSeconds ?? 6,
-    status: "pending",
-  });
+  const takeCount = Math.min(5, Math.max(1, Math.round(params.takeCount ?? 1)));
+  const takeIds: string[] = [];
 
-  return [take.id];
+  for (let i = 0; i < takeCount; i++) {
+    const take = await createTake({
+      sceneId: params.sceneId,
+      mediaType: "video",
+      model: modelId,
+      resolution: params.resolution,
+      durationSeconds: params.durationSeconds ?? 6,
+      status: "pending",
+    });
+    takeIds.push(take.id);
+  }
+
+  return takeIds;
 }
 
 async function runVideoGenerationCore(
   params: GenerateTakeParams,
-  takeIds: string[],
+  takeId: string,
   onProgress?: GenerationProgressCallback,
+  takeIndex = 0,
+  takeTotal = 1,
 ): Promise<{ videoDurationSeconds: number }> {
   const scene = await getScene(params.sceneId);
   if (!scene) throw new Error("Scene not found.");
@@ -118,15 +131,22 @@ async function runVideoGenerationCore(
   const model = getModelById(params.modelId || SEGMENT_VIDEO_MODEL_ID);
   if (!model) throw new Error("Unknown model.");
 
-  onProgress?.("resolving references…", 0, takeIds.length);
+  onProgress?.("resolving references…", takeIndex, takeTotal);
 
   const aspectRatio = orientationToAspectRatio(
     effectiveOrientation(scene.orientation, series.default_orientation),
   );
   const scenePrompt = scene.prompt?.trim() || scene.title;
+  const shotIntent =
+    normalizeShotIntent(params.shotIntent) ?? normalizeShotIntent(scene.shot_intent);
+  const seedanceAudioMode =
+    params.seedanceAudioMode ??
+    normalizeSeedanceAudioMode(scene.audio_mode) ??
+    "ambient";
   const prompt = composeVideoPrompt({
     scenePrompt,
-    shotIntent: scene.shot_intent,
+    shotIntent,
+    audioMode: seedanceAudioMode,
   });
 
   await resolveSceneReferences({
@@ -136,15 +156,18 @@ async function runVideoGenerationCore(
     autoBind: true,
   });
 
-  const seedanceAudioMode = params.seedanceAudioMode ?? "off";
-  const durationSeconds = params.durationSeconds ?? 6;
+  const durationSeconds = params.durationSeconds ?? scene.duration_seconds ?? 6;
 
   const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
   if (!seedanceCheck.ok) {
     throw new Error(seedanceCheck.error);
   }
 
-  onProgress?.("generating video…", 0, takeIds.length);
+  onProgress?.(
+    takeTotal > 1 ? `generating take ${takeIndex + 1}/${takeTotal}…` : "generating video…",
+    takeIndex,
+    takeTotal,
+  );
 
   let result;
   try {
@@ -163,7 +186,7 @@ async function runVideoGenerationCore(
     logGenerationError("provider", error, {
       modelId: params.modelId,
       sceneId: params.sceneId,
-      takeIds,
+      takeIds: [takeId],
     });
     throw new Error(message);
   }
@@ -173,7 +196,7 @@ async function runVideoGenerationCore(
     logGenerationError("provider-result", message, {
       modelId: params.modelId,
       sceneId: params.sceneId,
-      takeIds,
+      takeIds: [takeId],
       configured: result.configured,
     });
     throw new Error(message);
@@ -181,49 +204,19 @@ async function runVideoGenerationCore(
 
   const takeDurationSeconds = result.videoDurationSeconds ?? durationSeconds;
 
-  for (let i = 0; i < takeIds.length; i++) {
-    const takeId = takeIds[i];
-    onProgress?.("saving video…", i + 1, takeIds.length);
-    const persisted = result.persistedAssets?.[i] ?? result.persistedAssets?.[0];
-    const remoteUrl = result.assetUrls[i] ?? result.assetUrls[0];
-    const takeDurationMs = takeDurationSeconds * 1000;
-    const takeHasAudio = seedanceGenerateAudio(seedanceAudioMode);
+  onProgress?.("saving video…", takeIndex + 1, takeTotal);
+  const persisted = result.persistedAssets?.[0];
+  const remoteUrl = result.assetUrls[0];
+  const takeDurationMs = takeDurationSeconds * 1000;
+  const takeHasAudio = seedanceGenerateAudio(seedanceAudioMode);
 
-    if (persisted) {
-      const asset = await createAsset({
-        bucket: persisted.bucket,
-        storagePath: persisted.storagePath,
-        mediaType: persisted.mediaType,
-        width: persisted.width ?? null,
-        height: persisted.height ?? null,
-        durationMs: takeDurationMs,
-        source: "generated",
-        model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
-        prompt,
-      });
-
-      await markTakeReady(takeId, asset.id, {
-        duration_seconds: takeDurationSeconds,
-        has_audio: takeHasAudio,
-      });
-      continue;
-    }
-
-    if (!remoteUrl) {
-      throw new Error("No asset URL returned for this take.");
-    }
-
-    const stored = await persistRemoteAsset({
-      sceneId: params.sceneId,
-      remoteUrl,
-      model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
-      prompt,
-    });
-
+  if (persisted) {
     const asset = await createAsset({
-      bucket: stored.bucket,
-      storagePath: stored.storagePath,
-      mediaType: stored.mediaType,
+      bucket: persisted.bucket,
+      storagePath: persisted.storagePath,
+      mediaType: persisted.mediaType,
+      width: persisted.width ?? null,
+      height: persisted.height ?? null,
       durationMs: takeDurationMs,
       source: "generated",
       model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
@@ -234,7 +227,34 @@ async function runVideoGenerationCore(
       duration_seconds: takeDurationSeconds,
       has_audio: takeHasAudio,
     });
+    return { videoDurationSeconds: takeDurationSeconds };
   }
+
+  if (!remoteUrl) {
+    throw new Error("No asset URL returned for this take.");
+  }
+
+  const stored = await persistRemoteAsset({
+    sceneId: params.sceneId,
+    remoteUrl,
+    model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
+    prompt,
+  });
+
+  const asset = await createAsset({
+    bucket: stored.bucket,
+    storagePath: stored.storagePath,
+    mediaType: stored.mediaType,
+    durationMs: takeDurationMs,
+    source: "generated",
+    model: params.modelId || SEGMENT_VIDEO_MODEL_ID,
+    prompt,
+  });
+
+  await markTakeReady(takeId, asset.id, {
+    duration_seconds: takeDurationSeconds,
+    has_audio: takeHasAudio,
+  });
 
   return { videoDurationSeconds: takeDurationSeconds };
 }
@@ -247,46 +267,49 @@ export async function executeGenerationJob(
   const userId = await getActiveUserId();
   const seedanceTier = params.seedanceTier ?? "fast";
   const durationSeconds = params.durationSeconds ?? 6;
-  const estimate = estimateVideoCredits({
-    tier: seedanceTier,
-    resolution: params.resolution,
-    durationSeconds,
-  });
-  const reference = `seedance:take:${takeIds[0]}`;
 
-  try {
-    return await withCredits(userId, estimate, reference, async () => {
-      const { videoDurationSeconds } = await runVideoGenerationCore(params, takeIds, onProgress);
-      const actualCredits = estimateVideoCredits({
-        tier: seedanceTier,
-        resolution: params.resolution,
-        durationSeconds: videoDurationSeconds,
+  for (let i = 0; i < takeIds.length; i++) {
+    const takeId = takeIds[i];
+    const estimate = estimateVideoCredits({
+      tier: seedanceTier,
+      resolution: params.resolution,
+      durationSeconds,
+    });
+    const reference = `seedance:take:${takeId}`;
+
+    try {
+      await withCredits(userId, estimate, reference, async () => {
+        const { videoDurationSeconds } = await runVideoGenerationCore(
+          params,
+          takeId,
+          onProgress,
+          i,
+          takeIds.length,
+        );
+        const actualCredits = estimateVideoCredits({
+          tier: seedanceTier,
+          resolution: params.resolution,
+          durationSeconds: videoDurationSeconds,
+        });
+        return { result: undefined, actualCredits };
       });
-      const jobOutcome = await buildOutcome(takeIds);
-      if (jobOutcome.ready === 0) {
-        throw new Error("Video generation did not produce a usable take.");
+    } catch (error) {
+      if (isInsufficientCreditsError(error)) {
+        throw error;
       }
-      return { result: jobOutcome, actualCredits };
-    });
-  } catch (error) {
-    if (isInsufficientCreditsError(error)) {
-      throw error;
-    }
 
-    const message = formatGenerationError(error, "Generation job failed.");
-    logGenerationError("job", error, {
-      takeIds,
-      modelId: params.modelId,
-      sceneId: params.sceneId,
-    });
-    await Promise.all(
-      takeIds.map(async (id) => {
-        const take = await getTake(id);
-        if (take?.status === "pending") {
-          await markTakeFailed(id, message);
-        }
-      }),
-    );
-    return buildOutcome(takeIds);
+      const message = formatGenerationError(error, "Generation job failed.");
+      logGenerationError("job", error, {
+        takeIds: [takeId],
+        modelId: params.modelId,
+        sceneId: params.sceneId,
+      });
+      const take = await getTake(takeId);
+      if (take?.status === "pending") {
+        await markTakeFailed(takeId, message);
+      }
+    }
   }
+
+  return buildOutcome(takeIds);
 }

@@ -144,8 +144,12 @@ export function composeVideoPrompt(input: {
   scenePrompt: string;
   shotIntent?: ShotIntent | string | null;
   subjectMotion?: string | null;
+  audioMode?: "off" | "full" | "ambient" | null;
 }): string {
-  const base = input.scenePrompt.trim();
+  let base = input.scenePrompt.trim();
+  if (input.audioMode === "full") {
+    base = ensureDialogueQuoted(base);
+  }
   const intent =
     normalizeShotIntent(input.shotIntent) ?? inferDefaultShotIntent(base);
   const motion = input.subjectMotion ?? inferSubjectMotion(base, intent);
@@ -153,4 +157,22 @@ export function composeVideoPrompt(input: {
 
   if (!base) return cameraClause;
   return `${base} ${cameraClause}`;
+}
+
+const DIALOGUE_SAYS_PATTERN =
+  /\b([A-Za-z][\w\s.'-]{0,40}?)\s+says\s+(?!")([^".\n]{2,120}?)([.!?]|$)/gi;
+
+/** Wrap spoken lines in double quotes so Seedance lip-syncs when audio is full. */
+export function ensureDialogueQuoted(prompt: string): string {
+  if (!prompt.trim() || /"[^"]{2,}"/.test(prompt)) {
+    return prompt;
+  }
+
+  return prompt.replace(DIALOGUE_SAYS_PATTERN, (_match, speaker, line, end) => {
+    const spoken = String(line).trim();
+    if (!spoken || spoken.startsWith('"')) {
+      return _match;
+    }
+    return `${String(speaker).trim()} says "${spoken}"${end ?? ""}`;
+  });
 }

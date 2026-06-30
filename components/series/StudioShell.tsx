@@ -247,6 +247,8 @@ export function StudioShell({
                 seedanceConfigured={seedanceConfigured}
                 scenePrompt={selectedScene.prompt}
                 shotIntent={selectedScene.shot_intent}
+                audioMode={selectedScene.audio_mode}
+                durationSeconds={selectedScene.duration_seconds}
                 resolvedReferences={
                   selectedScene.displayReferences ??
                   ((selectedScene.resolved_references ?? []) as ResolvedReference[])

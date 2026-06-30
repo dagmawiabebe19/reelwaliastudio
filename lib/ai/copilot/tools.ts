@@ -23,13 +23,25 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
                 enum: ["EP_01", "EP_02", "EP_03", "Storyboard-only"],
                 description: "Storyboard bucket in the SEGMENTS panel. Default EP_01 when omitted.",
               },
-              duration_seconds: { type: "number" },
+              duration_seconds: { type: "number", description: "Suggested clip length in seconds (4–15)." },
               orientation: { type: "string", enum: ["portrait", "landscape"] },
               shot_intent: {
                 type: "string",
                 enum: ["static", "push_in", "pull_back", "orbit", "follow", "rise", "descend"],
                 description:
                   "DoP camera motion intent. Use pull_back when the subject moves toward camera; static for locked frames.",
+              },
+              audio_mode: {
+                type: "string",
+                enum: ["off", "full", "ambient"],
+                description:
+                  "Seedance audio default. full = spoken dialogue (put dialogue in double quotes in prompt for lip-sync); ambient = atmosphere/SFX coverage; off = silent.",
+              },
+              generation_tier: {
+                type: "string",
+                enum: ["standard", "fast"],
+                description:
+                  "Suggested quality tier: standard for hero/emotional beats, fast for coverage. Director overrides via Draft/Final at generation.",
               },
               scene_id: { type: "string", description: "If set, update existing scene" },
             },
@@ -181,7 +193,7 @@ You may still generate **library assets** (character headshots, location establi
 
 If the user asks to "generate", "render", or "shoot" a segment or take:
 - Do NOT attempt generation. There is no generate_take tool.
-- Briefly direct them: open the segment, review/adjust the prompt, then use the **New Take** panel to choose model, takes count, length/quality (480p/720p), and hit Generate.
+- Briefly direct them: open the segment, review/adjust the prompt, then use the **New Take** panel — set number of takes, Draft/Final quality, and duration — then hit Generate.
 - You may confirm the segment is set up (prompt, bindings, orientation) and ready to generate.
 
 ## Episode breakdown — two beats (mandatory)
@@ -189,7 +201,7 @@ If the user asks to "generate", "render", or "shoot" a segment or take:
 ### Beat 1 — PROPOSE (text only, no tools, no DB writes)
 When the user asks to break down, plan, or build an episode storyboard:
 - Reply in chat with a numbered segment breakdown — a readable shot list.
-- Each line includes: segment number, short title/beat, one-line action description, identity sheets + locations + voices to bind (by @ref_tag or name), duration (seconds), and suggested shot_intent (static, push_in, pull_back, orbit, follow, rise, descend).
+- Each line includes: segment number, short title/beat, one-line action description, identity sheets + locations + voices to bind (by @ref_tag or name), duration (seconds), shot_intent (static, push_in, pull_back, orbit, follow, rise, descend), audio_mode (full if spoken dialogue — put lines in double quotes in the prompt; ambient for atmosphere/coverage; off only when truly silent), and generation_tier (standard for hero beats, fast for coverage).
 - Do NOT call draft_storyboard, bind_identity, or any other tool that creates or updates scenes in this turn.
 - End by asking the user to confirm or revise (e.g. "Want me to build these on the storyboard, or adjust the breakdown first?").
 
@@ -197,7 +209,7 @@ If the user revises the breakdown before approving, update the TEXT proposal and
 
 ### Beat 2 — BUILD (only after explicit approval)
 Only when the user clearly approves ("build it", "create them", "go", "yes build", "looks good, create", etc.):
-- Call draft_storyboard once with the approved breakdown (prompts, durations, orientations).
+- Call draft_storyboard once with the approved breakdown (prompts, durations, orientations, shot_intent, audio_mode, generation_tier per segment).
 - Use the active Episode id from context for episode_id (shown in system prompt). Segments are filed under that episode automatically — set act_label to "Storyboard-only" only for segments that are not yet assigned to an episode bucket.
 - Segments appear as ungenerated placeholders (0 takes, ready to generate). draft_storyboard auto-binds sheets, locations, and voices.
 - Then STOP. Tell the creator the shot list is on the storyboard and they can generate takes manually per segment in the New Take panel.
@@ -218,7 +230,7 @@ When a segment will become video, pair subject motion with explicit camera motio
 - **pull_back** when the subject advances toward camera/us — camera dollies away while they approach (never let "walks toward us" render as walking backward).
 - **push_in** when the camera should move toward the subject.
 - **static** for locked frames; **orbit** to arc around; **follow** to track lateral movement; **rise** / **descend** for crane moves.
-Include shot_intent per segment in Beat 1 proposals and set shot_intent on each segment in draft_storyboard. Segment prompts describe the action; shot_intent drives the appended camera clause at generation time.
+Include shot_intent, audio_mode, and generation_tier per segment in Beat 1 proposals and set them on each segment in draft_storyboard. For audio_mode=full, dialogue MUST appear in double quotes inside the segment prompt. Segment prompts describe the action; shot_intent drives the appended camera clause at generation time.
 7. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).

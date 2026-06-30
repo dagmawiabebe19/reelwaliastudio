@@ -91,6 +91,8 @@ export async function updateScene(
       | "title"
       | "prompt"
       | "shot_intent"
+      | "audio_mode"
+      | "generation_tier"
       | "orientation"
       | "duration_seconds"
       | "act_label"

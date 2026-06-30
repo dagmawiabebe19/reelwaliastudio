@@ -33,6 +33,11 @@ import {
   costumePreviewPrompt,
   normalizeShotIntent,
 } from "@/lib/production/prompts";
+import {
+  inferAudioModeFromPrompt,
+  normalizeGenerationTier,
+  normalizeSeedanceAudioMode,
+} from "@/lib/ai/video/seedance-constants";
 import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
 import { createCharacterSheet } from "@/lib/db/character-sheets";
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
@@ -155,6 +160,18 @@ async function executeTool(
         const shotIntent = normalizeShotIntent(
           typeof segment.shot_intent === "string" ? segment.shot_intent : null,
         );
+        const audioMode =
+          normalizeSeedanceAudioMode(
+            typeof segment.audio_mode === "string" ? segment.audio_mode : null,
+          ) ?? inferAudioModeFromPrompt(prompt);
+        const generationTier =
+          normalizeGenerationTier(
+            typeof segment.generation_tier === "string" ? segment.generation_tier : null,
+          ) ?? "fast";
+        const durationSeconds =
+          typeof segment.duration_seconds === "number"
+            ? Math.min(15, Math.max(4, Math.round(segment.duration_seconds)))
+            : undefined;
 
         let targetSceneId: string;
 
@@ -164,8 +181,9 @@ async function executeTool(
             prompt,
             act_label: actLabel,
             shot_intent: shotIntent,
-            duration_seconds:
-              typeof segment.duration_seconds === "number" ? segment.duration_seconds : undefined,
+            audio_mode: audioMode,
+            generation_tier: generationTier,
+            duration_seconds: durationSeconds,
             orientation:
               segment.orientation === "portrait" || segment.orientation === "landscape"
                 ? segment.orientation
@@ -181,8 +199,9 @@ async function executeTool(
           await updateScene(scene.id, {
             prompt,
             shot_intent: shotIntent,
-            duration_seconds:
-              typeof segment.duration_seconds === "number" ? segment.duration_seconds : null,
+            audio_mode: audioMode,
+            generation_tier: generationTier,
+            duration_seconds: durationSeconds ?? null,
             orientation:
               segment.orientation === "portrait" || segment.orientation === "landscape"
                 ? segment.orientation

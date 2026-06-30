@@ -594,6 +594,8 @@ export type Database = {
           title: string;
           prompt: string | null;
           shot_intent: string | null;
+          audio_mode: string | null;
+          generation_tier: string | null;
           orientation: Database["public"]["Enums"]["orientation"] | null;
           duration_seconds: number | null;
           act_label: string | null;
@@ -611,6 +613,8 @@ export type Database = {
           title: string;
           prompt?: string | null;
           shot_intent?: string | null;
+          audio_mode?: string | null;
+          generation_tier?: string | null;
           orientation?: Database["public"]["Enums"]["orientation"] | null;
           duration_seconds?: number | null;
           act_label?: string | null;
@@ -628,6 +632,8 @@ export type Database = {
           title?: string;
           prompt?: string | null;
           shot_intent?: string | null;
+          audio_mode?: string | null;
+          generation_tier?: string | null;
           orientation?: Database["public"]["Enums"]["orientation"] | null;
           duration_seconds?: number | null;
           act_label?: string | null;

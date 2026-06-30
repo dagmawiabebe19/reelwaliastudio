@@ -10,11 +10,18 @@ import { isInsufficientCreditsError } from "@/lib/credits/errors";
 import { logGenerationError } from "@/lib/ai/generation/errors";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
 import { SEGMENT_VIDEO_MODEL_ID } from "@/lib/ai/registry";
+import {
+  normalizeSeedanceAudioMode,
+  resolveQualitySettings,
+  type GenerationQualityMode,
+  type SeedanceAudioMode,
+} from "@/lib/ai/video/seedance-constants";
 import { clearFailedTakesWithCleanup } from "@/lib/db/delete";
-import { updateScene } from "@/lib/db/scenes";
+import { getScene, updateScene } from "@/lib/db/scenes";
 import { listTakesByScene, setTakeStarred } from "@/lib/db/takes";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { resolveAssetUrl } from "@/lib/storage/resolve-urls";
+import { normalizeShotIntent } from "@/lib/production/prompts";
 
 export async function listTakesAction(sceneId: string) {
   try {
@@ -44,28 +51,64 @@ export async function generateTakesAction(input: {
   sceneId: string;
   seriesId: string;
   episodeId: string;
-  resolution: string;
+  quality: GenerationQualityMode;
   durationSeconds?: number;
-  seedanceTier?: "standard" | "fast";
-  seedanceAudioMode?: "off" | "full" | "ambient";
-  shotIntent?: string | null;
+  takeCount?: number;
+  shotIntentOverride?: string | null;
+  audioModeOverride?: SeedanceAudioMode;
 }) {
   try {
     const userId = await getActiveUserId();
-    const estimate = estimateVideoCredits({
-      tier: input.seedanceTier ?? "fast",
-      resolution: input.resolution,
-      durationSeconds: input.durationSeconds ?? 6,
-    });
-    await assertSufficientCredits(userId, estimate);
+    const scene = await getScene(input.sceneId);
+    if (!scene) {
+      return { error: "Scene not found." };
+    }
 
-    if (input.shotIntent != null) {
-      await updateScene(input.sceneId, { shot_intent: input.shotIntent });
+    const takeCount = Math.min(5, Math.max(1, Math.round(input.takeCount ?? 1)));
+    const { tier, resolution } = resolveQualitySettings(input.quality);
+    const durationSeconds = input.durationSeconds ?? scene.duration_seconds ?? 6;
+    const shotIntent =
+      input.shotIntentOverride !== undefined
+        ? normalizeShotIntent(input.shotIntentOverride)
+        : normalizeShotIntent(scene.shot_intent);
+    const seedanceAudioMode =
+      input.audioModeOverride ??
+      normalizeSeedanceAudioMode(scene.audio_mode) ??
+      ("ambient" as SeedanceAudioMode);
+
+    const estimatePerTake = estimateVideoCredits({
+      tier,
+      resolution,
+      durationSeconds,
+    });
+    const totalEstimate = estimatePerTake * takeCount;
+    await assertSufficientCredits(userId, totalEstimate);
+
+    const scenePatch: Parameters<typeof updateScene>[1] = {};
+    if (input.durationSeconds != null) {
+      scenePatch.duration_seconds = durationSeconds;
+    }
+    if (input.shotIntentOverride !== undefined && shotIntent) {
+      scenePatch.shot_intent = shotIntent;
+    }
+    if (input.audioModeOverride) {
+      scenePatch.audio_mode = seedanceAudioMode;
+    }
+    if (Object.keys(scenePatch).length > 0) {
+      await updateScene(input.sceneId, scenePatch);
     }
 
     const params = {
-      ...input,
+      sceneId: input.sceneId,
+      seriesId: input.seriesId,
+      episodeId: input.episodeId,
+      resolution,
+      durationSeconds,
+      seedanceTier: tier,
+      seedanceAudioMode,
+      shotIntent,
       modelId: SEGMENT_VIDEO_MODEL_ID,
+      takeCount,
     };
 
     const takeIds = await createPendingTakes(params);
@@ -97,7 +140,7 @@ export async function generateTakesAction(input: {
     });
 
     revalidatePath(path);
-    return { takeIds, status: "pending" as const, estimatedCredits: estimate };
+    return { takeIds, status: "pending" as const, estimatedCredits: totalEstimate };
   } catch (error) {
     return formatActionError(error, "Generation failed to start.");
   }

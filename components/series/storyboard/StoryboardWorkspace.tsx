@@ -124,6 +124,8 @@ function SceneDetailPanel({
         seedanceConfigured={seedanceConfigured}
         scenePrompt={scene.prompt}
         shotIntent={scene.shot_intent}
+        audioMode={scene.audio_mode}
+        durationSeconds={scene.duration_seconds}
         resolvedReferences={resolvedReferences}
       />
 
