@@ -10,10 +10,11 @@ interface CopilotMessageContentProps {
  * Renders co-pilot assistant/system markdown. react-markdown omits raw HTML by default (safe).
  */
 export function CopilotMessageContent({ content }: CopilotMessageContentProps) {
-  if (!content.trim()) return null;
+  const markdown = typeof content === "string" ? content : String(content ?? "");
+  if (!markdown.trim()) return null;
 
   return (
-    <div className="prose-brief prose-copilot max-w-none">
+    <div className="prose-brief prose-copilot max-w-none break-words">
       <ReactMarkdown
         components={{
           a: ({ href, children }) => (
@@ -23,7 +24,7 @@ export function CopilotMessageContent({ content }: CopilotMessageContentProps) {
           ),
         }}
       >
-        {content}
+        {markdown}
       </ReactMarkdown>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspaceProvider";
 import { GenerationPanel } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
@@ -60,6 +60,7 @@ export function StudioShell({
 }: StudioShellProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
   const [activeTakeIndex, setActiveTakeIndex] = useState(0);
+  const sceneContentRef = useRef<HTMLDivElement>(null);
 
   const selectedScene = scenes.find((s) => s.id === selectedSceneId) ?? null;
   const sceneOrientation = selectedScene
@@ -70,6 +71,8 @@ export function StudioShell({
 
   useEffect(() => {
     setActiveTakeIndex(0);
+    const panel = sceneContentRef.current;
+    if (panel) panel.scrollTop = 0;
   }, [selectedSceneId]);
 
   useEffect(() => {
@@ -153,9 +156,12 @@ export function StudioShell({
 
   return (
     <div className="studio-editing-bay flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(240px,5fr)]">
-        <main className="flex min-h-0 min-w-0 flex-col border-b border-border xl:border-b-0">
-          <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-5 py-6">
+      <div className="grid h-full min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(240px,5fr)]">
+        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-border xl:border-b-0">
+          <div
+            ref={sceneContentRef}
+            className="min-h-0 flex-1 space-y-8 overflow-y-auto overscroll-contain px-5 py-6"
+          >
             {selectedScene ? (
               <>
                 <SceneMetaControls
@@ -216,7 +222,8 @@ export function StudioShell({
           </div>
         </main>
 
-        <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden px-5 py-6 xl:border-l xl:border-border/80">
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden xl:border-l xl:border-border/80">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-6">
           <p className="mb-4 studio-section-label">Output</p>
 
           {selectedScene ? (
@@ -251,6 +258,7 @@ export function StudioShell({
               <p className="text-sm">Select a segment to preview and generate.</p>
             </div>
           )}
+          </div>
         </aside>
       </div>
     </div>

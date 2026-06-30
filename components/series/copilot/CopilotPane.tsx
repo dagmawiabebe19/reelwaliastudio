@@ -131,6 +131,14 @@ export function CopilotPane({
     setStreaming(false);
   }
 
+  function scrollAssistantToTop(assistantId: string) {
+    const log = messageLogRef.current;
+    if (!log) return;
+    const el = log.querySelector<HTMLElement>(`[data-copilot-message-id="${assistantId}"]`);
+    if (!el) return;
+    log.scrollTop = Math.max(0, el.offsetTop - log.offsetTop - 8);
+  }
+
   useEffect(() => {
     const log = messageLogRef.current;
     if (!log) return;
@@ -145,10 +153,7 @@ export function CopilotPane({
       wasStreamingRef.current = false;
       const assistantId = streamingAssistantIdRef.current;
       if (assistantId) {
-        requestAnimationFrame(() => {
-          const el = log.querySelector(`[data-copilot-message-id="${assistantId}"]`);
-          el?.scrollIntoView({ block: "start", behavior: "smooth" });
-        });
+        requestAnimationFrame(() => scrollAssistantToTop(assistantId));
       }
     }
   }, [messages, streaming]);

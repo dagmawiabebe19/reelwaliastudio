@@ -65,7 +65,9 @@ export function EpisodeStudioPage(props: EpisodeStudioPageProps) {
         </div>
       ) : null}
 
-      <EpisodeWorkspace {...props} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <EpisodeWorkspace {...props} />
+      </div>
     </div>
   );
 }
