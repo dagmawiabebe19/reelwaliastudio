@@ -394,17 +394,27 @@ body {
   display: flex;
   gap: 0.5rem;
   overflow-x: auto;
+  overflow-y: visible;
+  /* Negative margin + matching padding keeps thumbs aligned with section labels while
+     leaving room for 2px selection rings at the scroll edges. */
+  margin-inline: -3px;
+  padding-inline: 3px;
   padding-bottom: 0.25rem;
   scroll-snap-type: x proximity;
+  scroll-padding-inline: 3px;
 }
 
 .studio-contact-thumb {
   position: relative;
   flex: 0 0 auto;
-  overflow: hidden;
   border-radius: var(--radius-sm);
   background: var(--background);
   transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.studio-contact-thumb > div:first-child {
+  overflow: hidden;
+  border-radius: inherit;
 }
 
 .studio-contact-thumb:hover {
