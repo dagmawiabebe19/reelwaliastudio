@@ -8,7 +8,12 @@ import {
   createEpisodeAction,
   setEpisodeStatusAction,
 } from "@/app/(app)/series/[id]/actions";
+import {
+  deleteEpisodeAction,
+  getEpisodeDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
 import { Button } from "@/components/ui/Button";
+import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OnboardingGuide } from "@/components/onboarding/OnboardingGuide";
 import type { EpisodeStatus } from "@/lib/db/types";
@@ -152,7 +157,7 @@ export function EpisodesSection({
                   {ep.scene_count} scenes · Updated {formatDate(ep.updated_at)}
                 </p>
               </div>
-              <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   type="button"
                   variant="ghost"
@@ -166,6 +171,14 @@ export function EpisodesSection({
                     Storyboard
                   </Button>
                 </Link>
+                <DeleteConfirmButton
+                  ariaLabel={`Delete episode ${ep.title}`}
+                  className="!h-9 !w-9 !rounded-md !ring-1 !ring-border/60"
+                  disabled={pending}
+                  fetchPreview={() => getEpisodeDeletePreviewAction(ep.id, seriesId)}
+                  onDelete={() => deleteEpisodeAction(ep.id, seriesId)}
+                  onSuccess={() => router.refresh()}
+                />
               </div>
             </article>
           ))

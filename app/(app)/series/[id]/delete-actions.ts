@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   deleteAudioLineWithCleanup,
   deleteCharacterSheetWithCleanup,
+  deleteEpisodeWithCleanup,
   deleteIngredientWithCleanup,
   deleteSceneWithCleanup,
   deleteTakeWithCleanup,
@@ -17,11 +18,13 @@ import type { IngredientKind } from "@/lib/db/database.types";
 import {
   getAudioLineDeletePreview,
   getCharacterSheetDeletePreview,
+  getEpisodeDeletePreview,
   getIngredientDeletePreview,
   getSceneDeletePreview,
   getTakeDeletePreview,
 } from "@/lib/db/delete-preview";
 import { verifyEpisodeOwnership } from "@/lib/db/audio-lines";
+import { getEpisode } from "@/lib/db/episodes";
 
 export async function getIngredientDeletePreviewAction(ingredientId: string, seriesId: string) {
   try {
@@ -180,6 +183,30 @@ export async function deleteSceneAction(sceneId: string, seriesId: string) {
     const sceneEpisodeId = await deleteSceneWithCleanup(sceneId);
     revalidatePath(`/series/${seriesId}/episodes/${sceneEpisodeId}`);
     return { success: true as const, episodeId: sceneEpisodeId };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Delete failed." };
+  }
+}
+
+export async function getEpisodeDeletePreviewAction(episodeId: string, seriesId: string) {
+  try {
+    await verifyEpisodeOwnership(episodeId);
+    const episode = await getEpisode(episodeId);
+    if (!episode || episode.series_id !== seriesId) {
+      return { error: "Episode not found." };
+    }
+    return await getEpisodeDeletePreview(episodeId);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to load preview." };
+  }
+}
+
+export async function deleteEpisodeAction(episodeId: string, seriesId: string) {
+  try {
+    await deleteEpisodeWithCleanup(episodeId, seriesId);
+    revalidatePath(`/series/${seriesId}`);
+    revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
+    return { success: true as const };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Delete failed." };
   }

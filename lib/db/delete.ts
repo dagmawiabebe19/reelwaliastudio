@@ -172,3 +172,74 @@ export async function deleteSceneWithCleanup(sceneId: string): Promise<string> {
 
   return scene.episode_id;
 }
+
+export async function deleteEpisodeWithCleanup(
+  episodeId: string,
+  seriesId: string,
+): Promise<void> {
+  const { verifyEpisodeOwnership } = await import("@/lib/db/audio-lines");
+  const { getEpisode } = await import("@/lib/db/episodes");
+  const { listScenesByEpisode } = await import("@/lib/db/scenes");
+  const { listAudioLinesByEpisode } = await import("@/lib/db/audio-lines");
+
+  await verifyEpisodeOwnership(episodeId);
+  const episode = await getEpisode(episodeId);
+  if (!episode || episode.series_id !== seriesId) {
+    throw new Error("Episode not found.");
+  }
+
+  const scenes = await listScenesByEpisode(episodeId);
+  const sceneIds = scenes.map((scene) => scene.id);
+
+  for (const scene of scenes) {
+    await deleteSceneWithCleanup(scene.id);
+  }
+
+  const audioLines = await listAudioLinesByEpisode(episodeId);
+  for (const line of audioLines) {
+    await deleteAudioLineWithCleanup(line.id, episodeId);
+  }
+
+  const supabase = await getDbClient();
+
+  const { data: exports, error: exportsError } = await supabase
+    .from("episode_exports")
+    .select("id, asset_id")
+    .eq("episode_id", episodeId);
+  if (exportsError) throw new Error(exportsError.message);
+
+  const exportAssetIds = (exports ?? [])
+    .map((row) => row.asset_id)
+    .filter((id): id is string => Boolean(id));
+
+  if (exports?.length) {
+    const { error: deleteExportsError } = await supabase
+      .from("episode_exports")
+      .delete()
+      .eq("episode_id", episodeId);
+    if (deleteExportsError) throw new Error(deleteExportsError.message);
+  }
+
+  if (exportAssetIds.length) {
+    await deleteAssetsByIds(exportAssetIds);
+  }
+
+  const { error: episodeChatError } = await supabase
+    .from("chat_sessions")
+    .delete()
+    .eq("scope_type", "episode")
+    .eq("scope_id", episodeId);
+  if (episodeChatError) throw new Error(episodeChatError.message);
+
+  if (sceneIds.length) {
+    const { error: sceneChatError } = await supabase
+      .from("chat_sessions")
+      .delete()
+      .eq("scope_type", "scene")
+      .in("scope_id", sceneIds);
+    if (sceneChatError) throw new Error(sceneChatError.message);
+  }
+
+  const { error } = await supabase.from("episodes").delete().eq("id", episodeId);
+  if (error) throw new Error(error.message);
+}

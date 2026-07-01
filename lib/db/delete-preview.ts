@@ -8,7 +8,7 @@ import {
 } from "@/lib/db/character-sheets";
 import { getIngredient, listCostumesByCharacter } from "@/lib/db/ingredients";
 import { getScene } from "@/lib/db/scenes";
-import { getTake, listTakesByScene } from "@/lib/db/takes";
+import { getTake, listTakesByScene, listTakesForScenes } from "@/lib/db/takes";
 
 export type DeletePreview = {
   title: string;
@@ -106,5 +106,48 @@ export async function getSceneDeletePreview(sceneId: string): Promise<DeletePrev
   return {
     title: `Delete segment "${scene.title}"?`,
     message: "This permanently removes the segment. This cannot be undone.",
+  };
+}
+
+function formatEpisodeCode(sortOrder: number): string {
+  return `EP_${String(sortOrder + 1).padStart(2, "0")}`;
+}
+
+export async function getEpisodeDeletePreview(episodeId: string): Promise<DeletePreview> {
+  const { getEpisode } = await import("@/lib/db/episodes");
+  const { listScenesByEpisode } = await import("@/lib/db/scenes");
+  const { listAudioLinesByEpisode } = await import("@/lib/db/audio-lines");
+
+  const episode = await getEpisode(episodeId);
+  if (!episode) throw new Error("Episode not found.");
+
+  const scenes = await listScenesByEpisode(episodeId);
+  const sceneCount = scenes.length;
+  const takes = await listTakesForScenes(scenes.map((scene) => scene.id));
+  const takeCount = takes.length;
+  const audioLines = await listAudioLinesByEpisode(episodeId);
+  const audioCount = audioLines.length;
+
+  const epCode = formatEpisodeCode(episode.sort_order);
+  const parts: string[] = [];
+
+  if (sceneCount > 0) {
+    parts.push(plural(sceneCount, "scene"));
+  }
+  if (takeCount > 0) {
+    parts.push(`${plural(takeCount, "take")} (generated video)`);
+  }
+  if (audioCount > 0) {
+    parts.push(plural(audioCount, "audio line"));
+  }
+
+  const cascade =
+    parts.length > 0
+      ? `This permanently removes ${parts.join(" and ")} and cannot be undone.`
+      : "This permanently removes the episode and cannot be undone.";
+
+  return {
+    title: `Delete ${epCode}: ${episode.title}?`,
+    message: `${cascade} Series ingredients, character sheets, and locations are not deleted.`,
   };
 }
