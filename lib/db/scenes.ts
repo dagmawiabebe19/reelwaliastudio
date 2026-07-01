@@ -7,7 +7,7 @@ import type { SceneWithBindings } from "@/lib/storyboard/constants";
 export { STORYBOARD_ONLY_LABEL } from "@/lib/storyboard/constants";
 export type { SceneWithBindings } from "@/lib/storyboard/constants";
 
-const SCENE_SELECT = `*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind)),
+const SCENE_SELECT = `*, scene_ingredients(ingredient_id, role, ingredients(id, ref_tag, name, kind, primary_asset_id, generation_status, assets:primary_asset_id(id, bucket, storage_path, media_type))),
        scene_character_sheets(character_sheet_id, role,
          character_sheets(id, name, character_id, costume_id, status,
            character:character_id(id, name, ref_tag),

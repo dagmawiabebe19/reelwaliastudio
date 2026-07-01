@@ -92,7 +92,10 @@ export async function createPendingTakes(params: GenerateTakeParams): Promise<st
     throw new Error(`${model.label} is not configured. Set ${model.envKey} to enable.`);
   }
 
-  const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
+  const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId, {
+    seriesId: params.seriesId,
+    episodeId: params.episodeId,
+  });
   if (!seedanceCheck.ok) {
     throw new Error(seedanceCheck.error);
   }
@@ -158,7 +161,10 @@ async function runVideoGenerationCore(
 
   const durationSeconds = params.durationSeconds ?? scene.duration_seconds ?? 6;
 
-  const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId);
+  const seedanceCheck = await validateSeedanceVideoGeneration(params.sceneId, {
+    seriesId: params.seriesId,
+    episodeId: params.episodeId,
+  });
   if (!seedanceCheck.ok) {
     throw new Error(seedanceCheck.error);
   }

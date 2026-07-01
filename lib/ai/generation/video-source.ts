@@ -26,11 +26,15 @@ export async function downloadVideoSourceImage(
 
 export async function validateSeedanceVideoGeneration(
   sceneId: string,
+  options?: { seriesId?: string; episodeId?: string },
 ): Promise<
   | { ok: true; references: VideoReferenceImage[] }
   | { ok: false; error: string }
 > {
-  const readiness = await validateSceneReferencesForVideoGeneration(sceneId);
+  const readiness = await validateSceneReferencesForVideoGeneration(sceneId, {
+    ...options,
+    repair: true,
+  });
   if (!readiness.ok) {
     return readiness;
   }

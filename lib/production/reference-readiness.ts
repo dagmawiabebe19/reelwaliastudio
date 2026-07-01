@@ -1,10 +1,10 @@
+import { resolveEffectiveBindingsForScene } from "@/lib/production/effective-bindings";
 import { pickBestReadyIngredient } from "@/lib/production/pick-ready-ingredient";
 import {
   findSheetForEpisodeCharacter,
   getCharacterSheet,
   listCharacterSheetsByCharacter,
 } from "@/lib/db/character-sheets";
-import type { IngredientWithAsset } from "@/lib/db/ingredients";
 import { getIngredient, listIngredientsBySeries } from "@/lib/db/ingredients";
 import { getScene } from "@/lib/db/scenes";
 import { listSceneSheets } from "@/lib/db/scene-sheets";
@@ -19,7 +19,11 @@ export function ingredientAssetStatus(ingredient: {
   const status = ingredient.generation_status ?? "ready";
   if (status === "pending") return "pending";
   if (status === "failed") return "failed";
-  if (!ingredient.primary_asset_id && !ingredient.assets) return "missing";
+  const hasStorage =
+    Boolean(ingredient.assets?.bucket && ingredient.assets?.storage_path) ||
+    Boolean(ingredient.primary_asset_id);
+  if (!hasStorage) return "missing";
+  if (ingredient.primary_asset_id && !ingredient.assets?.bucket) return "missing";
   return "ready";
 }
 
@@ -226,59 +230,19 @@ export async function assessSegmentLock(input: {
 
 export async function validateSceneReferencesForVideoGeneration(
   sceneId: string,
+  options?: { seriesId?: string; episodeId?: string; repair?: boolean },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const scene = await getScene(sceneId);
   if (!scene) {
     return { ok: false, error: "Scene not found." };
   }
 
-  const problems: string[] = [];
-
-  const boundSheets = await listSceneSheets(sceneId);
-  for (const binding of boundSheets) {
-    const sheet = binding.character_sheets as {
-      id: string;
-      name: string;
-      status?: string;
-      character?: { name: string } | null;
-      angles?: Array<{ assets?: { bucket: string; storage_path: string } | null }>;
-    } | null;
-    if (!sheet) continue;
-    const status = sheetAssetStatus(sheet);
-    const label = sheet.character?.name ?? sheet.name;
-    if (status === "pending") {
-      problems.push(`Character sheet "${label}" is still generating.`);
-    } else if (status === "failed") {
-      problems.push(`Character sheet "${label}" failed — regenerate before video.`);
-    } else if (status === "missing") {
-      problems.push(`Character sheet "${label}" has no usable angle images.`);
-    }
-  }
-
-  for (const binding of scene.scene_ingredients ?? []) {
-    const ingredient = binding.ingredients as IngredientWithAsset | null;
-    if (!ingredient) {
-      const loaded = await getIngredient(binding.ingredient_id);
-      if (!loaded) {
-        problems.push("A bound ingredient no longer exists.");
-        continue;
-      }
-      const status = ingredientAssetStatus(loaded);
-      if (status !== "ready") {
-        problems.push(
-          `"${loaded.name}" is ${status === "pending" ? "still generating" : status === "failed" ? "failed" : "missing an asset"} — cannot generate video.`,
-        );
-      }
-      continue;
-    }
-
-    const status = ingredientAssetStatus(ingredient);
-    if (status !== "ready" && (binding.role === "identity_lock" || binding.role === "reference")) {
-      problems.push(
-        `"${ingredient.name}" is ${status === "pending" ? "still generating" : status === "failed" ? "failed" : "missing an asset"} — cannot generate video.`,
-      );
-    }
-  }
+  const { problems } = await resolveEffectiveBindingsForScene({
+    sceneId,
+    seriesId: options?.seriesId,
+    episodeId: options?.episodeId ?? scene.episode_id,
+    repair: options?.repair ?? false,
+  });
 
   if (problems.length) {
     return {

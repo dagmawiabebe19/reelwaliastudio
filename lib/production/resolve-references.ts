@@ -1,7 +1,11 @@
 import "server-only";
 
-import { getDbClient } from "@/lib/db/client";
-import { findSheetForEpisodeCharacter, getCharacterSheet, listCharacterSheetsByCharacter, pickBestReadySheet } from "@/lib/db/character-sheets";
+import {
+  findSheetForEpisodeCharacter,
+  getCharacterSheet,
+  listCharacterSheetsByCharacter,
+  pickBestReadySheet,
+} from "@/lib/db/character-sheets";
 import { listIngredientsBySeries } from "@/lib/db/ingredients";
 import { getScene, updateScene } from "@/lib/db/scenes";
 import { listSceneSheets, bindSheetToScene } from "@/lib/db/scene-sheets";
@@ -13,6 +17,7 @@ import {
   isSheetReadyForBinding,
 } from "@/lib/production/reference-readiness";
 import { pickBestReadyIngredient } from "@/lib/production/pick-ready-ingredient";
+import { resolveEffectiveBindingsForScene } from "@/lib/production/effective-bindings";
 
 import type { ResolvedReference } from "@/lib/production/types";
 
@@ -163,6 +168,15 @@ export async function resolveSceneReferences(input: {
     resolved_references: resolved as unknown as import("@/lib/db/database.types").Json,
   });
 
+  if (input.autoBind) {
+    await resolveEffectiveBindingsForScene({
+      sceneId: input.sceneId,
+      seriesId: input.seriesId,
+      episodeId: input.episodeId,
+      repair: true,
+    });
+  }
+
   return resolved;
 }
 
@@ -225,23 +239,20 @@ function pickSheetAngleAsset(
 
 /** One image per bound character sheet + location for Seedance reference-to-video (max 9). */
 export async function collectBoundVideoReferenceAssets(sceneId: string): Promise<VideoReferenceImage[]> {
+  const scene = await getScene(sceneId);
+  if (!scene) return [];
+
+  const effective = await resolveEffectiveBindingsForScene({
+    sceneId,
+    episodeId: scene.episode_id,
+    repair: true,
+  });
+
   const refs: VideoReferenceImage[] = [];
   const sheetCharacterIds = new Set<string>();
 
-  const bindings = await listSceneSheets(sceneId);
-  for (const binding of bindings) {
-    const sheet = binding.character_sheets as {
-      id: string;
-      name: string;
-      status?: string;
-      character_id: string;
-      character?: { id: string; name: string } | null;
-      costume?: { name: string } | null;
-      angles?: Array<{ angle_label: string; assets?: { bucket: string; storage_path: string } | null }>;
-    } | null;
-    if (!sheet?.angles?.length || !isSheetReadyForBinding(sheet)) continue;
-
-    const asset = pickSheetAngleAsset(sheet.angles);
+  for (const { sheet } of effective.sheets) {
+    const asset = pickSheetAngleAsset(sheet.angles ?? []);
     if (!asset) continue;
 
     const characterName = sheet.character?.name ?? sheet.name ?? "Character";
@@ -259,55 +270,30 @@ export async function collectBoundVideoReferenceAssets(sceneId: string): Promise
     if (sheet.character_id) sheetCharacterIds.add(sheet.character_id);
   }
 
-  const scene = await getScene(sceneId);
-  if (!scene) return refs.slice(0, 9);
+  for (const { ingredient, role } of effective.ingredients) {
+    if (!ingredient.assets) continue;
 
-  const ingredientBindings = (scene.scene_ingredients ?? []).filter(
-    (binding) => binding.role === "reference" || binding.role === "identity_lock",
-  );
-  const ingredientIds = ingredientBindings.map((binding) => binding.ingredient_id);
-  if (!ingredientIds.length) return refs.slice(0, 9);
-
-  const supabase = await getDbClient();
-  const { data, error } = await supabase
-    .from("ingredients")
-    .select("id, name, kind, primary_asset_id, generation_status, assets:primary_asset_id(bucket, storage_path)")
-    .in("id", ingredientIds);
-
-  if (error) throw new Error(error.message);
-
-  for (const row of data ?? []) {
-    const binding = ingredientBindings.find((item) => item.ingredient_id === row.id);
-    if (!binding) continue;
-
-    const rawAsset = row.assets as { bucket: string; storage_path: string } | { bucket: string; storage_path: string }[] | null;
-    const asset = Array.isArray(rawAsset) ? rawAsset[0] : rawAsset;
-    if (!asset) continue;
-
-    const ingredientRow = {
-      generation_status: (row as { generation_status?: string }).generation_status,
-      primary_asset_id: (row as { primary_asset_id?: string }).primary_asset_id,
-      assets: asset,
-    };
-    if (!isIngredientReadyForBinding(ingredientRow)) continue;
-
-    if (row.kind === "location" && binding.role === "reference") {
-      const signedUrl = await getSignedUrl(asset.bucket, asset.storage_path);
+    if (ingredient.kind === "location" && role === "reference") {
+      const signedUrl = await getSignedUrl(ingredient.assets.bucket, ingredient.assets.storage_path);
       refs.push({
-        label: row.name,
-        bucket: asset.bucket,
-        storagePath: asset.storage_path,
+        label: ingredient.name,
+        bucket: ingredient.assets.bucket,
+        storagePath: ingredient.assets.storage_path,
         signedUrl,
       });
       continue;
     }
 
-    if (row.kind === "character" && binding.role === "identity_lock" && !sheetCharacterIds.has(row.id)) {
-      const signedUrl = await getSignedUrl(asset.bucket, asset.storage_path);
+    if (
+      ingredient.kind === "character" &&
+      role === "identity_lock" &&
+      !sheetCharacterIds.has(ingredient.id)
+    ) {
+      const signedUrl = await getSignedUrl(ingredient.assets.bucket, ingredient.assets.storage_path);
       refs.push({
-        label: `${row.name} (headshot)`,
-        bucket: asset.bucket,
-        storagePath: asset.storage_path,
+        label: `${ingredient.name} (headshot)`,
+        bucket: ingredient.assets.bucket,
+        storagePath: ingredient.assets.storage_path,
         signedUrl,
       });
     }

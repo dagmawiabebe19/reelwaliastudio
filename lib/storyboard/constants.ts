@@ -6,7 +6,15 @@ export type SceneWithBindings = Scene & {
   scene_ingredients: {
     ingredient_id: string;
     role: string;
-    ingredients: { id: string; ref_tag: string; name: string; kind: string } | null;
+    ingredients: {
+      id: string;
+      ref_tag: string;
+      name: string;
+      kind: string;
+      primary_asset_id?: string | null;
+      generation_status?: string | null;
+      assets?: { id: string; bucket: string; storage_path: string; media_type: string } | null;
+    } | null;
   }[];
   scene_character_sheets?: {
     character_sheet_id: string;
