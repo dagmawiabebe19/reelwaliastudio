@@ -11,7 +11,7 @@ import {
   normalizeSeedanceAudioMode,
 } from "@/lib/ai/video/seedance-constants";
 import { normalizeShotIntent } from "@/lib/production/prompts";
-import { createScenesBatch, reorderScenes, updateScene } from "@/lib/db/scenes";
+import { createScenesBatch, getScene, reorderScenes, updateScene } from "@/lib/db/scenes";
 import { assessSegmentLock } from "@/lib/production/reference-readiness";
 import { resolveSceneReferences } from "@/lib/production/resolve-references";
 import { resolveActLabelForEpisode } from "@/lib/storyboard/episode-buckets";
@@ -31,10 +31,12 @@ type ParsedSegment = {
 };
 
 function parseSegment(episode: Episode, segment: SegmentRecord): ParsedSegment | null {
-  const title = String(segment.title ?? "").trim();
+  const title = String(
+    segment.title ?? segment.name ?? segment.segment_title ?? "",
+  ).trim();
   if (!title) return null;
 
-  const prompt = String(segment.prompt ?? "").trim();
+  const prompt = String(segment.prompt ?? segment.description ?? "").trim();
   const actLabel = resolveActLabelForEpisode(episode, segment.act_label);
   const shotIntent = normalizeShotIntent(
     typeof segment.shot_intent === "string" ? segment.shot_intent : null,
@@ -70,6 +72,53 @@ function parseSegment(episode: Episode, segment: SegmentRecord): ParsedSegment |
 
 export type DraftStoryboardProgress = (detail: string, step?: number, total?: number) => void;
 
+/** Coerce tool args into a segments array (models sometimes nest or omit the array). */
+export function normalizeStoryboardSegments(args: Record<string, unknown>): SegmentRecord[] {
+  const raw = args.segments;
+  if (Array.isArray(raw)) {
+    return raw as SegmentRecord[];
+  }
+  if (raw && typeof raw === "object") {
+    const nested = (raw as { items?: unknown; segments?: unknown }).items;
+    if (Array.isArray(nested)) {
+      return nested as SegmentRecord[];
+    }
+    const nestedSegments = (raw as { segments?: unknown }).segments;
+    if (Array.isArray(nestedSegments)) {
+      return nestedSegments as SegmentRecord[];
+    }
+  }
+  return [];
+}
+
+async function resolveSegmentSceneIds(
+  segments: ParsedSegment[],
+  episodeId: string,
+): Promise<void> {
+  await Promise.all(
+    segments.map(async (segment) => {
+      if (!segment.sceneId) return;
+      const scene = await getScene(segment.sceneId);
+      if (!scene || scene.episode_id !== episodeId) {
+        segment.sceneId = null;
+      }
+    }),
+  );
+}
+
+function sceneBatchPayload(segment: ParsedSegment) {
+  return {
+    title: segment.title,
+    actLabel: segment.actLabel,
+    prompt: segment.prompt,
+    shotIntent: segment.shotIntent,
+    audioMode: segment.audioMode,
+    generationTier: segment.generationTier,
+    durationSeconds: segment.durationSeconds ?? null,
+    orientation: segment.orientation,
+  };
+}
+
 export async function executeDraftStoryboard(input: {
   episode: Episode;
   episodeId: string;
@@ -77,12 +126,26 @@ export async function executeDraftStoryboard(input: {
   segments: SegmentRecord[];
   emitProgress: DraftStoryboardProgress;
 }) {
+  const rawCount = input.segments.length;
   const parsed = input.segments
     .map((segment) => parseSegment(input.episode, segment))
     .filter((segment): segment is ParsedSegment => segment !== null);
 
+  if (!parsed.length) {
+    if (rawCount > 0) {
+      throw new Error(
+        `Could not parse any of ${rawCount} segments — each needs a title (and prompt). Check segment field names.`,
+      );
+    }
+    throw new Error(
+      "No segments provided — draft_storyboard requires a segments array. Episode plans in chat text alone do not create storyboard cards.",
+    );
+  }
+
   const total = parsed.length;
-  input.emitProgress("running…", 0, total || 1);
+  input.emitProgress(`creating ${total} segments…`, 0, total);
+
+  await resolveSegmentSceneIds(parsed, input.episodeId);
 
   const existingSceneIds = new Set(
     parsed.map((segment) => segment.sceneId).filter((id): id is string => Boolean(id)),
@@ -92,9 +155,10 @@ export async function executeDraftStoryboard(input: {
   const created: string[] = [];
 
   if (toCreate.length > 0) {
+    input.emitProgress(`inserting ${toCreate.length} segment rows…`, 0, total);
     const newScenes = await createScenesBatch(
       input.episodeId,
-      toCreate.map((segment) => ({ title: segment.title, actLabel: segment.actLabel })),
+      toCreate.map((segment) => sceneBatchPayload(segment)),
     );
     let createIndex = 0;
     for (const segment of parsed) {
@@ -102,7 +166,9 @@ export async function executeDraftStoryboard(input: {
         const scene = newScenes[createIndex];
         createIndex += 1;
         if (!scene) {
-          throw new Error(`Could not create segment "${segment.title}".`);
+          throw new Error(
+            `Batch insert failed for segment "${segment.title}" — no row returned.`,
+          );
         }
         segment.sceneId = scene.id;
         created.push(scene.id);
@@ -114,64 +180,91 @@ export async function executeDraftStoryboard(input: {
     .map((segment) => segment.sceneId)
     .filter((id): id is string => typeof id === "string" && existingSceneIds.has(id));
 
-  let completed = 0;
-  const builtSceneIds: string[] = [];
+  // Phase 1: persist metadata on existing rows (new rows already inserted with full payload).
+  if (updated.length > 0) {
+    input.emitProgress(`updating ${updated.length} existing segments…`, 0, total);
+    const updateOutcomes = await runWithConcurrencySettled(
+      parsed.filter((segment) => segment.sceneId && existingSceneIds.has(segment.sceneId)),
+      SEGMENT_SETUP_CONCURRENCY,
+      async (segment) => {
+        await updateScene(segment.sceneId!, {
+          title: segment.title,
+          prompt: segment.prompt,
+          act_label: segment.actLabel,
+          shot_intent: segment.shotIntent,
+          audio_mode: segment.audioMode,
+          generation_tier: segment.generationTier,
+          duration_seconds: segment.durationSeconds ?? null,
+          orientation: segment.orientation,
+        });
+      },
+    );
 
-  const settled = await runWithConcurrencySettled(
+    const updateFailure = updateOutcomes.find((outcome) => outcome.status === "rejected");
+    if (updateFailure?.status === "rejected") {
+      const reason =
+        updateFailure.reason instanceof Error
+          ? updateFailure.reason.message
+          : "Segment update failed.";
+      throw new Error(
+        created.length > 0
+          ? `${reason} (${created.length} new segment${created.length === 1 ? "" : "s"} were created — refresh the storyboard.)`
+          : reason,
+      );
+    }
+  }
+
+  const builtSceneIds = parsed
+    .map((segment) => segment.sceneId)
+    .filter((id): id is string => Boolean(id));
+
+  if (builtSceneIds.length !== total) {
+    throw new Error(
+      `Segment setup incomplete: expected ${total} scene ids, got ${builtSceneIds.length}.`,
+    );
+  }
+
+  await reorderScenes(input.episodeId, builtSceneIds);
+
+  // Phase 2: bind references after all rows are committed.
+  input.emitProgress(`binding references for ${total} segments…`, 0, total);
+  let completed = 0;
+  const bindOutcomes = await runWithConcurrencySettled(
     parsed,
     SEGMENT_SETUP_CONCURRENCY,
     async (segment) => {
-      if (!segment.sceneId) {
-        throw new Error(`Missing scene for segment "${segment.title}".`);
-      }
-
-      await updateScene(segment.sceneId, {
-        title: segment.title,
-        prompt: segment.prompt,
-        act_label: segment.actLabel,
-        shot_intent: segment.shotIntent,
-        audio_mode: segment.audioMode,
-        generation_tier: segment.generationTier,
-        duration_seconds: segment.durationSeconds ?? null,
-        orientation: segment.orientation,
-      });
-
       const references = await resolveSceneReferences({
-        sceneId: segment.sceneId,
+        sceneId: segment.sceneId!,
         seriesId: input.seriesId,
         episodeId: input.episodeId,
         autoBind: true,
       });
-
-      return { sceneId: segment.sceneId, references };
+      return { sceneId: segment.sceneId!, references };
     },
   );
 
   const resolved: Array<{ scene_id: string; references: unknown[] }> = [];
 
-  for (let i = 0; i < settled.length; i++) {
+  for (let i = 0; i < bindOutcomes.length; i++) {
     const segment = parsed[i];
-    const outcome = settled[i];
+    const outcome = bindOutcomes[i];
     completed += 1;
 
     if (outcome.status === "rejected") {
       const message =
-        outcome.reason instanceof Error ? outcome.reason.message : "Segment setup failed.";
+        outcome.reason instanceof Error ? outcome.reason.message : "Reference binding failed.";
       input.emitProgress(
-        `segment ${completed}/${total} failed: ${segment.title} — ${message}`,
+        `binding ${completed}/${total} failed: ${segment.title} — ${message}`,
         completed,
         total,
       );
-      throw outcome.reason instanceof Error ? outcome.reason : new Error(message);
+      throw new Error(
+        `${message} (${builtSceneIds.length} segment${builtSceneIds.length === 1 ? "" : "s"} exist — refresh, then re-run draft_storyboard or bind_identity to retry bindings.)`,
+      );
     }
 
-    builtSceneIds.push(outcome.value.sceneId);
     resolved.push({ scene_id: outcome.value.sceneId, references: outcome.value.references });
     input.emitProgress(`built segment ${completed}/${total}: ${segment.title}…`, completed, total);
-  }
-
-  if (builtSceneIds.length > 0) {
-    await reorderScenes(input.episodeId, builtSceneIds);
   }
 
   const lockReport = await Promise.all(

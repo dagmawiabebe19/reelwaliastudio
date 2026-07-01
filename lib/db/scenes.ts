@@ -73,7 +73,16 @@ export async function getSceneCount(episodeId: string): Promise<number> {
 
 export async function createScenesBatch(
   episodeId: string,
-  inputs: Array<{ title: string; actLabel?: string }>,
+  inputs: Array<{
+    title: string;
+    actLabel?: string;
+    prompt?: string | null;
+    shotIntent?: string | null;
+    audioMode?: string | null;
+    generationTier?: string | null;
+    durationSeconds?: number | null;
+    orientation?: Orientation | null;
+  }>,
 ): Promise<Scene[]> {
   if (!inputs.length) return [];
 
@@ -84,13 +93,26 @@ export async function createScenesBatch(
     episode_id: episodeId,
     title: input.title,
     act_label: input.actLabel ?? "Storyboard-only",
+    prompt: input.prompt ?? null,
+    shot_intent: input.shotIntent ?? null,
+    audio_mode: input.audioMode ?? null,
+    generation_tier: input.generationTier ?? null,
+    duration_seconds: input.durationSeconds ?? null,
+    orientation: input.orientation ?? null,
     sort_order: base + index,
     position: base + index + 1,
   }));
 
   const { data, error } = await supabase.from("scenes").insert(payloads).select();
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  if (error) {
+    throw new Error(`Batch segment insert failed: ${error.message}`);
+  }
+  if (!data || data.length !== inputs.length) {
+    throw new Error(
+      `Batch segment insert incomplete: expected ${inputs.length} rows, got ${data?.length ?? 0}.`,
+    );
+  }
+  return data;
 }
 
 export async function createScene(

@@ -34,7 +34,7 @@ import {
   costumePreviewPrompt,
 } from "@/lib/production/prompts";
 import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
-import { executeDraftStoryboard } from "@/lib/ai/copilot/draft-storyboard";
+import { executeDraftStoryboard, normalizeStoryboardSegments } from "@/lib/ai/copilot/draft-storyboard";
 import {
   groupCopilotToolsByWave,
   runCopilotToolWave,
@@ -142,17 +142,40 @@ async function executeTool(
         return { error: `Episode not found: ${episodeId}` };
       }
 
-      const segments = (args.segments as Array<Record<string, unknown>>) ?? [];
-      const result = await executeDraftStoryboard({
-        episode,
-        episodeId,
-        seriesId: context.seriesId,
-        segments,
-        emitProgress: (detail, step, total) => emitProgress(detail, step, total),
-      });
+      const segments = normalizeStoryboardSegments(args);
+      if (!segments.length) {
+        return {
+          error:
+            "No segments in draft_storyboard — pass a segments array with title and prompt for each shot. A text-only episode plan in chat does not create storyboard cards until you approve and call this tool.",
+        };
+      }
 
-      revalidatePath(`/series/${context.seriesId}/episodes/${episodeId}`);
-      return result;
+      try {
+        const result = await executeDraftStoryboard({
+          episode,
+          episodeId,
+          seriesId: context.seriesId,
+          segments,
+          emitProgress: (detail, step, total) => emitProgress(detail, step, total),
+        });
+
+        if (result.count < 1) {
+          return {
+            error: "draft_storyboard finished without creating or updating any segments.",
+            ...result,
+          };
+        }
+
+        revalidatePath(`/series/${context.seriesId}/episodes/${episodeId}`);
+        return result;
+      } catch (error) {
+        if (error instanceof CopilotAbortError) {
+          throw error;
+        }
+        return {
+          error: error instanceof Error ? error.message : "draft_storyboard failed.",
+        };
+      }
     }
 
     case "add_ingredient": {
