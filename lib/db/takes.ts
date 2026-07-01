@@ -1,6 +1,10 @@
 import "server-only";
 
 import { getDbClient } from "@/lib/db/client";
+import {
+  TAKE_SELECT_CORE,
+  TAKE_SELECT_WITH_PROVIDER,
+} from "@/lib/db/take-columns";
 import type { Take, TakeMediaType, TakeStatus, TablesInsert } from "@/lib/db/database.types";
 
 export type TakeWithAsset = Take & {
@@ -33,41 +37,60 @@ export function logTakeProviderSchemaWarning(context: string): void {
   );
 }
 
+type TakeQueryRow = { data: unknown; error: { message: string } | null };
+
+async function queryTakesWithFallback(
+  run: (select: string) => PromiseLike<TakeQueryRow>,
+): Promise<{ data: unknown; error: Error | null }> {
+  const primary = await run(TAKE_SELECT_WITH_PROVIDER);
+  if (!primary.error) {
+    return { data: primary.data, error: null };
+  }
+  if (isTakeProviderSchemaError(primary.error)) {
+    logTakeProviderSchemaWarning("take query degraded to core columns");
+    const fallback = await run(TAKE_SELECT_CORE);
+    if (fallback.error) {
+      return { data: null, error: new Error(fallback.error.message) };
+    }
+    return { data: fallback.data, error: null };
+  }
+  return { data: null, error: new Error(primary.error.message) };
+}
+
 export async function listTakesByScene(sceneId: string): Promise<TakeWithAsset[]> {
   const supabase = await getDbClient();
-  const { data, error } = await supabase
-    .from("takes")
-    .select("*, assets:asset_id(id, bucket, storage_path, media_type, width, height, duration_ms)")
-    .eq("scene_id", sceneId)
-    .order("take_number", { ascending: true });
-
-  if (error) throw new Error(error.message);
-  return (data ?? []) as TakeWithAsset[];
+  const { data, error } = await queryTakesWithFallback((select) =>
+    supabase
+      .from("takes")
+      .select(select)
+      .eq("scene_id", sceneId)
+      .order("take_number", { ascending: true }),
+  );
+  if (error) throw error;
+  return (data ?? []) as unknown as TakeWithAsset[];
 }
 
 export async function listTakesForScenes(sceneIds: string[]): Promise<TakeWithAsset[]> {
   if (!sceneIds.length) return [];
   const supabase = await getDbClient();
-  const { data, error } = await supabase
-    .from("takes")
-    .select("*, assets:asset_id(id, bucket, storage_path, media_type, width, height, duration_ms)")
-    .in("scene_id", sceneIds)
-    .order("take_number", { ascending: true });
-
-  if (error) throw new Error(error.message);
-  return (data ?? []) as TakeWithAsset[];
+  const { data, error } = await queryTakesWithFallback((select) =>
+    supabase
+      .from("takes")
+      .select(select)
+      .in("scene_id", sceneIds)
+      .order("take_number", { ascending: true }),
+  );
+  if (error) throw error;
+  return (data ?? []) as unknown as TakeWithAsset[];
 }
 
 export async function getTake(id: string): Promise<TakeWithAsset | null> {
   const supabase = await getDbClient();
-  const { data, error } = await supabase
-    .from("takes")
-    .select("*, assets:asset_id(id, bucket, storage_path, media_type, width, height, duration_ms)")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data as TakeWithAsset | null;
+  const { data, error } = await queryTakesWithFallback((select) =>
+    supabase.from("takes").select(select).eq("id", id).maybeSingle(),
+  );
+  if (error) throw error;
+  return data as unknown as TakeWithAsset | null;
 }
 
 export async function nextTakeNumber(sceneId: string): Promise<number> {
@@ -176,13 +199,16 @@ export async function setTakeProviderJob(
   }
 }
 
-export async function listStuckPendingTakes(input?: {
-  episodeId?: string;
-  seriesId?: string;
-  olderThanMinutes?: number;
-  takeIds?: string[];
-}): Promise<TakeWithAsset[]> {
-  const supabase = await getDbClient();
+export async function listStuckPendingTakes(
+  input?: {
+    episodeId?: string;
+    seriesId?: string;
+    olderThanMinutes?: number;
+    takeIds?: string[];
+  },
+  db?: Awaited<ReturnType<typeof getDbClient>>,
+): Promise<TakeWithAsset[]> {
+  const supabase = db ?? (await getDbClient());
   const olderThanMinutes = input?.olderThanMinutes ?? 0;
   const cutoff =
     olderThanMinutes > 0
@@ -217,9 +243,7 @@ export async function listStuckPendingTakes(input?: {
 
   let query = supabase
     .from("takes")
-    .select(
-      "*, assets:asset_id(id, bucket, storage_path, media_type, width, height, duration_ms)",
-    )
+    .select(TAKE_SELECT_WITH_PROVIDER)
     .eq("status", "pending")
     .eq("media_type", "video")
     .order("created_at", { ascending: true });
@@ -234,15 +258,24 @@ export async function listStuckPendingTakes(input?: {
     query = query.lte("created_at", cutoff);
   }
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+  if (error && isTakeProviderSchemaError(error)) {
+    logTakeProviderSchemaWarning("listStuckPendingTakes degraded to core columns");
+    let coreQuery = supabase
+      .from("takes")
+      .select(TAKE_SELECT_CORE)
+      .eq("status", "pending")
+      .eq("media_type", "video")
+      .order("created_at", { ascending: true });
+    if (input?.takeIds?.length) coreQuery = coreQuery.in("id", input.takeIds);
+    if (sceneIds?.length) coreQuery = coreQuery.in("scene_id", sceneIds);
+    if (cutoff) coreQuery = coreQuery.lte("created_at", cutoff);
+    ({ data, error } = await coreQuery);
+  }
   if (error) {
-    if (isTakeProviderSchemaError(error)) {
-      logTakeProviderSchemaWarning("listStuckPendingTakes skipped");
-      return [];
-    }
     throw new Error(error.message);
   }
-  return (data ?? []) as TakeWithAsset[];
+  return (data ?? []) as unknown as TakeWithAsset[];
 }
 
 export async function listStarredTakesByEpisode(episodeId: string): Promise<TakeWithAsset[]> {
@@ -260,7 +293,7 @@ export async function listStarredTakesByEpisode(episodeId: string): Promise<Take
   const sceneIds = scenes.map((s) => s.id);
   const { data, error } = await supabase
     .from("takes")
-    .select("*, assets:asset_id(id, bucket, storage_path, media_type, width, height, duration_ms)")
+    .select(TAKE_SELECT_CORE)
     .in("scene_id", sceneIds)
     .eq("starred", true)
     .eq("status", "ready");
@@ -268,7 +301,7 @@ export async function listStarredTakesByEpisode(episodeId: string): Promise<Take
   if (error) throw new Error(error.message);
 
   const sceneOrder = new Map(scenes.map((s, i) => [s.id, i]));
-  return ((data ?? []) as TakeWithAsset[]).sort((a, b) => {
+  return ((data ?? []) as unknown as TakeWithAsset[]).sort((a, b) => {
     const orderA = sceneOrder.get(a.scene_id) ?? 0;
     const orderB = sceneOrder.get(b.scene_id) ?? 0;
     if (orderA !== orderB) return orderA - orderB;
@@ -310,12 +343,12 @@ export async function listStarredTakesByScene(sceneId: string): Promise<TakeWith
   const supabase = await getDbClient();
   const { data, error } = await supabase
     .from("takes")
-    .select("*, assets:asset_id(id, bucket, storage_path, media_type, width, height, duration_ms)")
+    .select(TAKE_SELECT_CORE)
     .eq("scene_id", sceneId)
     .eq("starred", true)
     .eq("status", "ready")
     .order("take_number", { ascending: true });
 
   if (error) throw new Error(error.message);
-  return (data ?? []) as TakeWithAsset[];
+  return (data ?? []) as unknown as TakeWithAsset[];
 }

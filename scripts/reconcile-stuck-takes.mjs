@@ -211,7 +211,7 @@ async function rescueCompletedTake(sb, take, endpoint, requestId, reservation) {
   const ownerId = reservation?.user_id;
   if (!ownerId) throw new Error("No owner user_id on open reservation");
 
-  const storagePath = `generated/${ownerId}/${take.scene_id}/${randomUUID()}.mp4`;
+  const storagePath = `${ownerId}/generated/${take.scene_id}/${randomUUID()}.mp4`;
   const { error: uploadError } = await sb.storage.from("assets").upload(storagePath, buffer, {
     contentType: "video/mp4",
     upsert: false,

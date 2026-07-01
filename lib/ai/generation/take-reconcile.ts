@@ -28,6 +28,7 @@ import {
   setTakeProviderJob,
   type TakeWithAsset,
 } from "@/lib/db/takes";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const STUCK_TAKE_THRESHOLD_MINUTES = 15;
 
@@ -64,6 +65,10 @@ function runDetached(label: string, task: () => Promise<void>, context?: Record<
 
 function takeCreditReference(takeId: string): string {
   return `seedance:take:${takeId}`;
+}
+
+function getReconcileAdminDb() {
+  return createAdminClient();
 }
 
 function inferSeedanceTier(take: TakeWithAsset): "standard" | "fast" {
@@ -417,12 +422,16 @@ export async function reconcileStuckTakes(input?: {
 }): Promise<ReconcileTakeOutcome[]> {
   try {
     const minAge = input?.olderThanMinutes ?? STUCK_TAKE_THRESHOLD_MINUTES;
-    let takes = await listStuckPendingTakes({
-      episodeId: input?.episodeId,
-      seriesId: input?.seriesId,
-      olderThanMinutes: input?.takeIds?.length ? 0 : minAge,
-      takeIds: input?.takeIds,
-    });
+    const adminDb = getReconcileAdminDb();
+    let takes = await listStuckPendingTakes(
+      {
+        episodeId: input?.episodeId,
+        seriesId: input?.seriesId,
+        olderThanMinutes: input?.takeIds?.length ? 0 : minAge,
+        takeIds: input?.takeIds,
+      },
+      adminDb,
+    );
 
     if (!input?.takeIds?.length && minAge > 0) {
       takes = takes.filter((take) => {

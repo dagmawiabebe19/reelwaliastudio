@@ -7,11 +7,27 @@ export async function getSignedUrl(
   storagePath: string,
   expiresInSeconds = 3600,
 ): Promise<string | null> {
-  const supabase = await getStorageClient();
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .createSignedUrl(storagePath, expiresInSeconds);
+  try {
+    const supabase = await getStorageClient();
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(storagePath, expiresInSeconds);
 
-  if (error) throw new Error(error.message);
-  return data?.signedUrl ?? null;
+    if (error) {
+      console.warn("[storage] signed URL failed", {
+        bucket,
+        storagePath,
+        message: error.message,
+      });
+      return null;
+    }
+    return data?.signedUrl ?? null;
+  } catch (error) {
+    console.warn("[storage] signed URL exception", {
+      bucket,
+      storagePath,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
