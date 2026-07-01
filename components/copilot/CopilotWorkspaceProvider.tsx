@@ -40,6 +40,8 @@ type CopilotWorkspaceContextValue = {
   setWidth: (width: number) => void;
   setFloatPosition: (x: number, y: number) => void;
   dismissSuggestion: (id: string) => void;
+  copilotDraft: string | null;
+  setCopilotDraft: (text: string | null) => void;
   getLiveContext: () => CopilotContextPayload | null;
   outputHandlerRef: React.MutableRefObject<((event: CopilotOutputEvent) => void) | null>;
   register: (registration: CopilotRegistration | null) => void;
@@ -106,6 +108,7 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
   const [registered, setRegistered] = useState<CopilotRegistration | null>(null);
   const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<Set<string>>(() => new Set());
   const [messagesVersion, setMessagesVersion] = useState(0);
+  const [copilotDraft, setCopilotDraft] = useState<string | null>(null);
 
   useEffect(() => {
     setPrefs(loadCopilotPanelPrefs());
@@ -189,6 +192,8 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
       setWidth,
       setFloatPosition,
       dismissSuggestion,
+      copilotDraft,
+      setCopilotDraft,
       getLiveContext,
       outputHandlerRef,
       register,
@@ -210,6 +215,8 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
       setWidth,
       setFloatPosition,
       dismissSuggestion,
+      copilotDraft,
+      setCopilotDraft,
       getLiveContext,
       register,
       bumpMessages,

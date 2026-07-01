@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, MonitorPlay } from "lucide-react";
 import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspaceProvider";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { OnboardingGuide } from "@/components/onboarding/OnboardingGuide";
 import { GenerationPanel } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { StudioIngredientsPanel } from "@/components/series/studio/StudioIngredientsPanel";
@@ -50,6 +51,7 @@ interface StudioShellProps {
   libraryIngredients: IngredientCardData[];
   costumesByCharacter: Record<string, IngredientCardData[]>;
   sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
+  showOnboardingSegments?: boolean;
 }
 
 export function StudioShell({
@@ -73,6 +75,7 @@ export function StudioShell({
   libraryIngredients,
   costumesByCharacter,
   sheetsByCharacter,
+  showOnboardingSegments = false,
 }: StudioShellProps) {
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
   const [activeTakeIndex, setActiveTakeIndex] = useState(0);
@@ -250,13 +253,18 @@ export function StudioShell({
                 />
               </>
             ) : (
-              <EmptyState
-                variant="preview"
-                icon={Clapperboard}
-                title="Episode studio"
-                description="Select a segment below to edit its shot and generate takes."
-                className="min-h-[12rem]"
-              />
+              <div className="space-y-4">
+                {showOnboardingSegments ? (
+                  <OnboardingGuide phase="studio-segments" />
+                ) : null}
+                <EmptyState
+                  variant="preview"
+                  icon={Clapperboard}
+                  title="Episode studio"
+                  description="Select a segment below to edit its shot and generate takes."
+                  className="min-h-[12rem]"
+                />
+              </div>
             )}
             </div>
           </div>

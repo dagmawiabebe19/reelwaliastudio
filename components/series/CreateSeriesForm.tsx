@@ -19,7 +19,11 @@ export function CreateSeriesForm({ projectId }: CreateSeriesFormProps) {
   );
 
   return (
-    <form action={formAction} className="space-y-4 rounded-lg border border-border bg-surface p-6">
+    <form
+      id="create-series-form"
+      action={formAction}
+      className="scroll-mt-8 space-y-4 rounded-lg border border-border bg-surface p-6"
+    >
       <div>
         <label htmlFor="series-title" className="mb-2 block text-sm text-muted">
           New series

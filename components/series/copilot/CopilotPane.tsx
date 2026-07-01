@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Send, Square } from "lucide-react";
+import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvider";
 import { writeHighlightSegments } from "@/lib/storyboard/episode-buckets";
 import {
   ANTHROPIC_MODELS,
@@ -110,6 +111,7 @@ export function CopilotPane({
   className,
 }: CopilotPaneProps) {
   const router = useRouter();
+  const { copilotDraft, setCopilotDraft } = useCopilotWorkspace();
   const [internalMessages, setInternalMessages] = useState<ChatMessageData[]>(initialMessages);
   const messages = controlledMessages ?? internalMessages;
 
@@ -145,6 +147,12 @@ export function CopilotPane({
     abortRef.current?.abort();
     setStreaming(false);
   }
+
+  useEffect(() => {
+    if (!copilotDraft?.trim()) return;
+    setInput(copilotDraft);
+    setCopilotDraft(null);
+  }, [copilotDraft, setCopilotDraft]);
 
   function scrollAssistantToTop(assistantId: string) {
     const log = messageLogRef.current;

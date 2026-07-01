@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ProjectList } from "@/components/projects/ProjectList";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { listProjects } from "@/lib/db/projects";
+import { shouldShowOnboarding } from "@/lib/onboarding/status";
 
 export default async function ProjectsPage() {
+  const userId = await getActiveUserId();
   const projects = await listProjects();
+  const showOnboarding = await shouldShowOnboarding(userId, "create-project");
 
   return (
     <section>
@@ -20,7 +24,7 @@ export default async function ProjectsPage() {
           </Link>
         }
       />
-      <ProjectList projects={projects} />
+      <ProjectList projects={projects} showOnboarding={showOnboarding} />
     </section>
   );
 }

@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { ChevronRight, FolderOpen } from "lucide-react";
+import { OnboardingGuide, OnboardingPrimaryLink } from "@/components/onboarding/OnboardingGuide";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import type { Project } from "@/lib/db/types";
 
 interface ProjectListProps {
   projects: Project[];
+  showOnboarding?: boolean;
 }
 
 function formatDate(iso: string) {
@@ -16,10 +18,19 @@ function formatDate(iso: string) {
   }).format(new Date(iso));
 }
 
-export function ProjectList({ projects }: ProjectListProps) {
+export function ProjectList({ projects, showOnboarding = false }: ProjectListProps) {
   if (projects.length === 0) {
     return (
-      <EmptyState
+      <div className="space-y-6">
+        {showOnboarding ? (
+          <OnboardingGuide
+            phase="create-project"
+            primaryAction={
+              <OnboardingPrimaryLink href="/projects/new">Create your first project</OnboardingPrimaryLink>
+            }
+          />
+        ) : null}
+        <EmptyState
         variant="list"
         icon={FolderOpen}
         title="No projects yet"
@@ -29,7 +40,8 @@ export function ProjectList({ projects }: ProjectListProps) {
             <Button type="button">New project</Button>
           </Link>
         }
-      />
+        />
+      </div>
     );
   }
 

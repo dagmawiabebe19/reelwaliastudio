@@ -16,7 +16,8 @@
     "test:metering": "node scripts/test-metering.mjs",
     "test:admin-credits": "node scripts/test-admin-credits.mjs",
     "test:copilot-abort": "node scripts/test-copilot-abort-settle.mjs",
-    "test:copilot-meter": "node scripts/test-copilot-metering.mjs"
+    "test:copilot-meter": "node scripts/test-copilot-metering.mjs",
+    "test:onboarding": "node scripts/test-onboarding-status.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.106.0",

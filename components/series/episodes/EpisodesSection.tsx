@@ -10,6 +10,7 @@ import {
 } from "@/app/(app)/series/[id]/actions";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { OnboardingGuide } from "@/components/onboarding/OnboardingGuide";
 import type { EpisodeStatus } from "@/lib/db/types";
 
 export type EpisodeCardData = {
@@ -25,6 +26,7 @@ interface EpisodesSectionProps {
   seriesId: string;
   activeEpisodes: EpisodeCardData[];
   archivedEpisodes: EpisodeCardData[];
+  showOnboarding?: boolean;
 }
 
 function formatDate(iso: string) {
@@ -40,6 +42,7 @@ export function EpisodesSection({
   seriesId,
   activeEpisodes,
   archivedEpisodes,
+  showOnboarding = false,
 }: EpisodesSectionProps) {
   const router = useRouter();
   const [tab, setTab] = useState<"active" | "archived">("active");
@@ -111,21 +114,26 @@ export function EpisodesSection({
 
       <div className="grid gap-4">
         {episodes.length === 0 ? (
-          tab === "archived" ? (
+          <div className="space-y-6">
+            {showOnboarding && tab === "active" ? (
+              <OnboardingGuide phase="plan-episode" />
+            ) : null}
+            {tab === "archived" ? (
             <EmptyState
               variant="panel"
               icon={Archive}
               title="No archived episodes"
               description="Archive an episode from the Active tab when you want to park it."
             />
-          ) : (
-            <EmptyState
-              variant="panel"
-              icon={Clapperboard}
-              title="No episodes yet"
-              description="Create your first episode above, then open the studio to plan segments."
-            />
-          )
+            ) : (
+              <EmptyState
+                variant="panel"
+                icon={Clapperboard}
+                title="No episodes yet"
+                description="Create your first episode above, then open the studio to plan segments."
+              />
+            )}
+          </div>
         ) : (
           episodes.map((ep) => (
             <article

@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { ChevronRight, Film } from "lucide-react";
+import { OnboardingGuide, OnboardingPrimaryLink } from "@/components/onboarding/OnboardingGuide";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { orientationLabel } from "@/components/series/StatTiles";
 import type { SeriesWithProject } from "@/lib/db/series";
 import type { SeriesStatus } from "@/lib/db/types";
+import type { OnboardingPhase } from "@/lib/onboarding/constants";
 
 interface SeriesIndexListProps {
   series: SeriesWithProject[];
+  onboardingPhase?: OnboardingPhase | null;
 }
 
 const statusLabels: Record<SeriesStatus, string> = {
@@ -29,10 +32,24 @@ function formatDate(iso: string) {
   }).format(new Date(iso));
 }
 
-export function SeriesIndexList({ series }: SeriesIndexListProps) {
+export function SeriesIndexList({ series, onboardingPhase = null }: SeriesIndexListProps) {
   if (series.length === 0) {
+    const primaryHref =
+      onboardingPhase === "create-project" ? "/projects/new" : "/projects";
+    const primaryLabel =
+      onboardingPhase === "create-project" ? "Create your first project" : "Open projects";
+
     return (
-      <EmptyState
+      <div className="space-y-6">
+        {onboardingPhase ? (
+          <OnboardingGuide
+            phase={onboardingPhase}
+            primaryAction={
+              <OnboardingPrimaryLink href={primaryHref}>{primaryLabel}</OnboardingPrimaryLink>
+            }
+          />
+        ) : null}
+        <EmptyState
         variant="list"
         icon={Film}
         title="No series yet"
@@ -42,7 +59,8 @@ export function SeriesIndexList({ series }: SeriesIndexListProps) {
             <Button type="button">New project</Button>
           </Link>
         }
-      />
+        />
+      </div>
     );
   }
 

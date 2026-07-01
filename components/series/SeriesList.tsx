@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ChevronRight, Film } from "lucide-react";
+import { OnboardingGuide } from "@/components/onboarding/OnboardingGuide";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/Button";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { orientationLabel } from "@/components/series/StatTiles";
 import type { Series, SeriesStatus } from "@/lib/db/types";
@@ -8,6 +10,7 @@ import type { Series, SeriesStatus } from "@/lib/db/types";
 interface SeriesListProps {
   series: Series[];
   emptyMessage?: string;
+  showOnboarding?: boolean;
 }
 
 const statusLabels: Record<SeriesStatus, string> = {
@@ -28,15 +31,27 @@ function formatDate(iso: string) {
   }).format(new Date(iso));
 }
 
-export function SeriesList({ series, emptyMessage }: SeriesListProps) {
+export function SeriesList({ series, emptyMessage, showOnboarding = false }: SeriesListProps) {
   if (series.length === 0) {
     return (
-      <EmptyState
+      <div className="space-y-6">
+        {showOnboarding ? (
+          <OnboardingGuide
+            phase="create-series"
+            primaryAction={
+              <a href="#create-series-form">
+                <Button type="button">Create your first series</Button>
+              </a>
+            }
+          />
+        ) : null}
+        <EmptyState
         variant="list"
         icon={Film}
         title="No series yet"
         description={emptyMessage ?? "Create a series to start building episodes and scenes."}
-      />
+        />
+      </div>
     );
   }
 

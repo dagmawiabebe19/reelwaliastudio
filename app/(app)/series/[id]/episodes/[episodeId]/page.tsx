@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { EpisodeStudioPage } from "@/components/series/EpisodeStudioPage";
 import { isSeedanceConfigured } from "@/lib/ai/registry";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { listAudioLinesByEpisode } from "@/lib/db/audio-lines";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
 import { getEpisode, listEpisodesBySeries } from "@/lib/db/episodes";
@@ -12,6 +13,7 @@ import { listTakesForScenes } from "@/lib/db/takes";
 import { buildMentionSheets, buildProductionLibraryData } from "@/lib/production/library-data";
 import { buildDisplayReferences } from "@/lib/production/enrich-scene-references";
 import { resolveAssetUrl, resolveAssetUrls } from "@/lib/storage/resolve-urls";
+import { shouldShowOnboarding } from "@/lib/onboarding/status";
 
 interface EpisodeStoryboardPageProps {
   params: Promise<{ id: string; episodeId: string }>;
@@ -19,6 +21,7 @@ interface EpisodeStoryboardPageProps {
 
 export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboardPageProps) {
   const { id: seriesId, episodeId } = await params;
+  const userId = await getActiveUserId();
 
   const [series, episode, episodes, scenes, ingredients, audioLinesRaw, chatSession, sheetsRaw] =
     await Promise.all([
@@ -124,6 +127,11 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
 
   const seedanceConfigured = isSeedanceConfigured();
 
+  const episodeSceneCount = scenes.filter((scene) => scene.episode_id === episodeId).length;
+  const showOnboardingSegments = await shouldShowOnboarding(userId, "studio-segments", {
+    episodeSceneCount,
+  });
+
   const ingredientsById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
   const scenesWithDisplayRefs = await Promise.all(
     scenes.map(async (scene) => ({
@@ -167,6 +175,7 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
       libraryIngredients={libraryIngredients}
       costumesByCharacter={costumesByCharacter}
       sheetsByCharacter={sheetsByCharacter}
+      showOnboardingSegments={showOnboardingSegments}
     />
   );
 }

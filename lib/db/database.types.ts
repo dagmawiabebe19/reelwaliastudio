@@ -496,6 +496,7 @@ export type Database = {
           display_name: string | null;
           avatar_url: string | null;
           is_admin: boolean;
+          has_completed_onboarding: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -505,6 +506,7 @@ export type Database = {
           display_name?: string | null;
           avatar_url?: string | null;
           is_admin?: boolean;
+          has_completed_onboarding?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -514,6 +516,7 @@ export type Database = {
           display_name?: string | null;
           avatar_url?: string | null;
           is_admin?: boolean;
+          has_completed_onboarding?: boolean;
           created_at?: string;
           updated_at?: string;
         };

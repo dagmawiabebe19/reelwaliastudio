@@ -41,6 +41,7 @@ interface EpisodeWorkspaceProps {
   libraryIngredients: IngredientCardData[];
   costumesByCharacter: Record<string, IngredientCardData[]>;
   sheetsByCharacter: Record<string, CharacterSheetCardData[]>;
+  showOnboardingSegments?: boolean;
   showIngredients: boolean;
   onCloseIngredients: () => void;
 }

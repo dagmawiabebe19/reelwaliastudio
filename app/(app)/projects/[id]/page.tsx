@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import { CreateSeriesForm } from "@/components/series/CreateSeriesForm";
 import { SeriesList } from "@/components/series/SeriesList";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { getProject } from "@/lib/db/projects";
 import { listSeriesByProject } from "@/lib/db/series";
+import { shouldShowOnboarding } from "@/lib/onboarding/status";
 
 interface ProjectDetailPageProps {
   params: Promise<{ id: string }>;
@@ -13,9 +15,13 @@ interface ProjectDetailPageProps {
 
 export default async function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const { id } = await params;
+  const userId = await getActiveUserId();
   const [project, series] = await Promise.all([getProject(id), listSeriesByProject(id)]);
 
   if (!project) notFound();
+
+  const showOnboarding =
+    series.length === 0 && (await shouldShowOnboarding(userId, "create-series"));
 
   return (
     <section>
@@ -39,7 +45,7 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
           <p className="mt-2 font-display text-4xl text-foreground">{series.length}</p>
         </div>
       </div>
-      <SeriesList series={series} />
+      <SeriesList series={series} showOnboarding={showOnboarding} />
     </section>
   );
 }

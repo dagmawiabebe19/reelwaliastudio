@@ -76,6 +76,7 @@ interface SeriesWorkspaceProps {
   activeEpisodes: EpisodeCardData[];
   archivedEpisodes: EpisodeCardData[];
   chatMessages: ChatMessageData[];
+  showOnboardingPlanEpisode?: boolean;
 }
 
 export function SeriesWorkspace({
@@ -90,9 +91,10 @@ export function SeriesWorkspace({
   activeEpisodes,
   archivedEpisodes,
   chatMessages,
+  showOnboardingPlanEpisode = false,
 }: SeriesWorkspaceProps) {
   const [view, setView] = useState<"classic" | "studio">("classic");
-  const [tab, setTab] = useState<Tab>("ingredients");
+  const [tab, setTab] = useState<Tab>(showOnboardingPlanEpisode ? "episodes" : "ingredients");
   const [libraryHighlight, setLibraryHighlight] = useState<LibraryHighlight>(null);
   const { outputItems, handleOutputEvent, handleItemsUpdate } = useSeriesStudioOutput();
 
@@ -109,6 +111,12 @@ export function SeriesWorkspace({
   const copilotRegistration = useMemo(() => {
     const viewLabel = view === "studio" ? "Studio output" : TAB_LABELS[tab];
     const suggestions = [];
+    if (showOnboardingPlanEpisode) {
+      suggestions.push({
+        id: "onboarding-first-episode",
+        message: "New here? Ask me to help plan your first episode — or use Show me how in the guide above.",
+      });
+    }
     if (tab === "memory" && series.memory_markdown.trim().length < 120) {
       suggestions.push({
         id: "memory-sparse",
@@ -169,6 +177,7 @@ export function SeriesWorkspace({
     chatMessages,
     mentionIngredients,
     stats.episodeCount,
+    showOnboardingPlanEpisode,
     handleOutputEvent,
   ]);
 
@@ -262,6 +271,7 @@ export function SeriesWorkspace({
               seriesId={series.id}
               activeEpisodes={activeEpisodes}
               archivedEpisodes={archivedEpisodes}
+              showOnboarding={showOnboardingPlanEpisode}
             />
           ) : null}
 

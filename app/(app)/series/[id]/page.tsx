@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { SeriesWorkspace } from "@/components/series/SeriesWorkspace";
+import { getActiveUserId } from "@/lib/auth/getUser";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
 import { listCharacterSheetsBySeries } from "@/lib/db/character-sheets";
 import { getIngredientCounts, listIngredientsBySeries } from "@/lib/db/ingredients";
@@ -10,6 +11,7 @@ import {
   buildProductionLibraryData,
 } from "@/lib/production/library-data";
 import { resolveAssetUrls } from "@/lib/storage/resolve-urls";
+import { shouldShowOnboarding } from "@/lib/onboarding/status";
 
 interface SeriesPageProps {
   params: Promise<{ id: string }>;
@@ -17,6 +19,7 @@ interface SeriesPageProps {
 
 export default async function SeriesPage({ params }: SeriesPageProps) {
   const { id } = await params;
+  const userId = await getActiveUserId();
 
   const [series, stats, ingredientsRaw, counts, activeEpisodes, archivedEpisodes, chatSession, sheetsRaw] =
     await Promise.all([
@@ -66,6 +69,10 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     title: ep.title,
   }));
 
+  const showOnboardingPlanEpisode = await shouldShowOnboarding(userId, "plan-episode", {
+    episodeCount: activeEpisodes.length + archivedEpisodes.length,
+  });
+
   return (
     <SeriesWorkspace
       series={{
@@ -94,6 +101,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         tool_args: m.tool_args as Record<string, unknown> | null,
         tool_result: m.tool_result as Record<string, unknown> | null,
       }))}
+      showOnboardingPlanEpisode={showOnboardingPlanEpisode}
     />
   );
 }
