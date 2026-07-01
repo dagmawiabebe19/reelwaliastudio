@@ -7,7 +7,10 @@ import { estimateSheetCredits } from "@/lib/credits/pricing";
 import { withCredits, withCreditsAbortable } from "@/lib/credits/meter";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
 import { runSeedream } from "@/lib/ai/image/seedream";
-import { runWithConcurrency } from "@/lib/ai/generation/concurrency";
+import {
+  runWithConcurrencySettled,
+  SHEET_ANGLE_CONCURRENCY,
+} from "@/lib/ai/generation/concurrency";
 import {
   classifyImageError,
   moderationUserMessage,
@@ -173,11 +176,12 @@ async function runSheetGenerationCore(
   await updateCharacterSheetStatus(sheetId, "pending", null);
 
   const total = SHEET_ANGLES.length;
-  let completed = existingAngles.size;
   const failures: Array<{ angle: SheetAngle; error: string }> = [];
 
-  await runWithConcurrency(anglesToGenerate, 3, async (angle) => {
-    try {
+  const settled = await runWithConcurrencySettled(
+    anglesToGenerate,
+    SHEET_ANGLE_CONCURRENCY,
+    async (angle) => {
       throwIfAborted(options?.abortSignal);
       const prompt = sheetAnglePrompt(angle, characterName, costumeNote);
       await generateSheetAngle({
@@ -188,17 +192,27 @@ async function runSheetGenerationCore(
         abortSignal: options?.abortSignal,
         onBillableWorkStarted: options?.onBillableWorkStarted,
       });
-    } catch (error) {
-      if (error instanceof CopilotAbortError) {
-        throw error;
+      return angle;
+    },
+  );
+
+  let completed = existingAngles.size;
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    const angle = anglesToGenerate[i];
+    if (result.status === "rejected") {
+      if (result.reason instanceof CopilotAbortError) {
+        throw result.reason;
       }
-      const message = error instanceof Error ? error.message : `Failed to generate ${angle} angle.`;
+      const message =
+        result.reason instanceof Error
+          ? result.reason.message
+          : `Failed to generate ${angle} angle.`;
       failures.push({ angle, error: message });
-    } finally {
-      completed += 1;
-      safeProgress(onProgress, `generating angle ${completed}/${total}…`, completed, total);
     }
-  });
+    completed += 1;
+    safeProgress(onProgress, `generating angle ${completed}/${total}…`, completed, total);
+  }
 
   if (failures.length > 0) {
     const failedLabels = failures

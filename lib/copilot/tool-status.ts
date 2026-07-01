@@ -59,6 +59,51 @@ function progressSuffix(step?: number, total?: number): string {
   return "";
 }
 
+/** Aggregate label when multiple setup tools run concurrently. */
+export function friendlyParallelRunning(
+  runningTools: Array<{ name: string; args: Record<string, unknown> | null | undefined }>,
+): FriendlyToolLabel | null {
+  if (runningTools.length < 2) return null;
+
+  const generating = runningTools.filter(
+    (tool) => tool.name === "add_ingredient" && isGenerating(tool.args),
+  );
+  const sheets = runningTools.filter((tool) => tool.name === "create_character_sheet");
+
+  if (generating.length >= 2) {
+    const characters = generating.filter((tool) => ingredientKind(tool.args) === "character");
+    const locations = generating.filter((tool) => ingredientKind(tool.args) === "location");
+    if (characters.length >= 2) {
+      return {
+        message: `Generating ${characters.length} characters…`,
+        icon: "sparkles",
+      };
+    }
+    if (locations.length >= 2) {
+      return {
+        message: `Generating ${locations.length} locations…`,
+        icon: "map-pin",
+      };
+    }
+    return {
+      message: `Generating ${generating.length} ingredients…`,
+      icon: "sparkles",
+    };
+  }
+
+  if (sheets.length >= 2) {
+    return {
+      message: `Building ${sheets.length} character sheets…`,
+      icon: "layout-grid",
+    };
+  }
+
+  return {
+    message: `Working on ${runningTools.length} tasks…`,
+    icon: "loader",
+  };
+}
+
 /** Present-tense status while a tool is running. */
 export function friendlyToolRunning(
   name: string,

@@ -32,22 +32,25 @@ import {
   CHARACTER_HEADSHOT_PREFIX,
   LOCATION_ESTABLISHING_PREFIX,
   costumePreviewPrompt,
-  normalizeShotIntent,
 } from "@/lib/production/prompts";
-import {
-  inferAudioModeFromPrompt,
-  normalizeGenerationTier,
-  normalizeSeedanceAudioMode,
-} from "@/lib/ai/video/seedance-constants";
 import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
+import { executeDraftStoryboard } from "@/lib/ai/copilot/draft-storyboard";
+import {
+  groupCopilotToolsByWave,
+  runCopilotToolWave,
+  SETUP_GENERATION_CONCURRENCY,
+  SETUP_WAVE_ORDER,
+  splitGenerationSubWaves,
+} from "@/lib/ai/copilot/tool-waves";
+import { runWithConcurrencySettled } from "@/lib/ai/generation/concurrency";
 import { createCharacterSheet } from "@/lib/db/character-sheets";
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
 import { resolveSceneReferences } from "@/lib/production/resolve-references";
-import { assessSegmentLock, assertIngredientReadyForBinding, assertSheetReadyForBinding } from "@/lib/production/reference-readiness";
+import { assertIngredientReadyForBinding, assertSheetReadyForBinding } from "@/lib/production/reference-readiness";
 import { createIngredient, getIngredient } from "@/lib/db/ingredients";
 import { bindIngredientToScene } from "@/lib/db/scene-ingredients";
 import { bindSheetToScene } from "@/lib/db/scene-sheets";
-import { createScene, getScene, updateScene } from "@/lib/db/scenes";
+import { getScene } from "@/lib/db/scenes";
 import { resolveCopilotModel } from "@/lib/ai/copilot/resolve-model";
 import { formatToolDoneSummary, formatToolRunningLabel } from "@/lib/ai/copilot/progress";
 import {
@@ -59,7 +62,6 @@ import { appendChatMessage, listChatMessages } from "@/lib/db/chat";
 import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
 import { getEpisode } from "@/lib/db/episodes";
 import { getSeries } from "@/lib/db/series";
-import { resolveActLabelForEpisode } from "@/lib/storyboard/episode-buckets";
 
 export type CopilotStreamEvent =
   | { type: "text"; content: string }
@@ -141,109 +143,16 @@ async function executeTool(
       }
 
       const segments = (args.segments as Array<Record<string, unknown>>) ?? [];
-      const created: string[] = [];
-      const updated: string[] = [];
-      const builtSceneIds: string[] = [];
-      const resolved: Array<{ scene_id: string; references: unknown[] }> = [];
-      const total = segments.filter((s) => String(s.title ?? "").trim()).length;
-      let index = 0;
-
-      emitProgress("running…", 0, total || 1);
-
-      for (const segment of segments) {
-        const sceneId = segment.scene_id ? String(segment.scene_id) : null;
-        const title = String(segment.title ?? "").trim();
-        const prompt = String(segment.prompt ?? "").trim();
-        if (!title) continue;
-
-        index++;
-        emitProgress(`writing segment ${index}/${total || index}: ${title}…`, index, total || index);
-
-        const actLabel = resolveActLabelForEpisode(episode, segment.act_label);
-        const shotIntent = normalizeShotIntent(
-          typeof segment.shot_intent === "string" ? segment.shot_intent : null,
-        );
-        const audioMode =
-          normalizeSeedanceAudioMode(
-            typeof segment.audio_mode === "string" ? segment.audio_mode : null,
-          ) ?? inferAudioModeFromPrompt(prompt);
-        const generationTier =
-          normalizeGenerationTier(
-            typeof segment.generation_tier === "string" ? segment.generation_tier : null,
-          ) ?? "fast";
-        const durationSeconds =
-          typeof segment.duration_seconds === "number"
-            ? Math.min(15, Math.max(4, Math.round(segment.duration_seconds)))
-            : undefined;
-
-        let targetSceneId: string;
-
-        if (sceneId) {
-          await updateScene(sceneId, {
-            title,
-            prompt,
-            act_label: actLabel,
-            shot_intent: shotIntent,
-            audio_mode: audioMode,
-            generation_tier: generationTier,
-            duration_seconds: durationSeconds,
-            orientation:
-              segment.orientation === "portrait" || segment.orientation === "landscape"
-                ? segment.orientation
-                : undefined,
-          });
-          targetSceneId = sceneId;
-          updated.push(sceneId);
-        } else {
-          const scene = await createScene(episodeId, {
-            title,
-            actLabel,
-          });
-          await updateScene(scene.id, {
-            prompt,
-            shot_intent: shotIntent,
-            audio_mode: audioMode,
-            generation_tier: generationTier,
-            duration_seconds: durationSeconds ?? null,
-            orientation:
-              segment.orientation === "portrait" || segment.orientation === "landscape"
-                ? segment.orientation
-                : null,
-          });
-          targetSceneId = scene.id;
-          created.push(scene.id);
-        }
-
-        emitProgress(`resolving references for segment ${index}/${total || index}…`, index, total || index);
-
-        const refs = await resolveSceneReferences({
-          sceneId: targetSceneId,
-          seriesId: context.seriesId,
-          episodeId,
-          autoBind: true,
-        });
-        resolved.push({ scene_id: targetSceneId, references: refs });
-        builtSceneIds.push(targetSceneId);
-      }
-
-      const lockReport = await Promise.all(
-        builtSceneIds.map((sceneId) =>
-          assessSegmentLock({ sceneId, seriesId: context.seriesId, episodeId }),
-        ),
-      );
+      const result = await executeDraftStoryboard({
+        episode,
+        episodeId,
+        seriesId: context.seriesId,
+        segments,
+        emitProgress: (detail, step, total) => emitProgress(detail, step, total),
+      });
 
       revalidatePath(`/series/${context.seriesId}/episodes/${episodeId}`);
-
-      return {
-        episode_id: episodeId,
-        created,
-        updated,
-        count: created.length + updated.length,
-        resolved,
-        lock_report: lockReport,
-        fully_locked_count: lockReport.filter((row) => row.fully_locked).length,
-        segment_count: lockReport.length,
-      };
+      return result;
     }
 
     case "add_ingredient": {
@@ -384,16 +293,26 @@ async function executeTool(
 
       emitProgress("binding identity locks…", 0, total || 1);
 
-      let step = 0;
-      for (const sheetId of sheetIds) {
-        step++;
-        emitProgress(`binding sheet ${step}/${total || step}…`, step, total || step);
-        await bindSheetToScene(sceneId, sheetId, "identity_lock");
-      }
-      for (const ingredientId of ingredientIds) {
-        step++;
-        emitProgress(`binding ingredient ${step}/${total || step}…`, step, total || step);
-        await bindIngredientToScene(sceneId, ingredientId, "reference");
+      const bindTargets = [
+        ...sheetIds.map((id) => ({ kind: "sheet" as const, id })),
+        ...ingredientIds.map((id) => ({ kind: "ingredient" as const, id })),
+      ];
+
+      const bindOutcomes = await runWithConcurrencySettled(bindTargets, 6, async (target) => {
+        if (target.kind === "sheet") {
+          await bindSheetToScene(sceneId, target.id, "identity_lock");
+        } else {
+          await bindIngredientToScene(sceneId, target.id, "reference");
+        }
+      });
+
+      const boundCount = bindOutcomes.filter((outcome) => outcome.status === "fulfilled").length;
+      emitProgress(`bound ${boundCount}/${total || boundCount}…`, boundCount, total || boundCount);
+
+      for (const outcome of bindOutcomes) {
+        if (outcome.status === "rejected") {
+          throw outcome.reason;
+        }
       }
 
       const scene = await getScene(sceneId);
@@ -692,27 +611,11 @@ export async function runCopilotStream(input: {
       );
 
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      const waveGroups = groupCopilotToolsByWave(toolBlocks);
 
-      for (const tool of toolBlocks) {
-        throwIfAborted(input.abortSignal);
-
+      async function runOneTool(tool: Anthropic.ToolUseBlock): Promise<Record<string, unknown>> {
         const args = tool.input as Record<string, unknown>;
         const toolId = tool.id;
-
-        input.onEvent({
-          type: "tool_start",
-          toolId,
-          name: tool.name,
-          args,
-        });
-
-        await appendChatMessage({
-          sessionId: input.sessionId,
-          role: "tool",
-          content: formatToolRunningLabel(tool.name),
-          toolName: tool.name,
-          toolArgs: args,
-        });
 
         const emitProgress: ToolProgressEmitter = (detail, step, total) => {
           input.onEvent({
@@ -732,9 +635,8 @@ export async function runCopilotStream(input: {
           input.onEvent({ type: "copilot_output", payload });
         };
 
-        let result: Record<string, unknown>;
         try {
-          result = await executeTool(
+          return await executeTool(
             tool.name,
             args,
             input.context,
@@ -748,32 +650,84 @@ export async function runCopilotStream(input: {
           }
           throw error;
         }
+      }
 
-        const summary = formatToolDoneSummary(tool.name, result);
-        turnSummaries.push(summary);
+      for (const wave of SETUP_WAVE_ORDER) {
+        const waveTools = waveGroups.get(wave) ?? [];
+        if (!waveTools.length) continue;
 
-        input.onEvent({
-          type: "tool_done",
-          toolId,
-          name: tool.name,
-          result,
-          summary,
-        });
+        for (const tool of waveTools) {
+          throwIfAborted(input.abortSignal);
+          const args = tool.input as Record<string, unknown>;
+          input.onEvent({
+            type: "tool_start",
+            toolId: tool.id,
+            name: tool.name,
+            args,
+          });
+          await appendChatMessage({
+            sessionId: input.sessionId,
+            role: "tool",
+            content: formatToolRunningLabel(tool.name),
+            toolName: tool.name,
+            toolArgs: args,
+          });
+        }
 
-        await appendChatMessage({
-          sessionId: input.sessionId,
-          role: "tool",
-          content: summary,
-          toolName: tool.name,
-          toolArgs: args,
-          toolResult: result,
-        });
+        const subWaves = wave === 0 ? splitGenerationSubWaves(waveTools) : [waveTools];
 
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: tool.id,
-          content: JSON.stringify(result),
-        });
+        for (const subWave of subWaves) {
+          const parallelLimit =
+            wave === 0 ? SETUP_GENERATION_CONCURRENCY : Math.max(subWave.length, 1);
+
+          const outcomes = await runCopilotToolWave(subWave, parallelLimit, async (tool) =>
+            runOneTool(tool),
+          );
+
+          for (const outcome of outcomes) {
+            const tool = outcome.tool;
+            const args = tool.input as Record<string, unknown>;
+
+            if (outcome.error instanceof CopilotAbortError) {
+              throw outcome.error;
+            }
+
+            const result =
+              outcome.result ??
+              ({
+                error:
+                  outcome.error instanceof Error
+                    ? outcome.error.message
+                    : "Tool execution failed.",
+              } satisfies Record<string, unknown>);
+
+            const summary = formatToolDoneSummary(tool.name, result);
+            turnSummaries.push(summary);
+
+            input.onEvent({
+              type: "tool_done",
+              toolId: tool.id,
+              name: tool.name,
+              result,
+              summary,
+            });
+
+            await appendChatMessage({
+              sessionId: input.sessionId,
+              role: "tool",
+              content: summary,
+              toolName: tool.name,
+              toolArgs: args,
+              toolResult: result,
+            });
+
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: tool.id,
+              content: JSON.stringify(result),
+            });
+          }
+        }
       }
 
       throwIfAborted(input.abortSignal);

@@ -20,6 +20,7 @@ import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 import {
   formatToolDebugLine,
+  friendlyParallelRunning,
   friendlyToolDone,
   friendlyToolRunning,
   inferToolStatus,
@@ -97,6 +98,13 @@ export function CopilotToolActivity({
   );
 
   const runningIndex = steps.findIndex((step) => step.status === "running");
+  const runningSteps = steps.filter((step) => step.status === "running");
+  const parallelLabel = friendlyParallelRunning(
+    runningSteps.map((step) => {
+      const tool = tools.find((item) => item.id === step.id);
+      return { name: tool?.tool_name ?? "", args: tool?.tool_args };
+    }),
+  );
   const allDone = steps.length > 0 && runningIndex === -1;
   const showActivity = steps.length > 0 && (streaming || resolvedVisible);
 
@@ -128,6 +136,7 @@ export function CopilotToolActivity({
 
   const completed = runningIndex === -1 ? steps : steps.slice(0, runningIndex);
   const current = runningIndex >= 0 ? steps[runningIndex] : null;
+  const displayCurrent = parallelLabel ?? current?.label ?? null;
   const multiStep = steps.length > 1;
 
   return (
@@ -137,7 +146,7 @@ export function CopilotToolActivity({
       }`}
       role="status"
       aria-live="polite"
-      aria-busy={streaming && Boolean(current)}
+      aria-busy={streaming && Boolean(displayCurrent)}
     >
       {allDone && !streaming ? (
         <div className="flex items-center gap-2 text-xs text-foreground-secondary">
@@ -172,15 +181,15 @@ export function CopilotToolActivity({
             </ul>
           ) : null}
 
-          {current ? (
+          {displayCurrent ? (
             <div className="flex items-center gap-2 text-sm text-foreground">
               <Loader2
                 className={`${ICON_SM} copilot-status-spinner shrink-0 text-accent`}
                 strokeWidth={ICON_STROKE}
                 aria-hidden
               />
-              <StatusIcon iconKey={current.label.icon} className="text-foreground-secondary" />
-              <span className="min-w-0 truncate">{current.label.message}</span>
+              <StatusIcon iconKey={displayCurrent.icon} className="text-foreground-secondary" />
+              <span className="min-w-0 truncate">{displayCurrent.message}</span>
             </div>
           ) : null}
         </>

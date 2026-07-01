@@ -60,6 +60,39 @@ export async function getScene(id: string): Promise<SceneWithBindings | null> {
   return data as SceneWithBindings | null;
 }
 
+export async function getSceneCount(episodeId: string): Promise<number> {
+  const supabase = await getDbClient();
+  const { count, error } = await supabase
+    .from("scenes")
+    .select("id", { count: "exact", head: true })
+    .eq("episode_id", episodeId);
+
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+export async function createScenesBatch(
+  episodeId: string,
+  inputs: Array<{ title: string; actLabel?: string }>,
+): Promise<Scene[]> {
+  if (!inputs.length) return [];
+
+  const supabase = await getDbClient();
+  const base = await getSceneCount(episodeId);
+
+  const payloads: TablesInsert<"scenes">[] = inputs.map((input, index) => ({
+    episode_id: episodeId,
+    title: input.title,
+    act_label: input.actLabel ?? "Storyboard-only",
+    sort_order: base + index,
+    position: base + index + 1,
+  }));
+
+  const { data, error } = await supabase.from("scenes").insert(payloads).select();
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 export async function createScene(
   episodeId: string,
   input: { title: string; actLabel?: string },
