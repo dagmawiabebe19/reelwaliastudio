@@ -97,6 +97,17 @@ function partitionMessages(messages: ChatMessageData[]) {
   return { displayMessages };
 }
 
+/** Distance from bottom (px) to treat the user as "following" new messages. */
+const CHAT_PIN_THRESHOLD_PX = 48;
+
+function isChatNearBottom(log: HTMLDivElement): boolean {
+  return log.scrollHeight - log.scrollTop - log.clientHeight <= CHAT_PIN_THRESHOLD_PX;
+}
+
+function scrollChatToBottom(log: HTMLDivElement): void {
+  log.scrollTop = log.scrollHeight;
+}
+
 export function CopilotPane({
   scopeType,
   scopeId,
@@ -132,9 +143,8 @@ export function CopilotPane({
   const [mentionOpen, setMentionOpen] = useState(false);
   const [liveTurnTools, setLiveTurnTools] = useState<ChatMessageData[]>([]);
   const messageLogRef = useRef<HTMLDivElement>(null);
+  const pinnedToBottomRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
-  const streamingAssistantIdRef = useRef<string | null>(null);
-  const wasStreamingRef = useRef(false);
 
   const { displayMessages } = useMemo(() => partitionMessages(messages), [messages]);
 
@@ -154,32 +164,46 @@ export function CopilotPane({
     setCopilotDraft(null);
   }, [copilotDraft, setCopilotDraft]);
 
-  function scrollAssistantToTop(assistantId: string) {
+  const pinChatToBottomIfFollowing = useCallback(() => {
     const log = messageLogRef.current;
-    if (!log) return;
-    const el = log.querySelector<HTMLElement>(`[data-copilot-message-id="${assistantId}"]`);
-    if (!el) return;
-    log.scrollTop = Math.max(0, el.offsetTop - log.offsetTop - 8);
-  }
+    if (!log || !pinnedToBottomRef.current) return;
+    scrollChatToBottom(log);
+  }, []);
 
   useEffect(() => {
     const log = messageLogRef.current;
     if (!log) return;
 
-    if (streaming) {
-      wasStreamingRef.current = true;
-      log.scrollTop = log.scrollHeight;
-      return;
-    }
+    const onScroll = () => {
+      pinnedToBottomRef.current = isChatNearBottom(log);
+    };
 
-    if (wasStreamingRef.current) {
-      wasStreamingRef.current = false;
-      const assistantId = streamingAssistantIdRef.current;
-      if (assistantId) {
-        requestAnimationFrame(() => scrollAssistantToTop(assistantId));
-      }
-    }
-  }, [messages, streaming]);
+    log.addEventListener("scroll", onScroll, { passive: true });
+    return () => log.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // First load / episode switch: start at latest message.
+  useEffect(() => {
+    pinnedToBottomRef.current = true;
+    requestAnimationFrame(() => pinChatToBottomIfFollowing());
+  }, [scopeType, scopeId, pinChatToBottomIfFollowing]);
+
+  // Pin while following as messages grow (send, stream tokens, tool updates in log).
+  useEffect(() => {
+    requestAnimationFrame(() => pinChatToBottomIfFollowing());
+  }, [displayMessages, streaming, pinChatToBottomIfFollowing]);
+
+  // Catch layout height changes during streaming (markdown reflow) without new message rows.
+  useEffect(() => {
+    const log = messageLogRef.current;
+    if (!log || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      pinChatToBottomIfFollowing();
+    });
+    observer.observe(log);
+    return () => observer.disconnect();
+  }, [pinChatToBottomIfFollowing]);
 
   async function handleSend() {
     const text = input.trim();
@@ -189,19 +213,16 @@ export function CopilotPane({
     setStreaming(true);
     setAbortNote(null);
     setLiveTurnTools([]);
+    pinnedToBottomRef.current = true;
     abortRef.current = new AbortController();
     setMessages((prev) => [
       ...prev,
       { id: `local-${Date.now()}`, role: "user", content: text },
     ]);
-    requestAnimationFrame(() => {
-      const log = messageLogRef.current;
-      if (log) log.scrollTop = log.scrollHeight;
-    });
+    requestAnimationFrame(() => pinChatToBottomIfFollowing());
 
     let assistantBuffer = "";
     const assistantId = `assistant-${Date.now()}`;
-    streamingAssistantIdRef.current = assistantId;
 
     try {
       const live = getLiveContext?.() ?? context;
