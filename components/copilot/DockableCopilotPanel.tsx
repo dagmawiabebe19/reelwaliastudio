@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LayoutPanelLeft,
   Lightbulb,
+  MessageSquare,
   Minus,
   PanelLeft,
   PanelRight,
@@ -13,6 +14,8 @@ import {
 import { CopilotPane, type ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvider";
 import { CanonMemoryPrompt } from "@/components/copilot/CanonMemoryPrompt";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { LoadingPlaceholder } from "@/components/ui/Skeleton";
 import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 
 function PanelChrome({
@@ -174,11 +177,15 @@ export function DockableCopilotPanel() {
     ) : null;
 
   const panelBody = !scopeType || !scopeId || !context ? (
-    <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted">
-      Open a series to start working with the co-pilot.
-    </div>
+    <EmptyState
+      variant="panel"
+      icon={MessageSquare}
+      title="Co-pilot is ready"
+      description="Open a series or episode studio to start planning with the co-pilot."
+      className="m-4 flex-1"
+    />
   ) : loadingHistory ? (
-    <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted">Loading…</div>
+    <LoadingPlaceholder label="Loading conversation" />
   ) : (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3 pt-2">
       <CopilotPane

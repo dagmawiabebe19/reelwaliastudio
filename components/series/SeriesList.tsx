@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Film } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { orientationLabel } from "@/components/series/StatTiles";
 import type { Series, SeriesStatus } from "@/lib/db/types";
@@ -30,12 +31,12 @@ function formatDate(iso: string) {
 export function SeriesList({ series, emptyMessage }: SeriesListProps) {
   if (series.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border px-8 py-16 text-center">
-        <p className="font-display text-2xl text-foreground">No series yet</p>
-        <p className="mt-3 text-sm text-muted">
-          {emptyMessage ?? "Create a series to start building episodes and scenes."}
-        </p>
-      </div>
+      <EmptyState
+        variant="list"
+        icon={Film}
+        title="No series yet"
+        description={emptyMessage ?? "Create a series to start building episodes and scenes."}
+      />
     );
   }
 

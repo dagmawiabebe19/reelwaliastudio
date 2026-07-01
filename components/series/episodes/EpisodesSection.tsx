@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { Archive, Clapperboard } from "lucide-react";
 import {
   createEpisodeAction,
   setEpisodeStatusAction,
 } from "@/app/(app)/series/[id]/actions";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import type { EpisodeStatus } from "@/lib/db/types";
 
 export type EpisodeCardData = {
@@ -109,7 +111,21 @@ export function EpisodesSection({
 
       <div className="grid gap-4">
         {episodes.length === 0 ? (
-          <p className="text-sm text-muted">No {tab} episodes.</p>
+          tab === "archived" ? (
+            <EmptyState
+              variant="panel"
+              icon={Archive}
+              title="No archived episodes"
+              description="Archive an episode from the Active tab when you want to park it."
+            />
+          ) : (
+            <EmptyState
+              variant="panel"
+              icon={Clapperboard}
+              title="No episodes yet"
+              description="Create your first episode above, then open the studio to plan segments."
+            />
+          )
         ) : (
           episodes.map((ep) => (
             <article

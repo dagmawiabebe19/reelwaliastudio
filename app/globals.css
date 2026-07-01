@@ -517,6 +517,82 @@ body {
   padding: 2rem 1.5rem;
 }
 
+.studio-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-raised) 0%,
+    var(--surface-elevated) 45%,
+    var(--surface-raised) 90%
+  );
+  background-size: 200% 100%;
+  animation: studio-skeleton-shimmer 1.4s var(--motion-ease) infinite;
+}
+
+@keyframes studio-skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.studio-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--status-progress);
+  animation: studio-spin 0.8s linear infinite;
+}
+
+@keyframes studio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.studio-generating-pulse {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--status-progress);
+  animation: studio-generating-pulse 1.2s var(--motion-ease) infinite;
+}
+
+.studio-generating-pulse--sm {
+  width: 0.375rem;
+  height: 0.375rem;
+}
+
+@keyframes studio-generating-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-skeleton {
+    animation: none;
+    background: var(--surface-raised);
+  }
+
+  .studio-spinner,
+  .studio-generating-pulse {
+    animation: none;
+  }
+
+  .studio-generating-pulse {
+    opacity: 0.85;
+  }
+}
+
 .studio-ref-chip {
   display: inline-flex;
   align-items: center;

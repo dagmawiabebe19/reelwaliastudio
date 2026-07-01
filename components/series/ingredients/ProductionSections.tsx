@@ -2,9 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { MapPin, Mic } from "lucide-react";
 import { generateLocationAction } from "@/app/(app)/series/[id]/production-actions";
 import { generateVoiceAction } from "@/app/(app)/series/[id]/voice-actions";
 import { CreditCostHint } from "@/components/credits/CreditCostHint";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
 import { estimateImageCredits } from "@/lib/credits/pricing";
 import { RefTag } from "@/components/ui/RefTag";
@@ -85,7 +87,12 @@ export function LocationsSection({ seriesId, locations }: LocationsSectionProps)
       ) : null}
       {error ? <p className="text-sm text-accent">{error}</p> : null}
       {locations.length === 0 ? (
-        <p className="text-sm text-muted">No locations yet.</p>
+        <EmptyState
+          variant="panel"
+          icon={MapPin}
+          title="No locations yet"
+          description="Describe a location above and generate an establishing shot."
+        />
       ) : (
         <div className="grid grid-cols-3 gap-4">
           {locations.map((item) => (
@@ -167,7 +174,12 @@ export function VoicesSection({ seriesId, voices, characters }: VoicesSectionPro
       {error ? <p className="text-sm text-accent">{error}</p> : null}
       {info ? <p className="text-sm text-muted">{info}</p> : null}
       {voices.length === 0 ? (
-        <p className="text-sm text-muted">No voices yet.</p>
+        <EmptyState
+          variant="panel"
+          icon={Mic}
+          title="No voices yet"
+          description="Add a voice description to reference in segment prompts."
+        />
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {voices.map((voice) => (

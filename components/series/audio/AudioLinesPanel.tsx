@@ -11,9 +11,11 @@ import {
   uploadAudioLineAction,
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/actions";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { RefTag } from "@/components/ui/RefTag";
 import { MediaPlayer } from "@/components/ui/MediaPlayer";
 import { Button } from "@/components/ui/Button";
+import { Mic2 } from "lucide-react";
 
 export type AudioLineCardData = {
   id: string;
@@ -83,7 +85,14 @@ export function AudioLinesPanel({ seriesId, episodeId, lines }: AudioLinesPanelP
 
       <ul className="divide-y divide-border">
         {lines.length === 0 ? (
-          <li className="py-6 text-sm text-muted">No audio lines yet.</li>
+          <li>
+            <EmptyState
+              variant="inline"
+              icon={Mic2}
+              title="No audio lines yet"
+              description="Upload a clip above to reference in your episode."
+            />
+          </li>
         ) : (
           lines.map((line) => (
             <li key={line.id} className="flex flex-wrap items-center gap-4 py-4">

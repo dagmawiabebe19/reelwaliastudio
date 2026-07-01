@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { Construction } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 interface ComingSoonProps {
   title: string;
@@ -7,12 +9,12 @@ interface ComingSoonProps {
 
 export function ComingSoon({ title, description }: ComingSoonProps) {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-surface px-8 py-16 text-center">
-      <p className="font-display text-2xl text-foreground">{title}</p>
-      <p className="mt-3 text-sm text-muted">
-        {description ?? "Coming soon — this area is under construction."}
-      </p>
-    </div>
+    <EmptyState
+      variant="list"
+      icon={Construction}
+      title={title}
+      description={description ?? "Coming soon — this area is under construction."}
+    />
   );
 }
 

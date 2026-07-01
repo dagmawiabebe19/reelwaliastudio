@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Shirt, User, Users } from "lucide-react";
 import {
   createCharacterSheetAction,
   generateCharacterAction,
@@ -18,6 +19,8 @@ import { CreditCostHint } from "@/components/credits/CreditCostHint";
 import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
 import { estimateImageCredits, estimateSheetCredits } from "@/lib/credits/pricing";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { GeneratingPulse, SkeletonThumbnail } from "@/components/ui/Skeleton";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
@@ -148,7 +151,12 @@ export function CharactersSection({
       ) : null}
 
       {characters.length === 0 ? (
-        <p className="text-sm text-muted">No characters yet. Generate one from a description above.</p>
+        <EmptyState
+          variant="panel"
+          icon={User}
+          title="No characters yet"
+          description="Describe a character above and generate a headshot, or ask the co-pilot to create one."
+        />
       ) : (
         <div className="space-y-8">
           {characters.map((character) => {
@@ -171,9 +179,14 @@ export function CharactersSection({
                         onOpenGallery={lightbox.openGallery}
                         className="h-full w-full"
                       />
+                    ) : character.generationStatus === "pending" ? (
+                      <div className="relative flex h-full items-center justify-center">
+                        <SkeletonThumbnail className="absolute inset-0" />
+                        <GeneratingPulse label="Generating…" />
+                      </div>
                     ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-muted">
-                        {character.generationStatus === "pending" ? "Generating…" : "No headshot"}
+                      <div className="flex h-full items-center justify-center">
+                        <SkeletonThumbnail className="h-full w-full opacity-30" />
                       </div>
                     )}
                   </div>
@@ -228,7 +241,12 @@ export function CharactersSection({
                         </button>
                       </form>
                       {costumes.length === 0 ? (
-                        <p className="text-xs text-muted">No costumes yet.</p>
+                        <EmptyState
+                          variant="inline"
+                          icon={Shirt}
+                          title="No costumes yet"
+                          description="Generate a costume preview from a wardrobe description."
+                        />
                       ) : (
                         <div className="flex flex-wrap gap-3">
                           {costumes.map((costume) => (
@@ -351,7 +369,12 @@ export function CharactersSection({
                       </p>
 
                       {sheets.length === 0 ? (
-                        <p className="text-xs text-muted">No sheets yet.</p>
+                        <EmptyState
+                          variant="inline"
+                          icon={Users}
+                          title="No sheets yet"
+                          description="Create a turnaround sheet to lock identity across episodes."
+                        />
                       ) : (
                         <div className="space-y-4">
                           {sheets.map((sheet) => (

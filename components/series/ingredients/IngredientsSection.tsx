@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ImageUp } from "lucide-react";
 import { RefTag } from "@/components/ui/RefTag";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SkeletonThumbnail } from "@/components/ui/Skeleton";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { MediaPlayer } from "@/components/ui/MediaPlayer";
@@ -58,7 +61,9 @@ export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
             />
           )
         ) : (
-          <div className="flex h-full items-center justify-center text-xs text-muted">No asset</div>
+          <div className="flex h-full items-center justify-center">
+            <SkeletonThumbnail className="h-full w-full opacity-30" />
+          </div>
         )}
       </div>
       <div className="space-y-2 p-4">
@@ -289,7 +294,12 @@ export function IngredientsSection({
               </label>
             </div>
             {displayItems.length === 0 ? (
-              <p className="text-sm text-muted">No reference media yet. Drop files anywhere on this page.</p>
+              <EmptyState
+                variant="panel"
+                icon={ImageUp}
+                title="No reference media yet"
+                description="Drop files anywhere on this page, or use the upload button above."
+              />
             ) : (
               <div className="grid grid-cols-3 gap-4">
                 {displayItems.map((item) => (

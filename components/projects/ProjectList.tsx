@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, FolderOpen } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/Button";
 import type { Project } from "@/lib/db/types";
 
 interface ProjectListProps {
@@ -17,18 +19,17 @@ function formatDate(iso: string) {
 export function ProjectList({ projects }: ProjectListProps) {
   if (projects.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border px-8 py-16 text-center">
-        <p className="font-display text-2xl text-foreground">No projects yet</p>
-        <p className="mt-3 text-sm text-muted">
-          Create your first project to start building series.
-        </p>
-        <Link
-          href="/projects/new"
-          className="mt-6 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          New project
-        </Link>
-      </div>
+      <EmptyState
+        variant="list"
+        icon={FolderOpen}
+        title="No projects yet"
+        description="Create your first project to start building series."
+        action={
+          <Link href="/projects/new">
+            <Button type="button">New project</Button>
+          </Link>
+        }
+      />
     );
   }
 

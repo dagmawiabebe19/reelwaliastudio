@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Clapperboard } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ScenePromptEditor, type MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 import type { MentionSheet } from "@/lib/production/types";
 import type { ResolvedReference } from "@/lib/production/types";
@@ -64,7 +66,12 @@ export function StoryboardWorkspace({
             takes={takesByScene[selectedScene.id] ?? []}
           />
         ) : (
-          <p className="text-sm text-muted">Select a scene to edit.</p>
+          <EmptyState
+            variant="panel"
+            icon={Clapperboard}
+            title="Select a scene"
+            description="Pick a segment from the timeline to edit its shot and bindings."
+          />
         )}
       </aside>
     </div>

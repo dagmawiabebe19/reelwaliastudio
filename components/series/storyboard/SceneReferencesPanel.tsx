@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Link2 } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import type { ResolvedReference } from "@/lib/production/types";
 
@@ -71,9 +73,12 @@ export function SceneReferencesPanel({
 
   if (!resolvedReferences.length && !boundSheetIds.length) {
     return (
-      <p className="text-xs text-muted">
-        No identity locks yet — mention @sheets or ingredients in the prompt.
-      </p>
+      <EmptyState
+        variant="inline"
+        icon={Link2}
+        title="No identity locks yet"
+        description="Mention @sheets or ingredients in the prompt to bind references."
+      />
     );
   }
 

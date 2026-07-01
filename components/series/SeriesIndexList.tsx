@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Film } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/Button";
 import { StatusDot, type StatusVariant } from "@/components/ui/StatusDot";
 import { orientationLabel } from "@/components/series/StatTiles";
 import type { SeriesWithProject } from "@/lib/db/series";
@@ -30,18 +32,17 @@ function formatDate(iso: string) {
 export function SeriesIndexList({ series }: SeriesIndexListProps) {
   if (series.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border px-8 py-16 text-center">
-        <p className="font-display text-2xl text-foreground">No series yet</p>
-        <p className="mt-3 text-sm text-muted">
-          Create a project, then add a series to get started.
-        </p>
-        <Link
-          href="/projects/new"
-          className="mt-6 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          New project
-        </Link>
-      </div>
+      <EmptyState
+        variant="list"
+        icon={Film}
+        title="No series yet"
+        description="Create a project, then add a series to get started."
+        action={
+          <Link href="/projects/new">
+            <Button type="button">New project</Button>
+          </Link>
+        }
+      />
     );
   }
 

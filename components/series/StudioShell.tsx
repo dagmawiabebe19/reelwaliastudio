@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Clapperboard, MonitorPlay } from "lucide-react";
 import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspaceProvider";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { GenerationPanel } from "@/components/series/generation/GenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { StudioIngredientsPanel } from "@/components/series/studio/StudioIngredientsPanel";
@@ -248,10 +250,13 @@ export function StudioShell({
                 />
               </>
             ) : (
-              <div className="studio-empty-preview">
-                <p className="font-display text-xs tracking-widest text-muted">Episode studio</p>
-                <p className="text-sm">Select a segment below to begin.</p>
-              </div>
+              <EmptyState
+                variant="preview"
+                icon={Clapperboard}
+                title="Episode studio"
+                description="Select a segment below to edit its shot and generate takes."
+                className="min-h-[12rem]"
+              />
             )}
             </div>
           </div>
@@ -304,9 +309,13 @@ export function StudioShell({
               />
             </div>
           ) : (
-            <div className="studio-empty-preview">
-              <p className="text-sm">Select a segment to preview and generate.</p>
-            </div>
+            <EmptyState
+              variant="preview"
+              icon={MonitorPlay}
+              title="No segment selected"
+              description="Pick a segment from the timeline below to preview and generate."
+              className="min-h-[10rem]"
+            />
           )}
           </div>
         </aside>

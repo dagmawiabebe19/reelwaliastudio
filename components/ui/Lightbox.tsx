@@ -12,6 +12,7 @@ import {
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { ICON_LG, ICON_STROKE } from "@/components/ui/icon";
+import { LoadingSpinner } from "@/components/ui/Skeleton";
 
 export type LightboxImage = {
   src: string;
@@ -112,13 +113,7 @@ interface LightboxProps {
 }
 
 function LightboxSpinner() {
-  return (
-    <div
-      className="h-10 w-10 animate-spin rounded-full border-2 border-muted border-t-accent"
-      role="status"
-      aria-label="Loading image"
-    />
-  );
+  return <LoadingSpinner label="Loading image" />;
 }
 
 export function Lightbox({ state, onClose }: LightboxProps) {

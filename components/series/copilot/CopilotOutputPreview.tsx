@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
+import { Sparkles } from "lucide-react";
 import { pollCopilotOutputAction } from "@/app/(app)/series/[id]/copilot-output-actions";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { GeneratingPulse, SkeletonThumbnail } from "@/components/ui/Skeleton";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
@@ -58,9 +61,14 @@ function IngredientOutputCard({
               onOpenGallery={onOpenGallery}
               className="h-full w-full"
             />
+          ) : item.status === "pending" ? (
+            <div className="relative flex h-full items-center justify-center">
+              <SkeletonThumbnail className="absolute inset-0" />
+              <GeneratingPulse />
+            </div>
           ) : (
-            <div className="flex h-full items-center justify-center px-1 text-center text-[10px] text-muted">
-              {item.status === "pending" ? "Generating…" : "No preview"}
+            <div className="flex h-full items-center justify-center">
+              <SkeletonThumbnail className="h-full w-full opacity-30" />
             </div>
           )}
         </div>
@@ -138,9 +146,14 @@ function SheetOutputCard({
                     onOpenGallery={onOpenGallery}
                     className="h-full w-full"
                   />
+                ) : item.status === "pending" ? (
+                  <div className="relative flex h-full items-center justify-center">
+                    <SkeletonThumbnail className="absolute inset-0" />
+                    <GeneratingPulse />
+                  </div>
                 ) : (
-                  <div className="flex h-full items-center justify-center text-[8px] text-muted">
-                    {item.status === "pending" ? "…" : "—"}
+                  <div className="flex h-full items-center justify-center">
+                    <SkeletonThumbnail className="h-full w-full opacity-30" />
                   </div>
                 )}
               </div>
@@ -235,13 +248,13 @@ export function CopilotOutputPreview({
       </p>
 
       {items.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-4 text-center">
-          <p className="font-display text-lg text-foreground">Generated assets appear here</p>
-          <p className="mt-2 max-w-xs text-sm text-muted">
-            Ask the co-pilot to create characters, costumes, locations, voices, or character sheets.
-            Previews update live as generation completes.
-          </p>
-        </div>
+        <EmptyState
+          variant="panel"
+          icon={Sparkles}
+          title="Generated assets appear here"
+          description="Ask the co-pilot to create characters, costumes, locations, voices, or character sheets. Previews update live as generation completes."
+          className="flex-1"
+        />
       ) : (
         <div className="flex-1 space-y-3 overflow-y-auto pr-1">
           {items.map((item) =>

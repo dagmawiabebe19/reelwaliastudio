@@ -1,3 +1,6 @@
+import { FileText } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
+
 const CALLOUT_PATTERN = /^⚠️\s*(.+)$/;
 
 export function parsePromptCallouts(prompt: string) {
@@ -42,7 +45,16 @@ export function ProductionNoteChips({ prompt }: { prompt: string }) {
 
 export function SceneCalloutPreview({ prompt }: { prompt: string }) {
   const blocks = parsePromptCallouts(prompt);
-  if (!prompt.trim()) return <p className="text-sm text-muted">No prompt yet.</p>;
+  if (!prompt.trim()) {
+    return (
+      <EmptyState
+        variant="inline"
+        icon={FileText}
+        title="No prompt yet"
+        description="Describe the shot in the editor — use @mentions to bind references."
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">

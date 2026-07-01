@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Maximize2, Star } from "lucide-react";
+import { Maximize2, Sparkles, Star } from "lucide-react";
 import {
   starTakeAction,
   clearFailedTakesAction,
@@ -13,6 +13,8 @@ import {
 } from "@/app/(app)/series/[id]/delete-actions";
 import { VideoTakePlayer } from "@/components/series/generation/VideoTakePlayer";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { GeneratingPulse, SkeletonThumbnail } from "@/components/ui/Skeleton";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { ICON_MD, ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 import { Lightbox, LightboxImageButton, useLightbox, type LightboxImage } from "@/components/ui/Lightbox";
@@ -83,16 +85,17 @@ function StarToggleButton({
 function TakeThumbMedia({ take }: { take: TakeCardData }) {
   if (take.status === "pending") {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-background">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-status-progress" />
+      <div className="relative flex h-full w-full items-center justify-center bg-background">
+        <SkeletonThumbnail className="absolute inset-0 opacity-40" />
+        <GeneratingPulse />
       </div>
     );
   }
 
   if (!take.assetUrl) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-background text-[9px] text-muted">
-        —
+      <div className="flex h-full w-full items-center justify-center bg-background">
+        <SkeletonThumbnail className="h-full w-full opacity-30" />
       </div>
     );
   }
@@ -290,17 +293,25 @@ export function TakesStrip({
             </a>
           </div>
         ) : null}
-        <p className="text-sm text-muted">No takes yet — generate in the output panel.</p>
+        <EmptyState
+          variant="inline"
+          icon={Star}
+          title="No takes yet"
+          description="Set quality in the output panel and hit generate, or ask the co-pilot for help."
+        />
       </div>
     );
   }
 
   if (takes.length === 0 && layout === "preview") {
     return (
-      <div className={`studio-empty-preview ${previewFrameClass}`}>
-        <p className="font-display text-xs tracking-widest text-muted">Output</p>
-        <p className="text-sm">Ready to generate</p>
-      </div>
+      <EmptyState
+        variant="preview"
+        icon={Sparkles}
+        title="Ready to generate"
+        description="Bind references, tune your shot, then hit Generate — or ask the co-pilot to refine the prompt."
+        className={previewFrameClass}
+      />
     );
   }
 
@@ -429,17 +440,18 @@ export function TakesStrip({
                   imageClassName="h-full w-full object-contain"
                 />
               )
-            ) : (
-              <div className="studio-empty-preview h-full min-h-[12rem] border-0">
-                {activeTake.status === "pending" ? (
-                  <>
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-status-progress" />
-                    <p className="text-sm">Generating…</p>
-                  </>
-                ) : (
-                  <p className="text-sm">Ready to generate</p>
-                )}
+            ) : activeTake.status === "pending" ? (
+              <div className="flex h-full min-h-[12rem] items-center justify-center bg-background">
+                <GeneratingPulse label="Generating…" />
               </div>
+            ) : (
+              <EmptyState
+                variant="preview"
+                icon={Sparkles}
+                title="Ready to generate"
+                description="Hit Generate below when your shot is set."
+                className="h-full min-h-[12rem] border-0 rounded-none"
+              />
             )}
           </div>
 

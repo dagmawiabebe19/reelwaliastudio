@@ -3,13 +3,15 @@
 import type { ReactNode } from "react";
 import { useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ImageOff, X } from "lucide-react";
+import { Check, Clapperboard, ImageOff, MapPin, Mic, Shirt, User, Users, X } from "lucide-react";
 import {
   deleteCharacterSheetAction,
   getCharacterSheetDeletePreviewAction,
 } from "@/app/(app)/series/[id]/delete-actions";
 import { retryCharacterSheetAction } from "@/app/(app)/series/[id]/production-actions";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SkeletonThumbnail } from "@/components/ui/Skeleton";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
@@ -55,7 +57,7 @@ function PanelRow({
 
   return (
     <div className="studio-ref-row flex items-center gap-2 rounded-md border border-border/60 bg-background/40 p-2">
-      <div className="h-10 w-10 shrink-0 overflow-hidden rounded-sm border border-border/80 bg-background">
+      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-sm border border-border/80 bg-background">
         {thumbnailUrl ? (
           <LightboxImageButton
             src={thumbnailUrl}
@@ -66,8 +68,13 @@ function PanelRow({
             imageClassName="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted">
-            <ImageOff className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
+          <div className="flex h-full w-full items-center justify-center bg-background">
+            <SkeletonThumbnail className="h-full w-full opacity-35" />
+            <ImageOff
+              className={`${ICON_SM} absolute text-muted/60`}
+              strokeWidth={ICON_STROKE}
+              aria-hidden
+            />
           </div>
         )}
       </div>
@@ -195,13 +202,23 @@ export function StudioIngredientsPanel({
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4">
         {!hasActiveScene ? (
-          <p className="text-xs text-muted">Select a segment to insert references into its shot description.</p>
+          <EmptyState
+            variant="inline"
+            icon={Clapperboard}
+            title="No segment selected"
+            description="Select a segment to insert references into its shot description."
+          />
         ) : null}
 
         {renderSection(
           `Characters (${characters.length})`,
           characters.length === 0 ? (
-            <p className="text-xs text-muted">No characters yet.</p>
+            <EmptyState
+              variant="inline"
+              icon={User}
+              title="No characters yet"
+              description="Generate one with the co-pilot or from the Ingredients tab."
+            />
           ) : (
             <div className="space-y-2">
               {characters.map((character) => (
@@ -229,7 +246,12 @@ export function StudioIngredientsPanel({
         {renderSection(
           `Character sheets (${sheets.length})`,
           sheets.length === 0 ? (
-            <p className="text-xs text-muted">No sheets yet.</p>
+            <EmptyState
+              variant="inline"
+              icon={Users}
+              title="No sheets yet"
+              description="Create a character sheet to lock identity across segments."
+            />
           ) : (
             <div className="space-y-2">
               {sheets.map((sheet) => {
@@ -289,7 +311,12 @@ export function StudioIngredientsPanel({
         {renderSection(
           `Locations (${locations.length})`,
           locations.length === 0 ? (
-            <p className="text-xs text-muted">No locations yet.</p>
+            <EmptyState
+              variant="inline"
+              icon={MapPin}
+              title="No locations yet"
+              description="Add a location with the co-pilot or Ingredients tab."
+            />
           ) : (
             <div className="space-y-2">
               {locations.map((location) => (
@@ -317,7 +344,12 @@ export function StudioIngredientsPanel({
         {renderSection(
           `Costumes (${costumes.length})`,
           costumes.length === 0 ? (
-            <p className="text-xs text-muted">No costumes yet.</p>
+            <EmptyState
+              variant="inline"
+              icon={Shirt}
+              title="No costumes yet"
+              description="Link a costume to a character, then generate a preview."
+            />
           ) : (
             <div className="space-y-2">
               {costumes.map((costume) => (
@@ -345,7 +377,12 @@ export function StudioIngredientsPanel({
         {renderSection(
           `Voices (${voices.length})`,
           voices.length === 0 ? (
-            <p className="text-xs text-muted">No voices yet.</p>
+            <EmptyState
+              variant="inline"
+              icon={Mic}
+              title="No voices yet"
+              description="Describe a voice in Ingredients to use in segment prompts."
+            />
           ) : (
             <div className="space-y-2">
               {voices.map((voice) => (

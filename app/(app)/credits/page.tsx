@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { Receipt } from "lucide-react";
 import { requireUser } from "@/lib/auth/getUser";
 import { isAdmin } from "@/lib/auth/isAdmin";
 import { getBalance, getLedgerHistory } from "@/lib/credits";
 import { formatCredits } from "@/lib/credits/format";
 import { CreditBalanceBadge } from "@/components/credits/CreditBalanceBadge";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 function formatLedgerType(type: string): string {
   return type.replace(/_/g, " ");
@@ -49,7 +51,12 @@ export default async function CreditsPage() {
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-foreground">Recent activity</h2>
         {ledger.length === 0 ? (
-          <p className="text-sm text-muted">No ledger entries yet.</p>
+          <EmptyState
+            variant="panel"
+            icon={Receipt}
+            title="No activity yet"
+            description="Generation charges and purchases will appear here as you use the studio."
+          />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full min-w-[640px] text-left text-sm">

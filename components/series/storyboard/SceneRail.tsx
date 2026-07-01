@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, ChevronRight, GripVertical, MoreHorizontal, RotateCcw } from "lucide-react";
+import { Archive, ChevronRight, Clapperboard, GripVertical, MoreHorizontal, RotateCcw } from "lucide-react";
 import {
   archiveSceneAction,
   createSceneAction,
@@ -14,7 +14,9 @@ import {
   getSceneDeletePreviewAction,
 } from "@/app/(app)/series/[id]/delete-actions";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
+import { GeneratingPulse } from "@/components/ui/Skeleton";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import type { TakeCardData } from "@/components/series/generation/TakesStrip";
 import type { Episode, Orientation } from "@/lib/db/types";
@@ -180,9 +182,8 @@ function SegmentCard({
       <div className={`relative mx-auto mt-2 ${thumbWidth} overflow-hidden rounded-sm border border-border/80 bg-background`}>
         <div className={`${orientationAspectClass(orientation)} w-full`}>
           {isGenerating ? (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-background">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-status-progress" />
-              <span className="text-[9px] text-status-progress">Generating…</span>
+            <div className="relative flex h-full w-full flex-col items-center justify-center gap-1 bg-background">
+              <GeneratingPulse label="Generating…" compact />
             </div>
           ) : (
             <SegmentThumbnail
@@ -715,7 +716,21 @@ export function SceneRail({
         </div>
 
         {bucketScenes.length === 0 ? (
-          <p className="py-4 text-center text-xs text-muted">No segments in this bucket.</p>
+          showArchive ? (
+            <EmptyState
+              variant="inline"
+              icon={Archive}
+              title="Archive is empty"
+              description="Drag segments here to park them without deleting."
+            />
+          ) : (
+            <EmptyState
+              variant="inline"
+              icon={Clapperboard}
+              title="No segments yet"
+              description="Ask the co-pilot to plan this episode, or add one manually above."
+            />
+          )
         ) : (
           <div
             ref={scrollRef}
