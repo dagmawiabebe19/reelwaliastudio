@@ -1,6 +1,5 @@
 import "server-only";
 
-import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { commitReservation, releaseReservation } from "@/lib/credits/mutations";
 import {
@@ -22,7 +21,9 @@ import {
 import { getScene } from "@/lib/db/scenes";
 import {
   getTake,
+  isTakeProviderSchemaError,
   listStuckPendingTakes,
+  logTakeProviderSchemaWarning,
   markTakeFailed,
   setTakeProviderJob,
   type TakeWithAsset,
@@ -39,6 +40,27 @@ export type ReconcileTakeOutcome =
   | { takeId: string; result: "skipped"; reason: string };
 
 const activeWatchers = new Set<string>();
+
+function logReconcileError(label: string, error: unknown, context?: Record<string, unknown>): void {
+  console.error(`[take-reconcile] ${label} failed`, {
+    ...context,
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
+}
+
+/** Housekeeping must never take down a page — run detached and swallow errors. */
+function runDetached(label: string, task: () => Promise<void>, context?: Record<string, unknown>): void {
+  void Promise.resolve()
+    .then(task)
+    .catch((error) => {
+      if (isTakeProviderSchemaError(error)) {
+        logTakeProviderSchemaWarning(`${label} skipped`);
+        return;
+      }
+      logReconcileError(label, error, context);
+    });
+}
 
 function takeCreditReference(takeId: string): string {
   return `seedance:take:${takeId}`;
@@ -293,16 +315,9 @@ export function scheduleFalTakeWatcher(input: {
   endpoint: string;
   revalidatePath?: string;
 }): void {
-  after(async () => {
-    try {
-      await watchFalTakeToCompletion(input);
-    } catch (error) {
-      console.error("[take-reconcile] watcher failed", {
-        takeId: input.takeId,
-        requestId: input.requestId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  runDetached("watcher", () => watchFalTakeToCompletion(input).then(() => undefined), {
+    takeId: input.takeId,
+    requestId: input.requestId,
   });
 }
 
@@ -400,73 +415,86 @@ export async function reconcileStuckTakes(input?: {
   manualRequestIds?: Record<string, string>;
   revalidatePath?: string;
 }): Promise<ReconcileTakeOutcome[]> {
-  const minAge = input?.olderThanMinutes ?? STUCK_TAKE_THRESHOLD_MINUTES;
-  let takes = await listStuckPendingTakes({
-    episodeId: input?.episodeId,
-    seriesId: input?.seriesId,
-    olderThanMinutes: input?.takeIds?.length ? 0 : minAge,
-    takeIds: input?.takeIds,
-  });
-
-  if (!input?.takeIds?.length && minAge > 0) {
-    takes = takes.filter((take) => {
-      const ageMs = Date.now() - new Date(take.created_at).getTime();
-      return ageMs >= minAge * 60_000;
+  try {
+    const minAge = input?.olderThanMinutes ?? STUCK_TAKE_THRESHOLD_MINUTES;
+    let takes = await listStuckPendingTakes({
+      episodeId: input?.episodeId,
+      seriesId: input?.seriesId,
+      olderThanMinutes: input?.takeIds?.length ? 0 : minAge,
+      takeIds: input?.takeIds,
     });
-  }
 
-  const timestampMatches = await buildTimestampRequestMatches(takes);
+    if (!input?.takeIds?.length && minAge > 0) {
+      takes = takes.filter((take) => {
+        const ageMs = Date.now() - new Date(take.created_at).getTime();
+        return ageMs >= minAge * 60_000;
+      });
+    }
 
-  const outcomes: ReconcileTakeOutcome[] = [];
-  for (const take of takes) {
-    outcomes.push(
-      await reconcileStuckTake(take.id, {
-        waitForCompletion: input?.waitForCompletion,
-        manualRequestIds: input?.manualRequestIds,
-        timestampMatches,
-        revalidatePath: input?.revalidatePath,
-      }),
-    );
+    const timestampMatches = await buildTimestampRequestMatches(takes);
+
+    const outcomes: ReconcileTakeOutcome[] = [];
+    for (const take of takes) {
+      try {
+        outcomes.push(
+          await reconcileStuckTake(take.id, {
+            waitForCompletion: input?.waitForCompletion,
+            manualRequestIds: input?.manualRequestIds,
+            timestampMatches,
+            revalidatePath: input?.revalidatePath,
+          }),
+        );
+      } catch (error) {
+        if (isTakeProviderSchemaError(error)) {
+          logTakeProviderSchemaWarning("reconcileStuckTake skipped");
+          outcomes.push({ takeId: take.id, result: "skipped", reason: "provider_schema_missing" });
+          continue;
+        }
+        logReconcileError("reconcileStuckTake", error, { takeId: take.id });
+        outcomes.push({
+          takeId: take.id,
+          result: "skipped",
+          reason: error instanceof Error ? error.message : "reconcile_error",
+        });
+      }
+    }
+    return outcomes;
+  } catch (error) {
+    if (isTakeProviderSchemaError(error)) {
+      logTakeProviderSchemaWarning("reconcileStuckTakes skipped");
+      return [];
+    }
+    throw error;
   }
-  return outcomes;
 }
 
 export function scheduleEpisodeStuckTakeReconcile(input: {
   episodeId: string;
   seriesId: string;
 }): void {
-  after(async () => {
-    try {
+  runDetached(
+    "episode sweep",
+    async () => {
       await reconcileStuckTakes({
         episodeId: input.episodeId,
         olderThanMinutes: STUCK_TAKE_THRESHOLD_MINUTES,
         revalidatePath: `/series/${input.seriesId}/episodes/${input.episodeId}`,
       });
-    } catch (error) {
-      console.error("[take-reconcile] episode sweep failed", {
-        episodeId: input.episodeId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
+    },
+    { episodeId: input.episodeId, seriesId: input.seriesId },
+  );
 }
 
 export function scheduleStartupStuckTakeSweep(): void {
-  after(async () => {
-    try {
-      const outcomes = await reconcileStuckTakes({
-        olderThanMinutes: STUCK_TAKE_THRESHOLD_MINUTES,
-        waitForCompletion: false,
-      });
-      if (outcomes.length) {
-        console.log("[take-reconcile] startup sweep", {
-          count: outcomes.length,
-          summary: outcomes.map((o) => `${o.takeId}:${o.result}`).join(", "),
-        });
-      }
-    } catch (error) {
-      console.error("[take-reconcile] startup sweep failed", {
-        error: error instanceof Error ? error.message : String(error),
+  runDetached("startup sweep", async () => {
+    const outcomes = await reconcileStuckTakes({
+      olderThanMinutes: STUCK_TAKE_THRESHOLD_MINUTES,
+      waitForCompletion: false,
+    });
+    if (outcomes.length) {
+      console.log("[take-reconcile] startup sweep", {
+        count: outcomes.length,
+        summary: outcomes.map((o) => `${o.takeId}:${o.result}`).join(", "),
       });
     }
   });

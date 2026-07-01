@@ -199,6 +199,16 @@ export async function reconcileTakeAction(
     revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
     return { outcome };
   } catch (error) {
+    const { isTakeProviderSchemaError, logTakeProviderSchemaWarning } = await import(
+      "@/lib/db/takes"
+    );
+    if (isTakeProviderSchemaError(error)) {
+      logTakeProviderSchemaWarning("reconcileTakeAction skipped");
+      return {
+        error:
+          "Take reconciliation unavailable until migration 017_take_provider_request.sql is applied.",
+      };
+    }
     return { error: error instanceof Error ? error.message : "Reconcile failed." };
   }
 }

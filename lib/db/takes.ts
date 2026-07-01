@@ -15,6 +15,24 @@ export type TakeWithAsset = Take & {
   } | null;
 };
 
+export const TAKE_PROVIDER_MIGRATION = "017_take_provider_request.sql";
+
+export function isTakeProviderSchemaError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("provider_request_id") ||
+    message.includes("provider_endpoint") ||
+    message.includes("provider_submitted_at") ||
+    message.includes("schema cache")
+  );
+}
+
+export function logTakeProviderSchemaWarning(context: string): void {
+  console.warn(
+    `[takes] ${context} — apply supabase/migrations/${TAKE_PROVIDER_MIGRATION} in Supabase SQL Editor`,
+  );
+}
+
 export async function listTakesByScene(sceneId: string): Promise<TakeWithAsset[]> {
   const supabase = await getDbClient();
   const { data, error } = await supabase
@@ -142,12 +160,20 @@ export async function setTakeProviderJob(
     providerEndpoint: string;
     providerSubmittedAt?: string;
   },
-): Promise<Take> {
-  return updateTake(id, {
-    provider_request_id: input.providerRequestId,
-    provider_endpoint: input.providerEndpoint,
-    provider_submitted_at: input.providerSubmittedAt ?? new Date().toISOString(),
-  });
+): Promise<Take | null> {
+  try {
+    return await updateTake(id, {
+      provider_request_id: input.providerRequestId,
+      provider_endpoint: input.providerEndpoint,
+      provider_submitted_at: input.providerSubmittedAt ?? new Date().toISOString(),
+    });
+  } catch (error) {
+    if (isTakeProviderSchemaError(error)) {
+      logTakeProviderSchemaWarning("setTakeProviderJob skipped");
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function listStuckPendingTakes(input?: {
@@ -209,7 +235,13 @@ export async function listStuckPendingTakes(input?: {
   }
 
   const { data, error } = await query;
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isTakeProviderSchemaError(error)) {
+      logTakeProviderSchemaWarning("listStuckPendingTakes skipped");
+      return [];
+    }
+    throw new Error(error.message);
+  }
   return (data ?? []) as TakeWithAsset[];
 }
 

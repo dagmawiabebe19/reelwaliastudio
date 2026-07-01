@@ -14,7 +14,6 @@ import { buildMentionSheets, buildProductionLibraryData } from "@/lib/production
 import { buildDisplayReferences } from "@/lib/production/enrich-scene-references";
 import { resolveAssetUrl, resolveAssetUrls } from "@/lib/storage/resolve-urls";
 import { shouldShowOnboarding } from "@/lib/onboarding/status";
-import { scheduleEpisodeStuckTakeReconcile } from "@/lib/ai/generation/take-reconcile";
 
 interface EpisodeStoryboardPageProps {
   params: Promise<{ id: string; episodeId: string }>;
@@ -38,7 +37,18 @@ export default async function EpisodeStoryboardPage({ params }: EpisodeStoryboar
 
   if (!series || !episode || episode.series_id !== seriesId) notFound();
 
-  scheduleEpisodeStuckTakeReconcile({ episodeId, seriesId });
+  void import("@/lib/ai/generation/take-reconcile")
+    .then(({ scheduleEpisodeStuckTakeReconcile }) => {
+      scheduleEpisodeStuckTakeReconcile({ episodeId, seriesId });
+    })
+    .catch((error) => {
+      console.error("[take-reconcile] failed to schedule episode sweep", {
+        episodeId,
+        seriesId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    });
 
   const ingredientsWithUrls = await resolveAssetUrls(
     ingredients.map((ingredient) => ({
