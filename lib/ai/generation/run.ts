@@ -16,6 +16,7 @@ import {
   getTake,
   markTakeFailed,
   markTakeReady,
+  setTakeProviderJob,
 } from "@/lib/db/takes";
 import { validateSeedanceVideoGeneration } from "@/lib/ai/generation/video-source";
 import { composeVideoPrompt, normalizeShotIntent } from "@/lib/production/prompts";
@@ -186,6 +187,13 @@ async function runVideoGenerationCore(
       sceneId: params.sceneId,
       seedanceTier: params.seedanceTier,
       seedanceAudioMode,
+      providerHint: takeId,
+      onFalEnqueued: async (requestId, endpoint) => {
+        await setTakeProviderJob(takeId, {
+          providerRequestId: requestId,
+          providerEndpoint: endpoint,
+        });
+      },
     });
   } catch (error) {
     const message = formatGenerationError(error, `${model.label}: generation request failed.`);

@@ -18,7 +18,8 @@ import {
 } from "@/lib/ai/video/seedance-constants";
 import { clearFailedTakesWithCleanup } from "@/lib/db/delete";
 import { getScene, updateScene } from "@/lib/db/scenes";
-import { listTakesByScene, setTakeStarred } from "@/lib/db/takes";
+import { listTakesByScene, setTakeStarred, verifyTakeOwnership } from "@/lib/db/takes";
+import { reconcileStuckTake } from "@/lib/ai/generation/take-reconcile";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 import { resolveAssetUrl } from "@/lib/storage/resolve-urls";
 import { normalizeShotIntent } from "@/lib/production/prompts";
@@ -181,5 +182,23 @@ export async function getTakeDownloadUrlAction(assetBucket: string, assetPath: s
     return { url };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to get download URL." };
+  }
+}
+
+export async function reconcileTakeAction(
+  takeId: string,
+  episodeId: string,
+  seriesId: string,
+) {
+  try {
+    await verifyTakeOwnership(takeId, episodeId);
+    const outcome = await reconcileStuckTake(takeId, {
+      waitForCompletion: true,
+      revalidatePath: `/series/${seriesId}/episodes/${episodeId}`,
+    });
+    revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
+    return { outcome };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Reconcile failed." };
   }
 }

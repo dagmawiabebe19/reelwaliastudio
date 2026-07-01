@@ -86,6 +86,8 @@ export const generateVideo: VideoAdapter = async (input) => {
         sceneId: input.sceneId,
         references: referenceSources,
         download: downloadVideoSourceImage,
+        hint: input.providerHint,
+        onEnqueue: input.onFalEnqueued,
         falInput: {
           prompt,
           resolution: normalizeResolution(input.resolution),

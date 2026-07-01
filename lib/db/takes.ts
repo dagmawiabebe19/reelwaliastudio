@@ -102,6 +102,9 @@ export async function updateTake(
       | "resolution"
       | "duration_seconds"
       | "has_audio"
+      | "provider_request_id"
+      | "provider_endpoint"
+      | "provider_submitted_at"
     >
   >,
 ): Promise<Take> {
@@ -130,6 +133,84 @@ export async function markTakeReady(
     error_message: null,
     ...patch,
   });
+}
+
+export async function setTakeProviderJob(
+  id: string,
+  input: {
+    providerRequestId: string;
+    providerEndpoint: string;
+    providerSubmittedAt?: string;
+  },
+): Promise<Take> {
+  return updateTake(id, {
+    provider_request_id: input.providerRequestId,
+    provider_endpoint: input.providerEndpoint,
+    provider_submitted_at: input.providerSubmittedAt ?? new Date().toISOString(),
+  });
+}
+
+export async function listStuckPendingTakes(input?: {
+  episodeId?: string;
+  seriesId?: string;
+  olderThanMinutes?: number;
+  takeIds?: string[];
+}): Promise<TakeWithAsset[]> {
+  const supabase = await getDbClient();
+  const olderThanMinutes = input?.olderThanMinutes ?? 0;
+  const cutoff =
+    olderThanMinutes > 0
+      ? new Date(Date.now() - olderThanMinutes * 60_000).toISOString()
+      : null;
+
+  let sceneIds: string[] | null = null;
+  if (input?.episodeId) {
+    const { data: scenes, error: sceneError } = await supabase
+      .from("scenes")
+      .select("id")
+      .eq("episode_id", input.episodeId);
+    if (sceneError) throw new Error(sceneError.message);
+    sceneIds = (scenes ?? []).map((scene) => scene.id);
+    if (!sceneIds.length) return [];
+  } else if (input?.seriesId) {
+    const { data: episodes, error: episodeError } = await supabase
+      .from("episodes")
+      .select("id")
+      .eq("series_id", input.seriesId);
+    if (episodeError) throw new Error(episodeError.message);
+    const episodeIds = (episodes ?? []).map((episode) => episode.id);
+    if (!episodeIds.length) return [];
+    const { data: scenes, error: sceneError } = await supabase
+      .from("scenes")
+      .select("id")
+      .in("episode_id", episodeIds);
+    if (sceneError) throw new Error(sceneError.message);
+    sceneIds = (scenes ?? []).map((scene) => scene.id);
+    if (!sceneIds.length) return [];
+  }
+
+  let query = supabase
+    .from("takes")
+    .select(
+      "*, assets:asset_id(id, bucket, storage_path, media_type, width, height, duration_ms)",
+    )
+    .eq("status", "pending")
+    .eq("media_type", "video")
+    .order("created_at", { ascending: true });
+
+  if (input?.takeIds?.length) {
+    query = query.in("id", input.takeIds);
+  }
+  if (sceneIds?.length) {
+    query = query.in("scene_id", sceneIds);
+  }
+  if (cutoff) {
+    query = query.lte("created_at", cutoff);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TakeWithAsset[];
 }
 
 export async function listStarredTakesByEpisode(episodeId: string): Promise<TakeWithAsset[]> {

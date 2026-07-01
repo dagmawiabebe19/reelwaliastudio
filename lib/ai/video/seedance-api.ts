@@ -284,6 +284,10 @@ export function formatFalError(error: unknown): string {
 export async function submitSeedanceJob(
   tier: string | null | undefined,
   input: SeedanceFalInput,
+  options?: {
+    onEnqueue?: (requestId: string) => void | Promise<void>;
+    hint?: string;
+  },
 ): Promise<SeedanceQueueResult> {
   configureFalClient();
   const endpoint = seedanceModelId(tier);
@@ -302,16 +306,31 @@ export async function submitSeedanceJob(
           }
         }),
         reference_count: input.image_urls.length,
+        hint: options?.hint ?? null,
       },
       null,
       2,
     ),
   );
 
-  const result = await fal.subscribe(endpoint, {
+  const { request_id: requestId } = await fal.queue.submit(endpoint, {
     input,
-    logs: true,
+    hint: options?.hint,
   });
+
+  console.log(
+    "[seedance-enqueued]",
+    JSON.stringify({ endpoint, requestId, hint: options?.hint ?? null }),
+  );
+  await options?.onEnqueue?.(requestId);
+
+  await fal.queue.subscribeToStatus(endpoint, {
+    requestId,
+    logs: true,
+    pollInterval: 2_000,
+  });
+
+  const result = await fal.queue.result(endpoint, { requestId });
 
   const data = result.data as SeedanceFalOutput;
   const videoUrl = data.video?.url;
@@ -326,7 +345,7 @@ export async function submitSeedanceJob(
 
   return {
     videoUrl,
-    requestId: result.requestId ?? null,
+    requestId: result.requestId ?? requestId ?? null,
     seed: data.seed ?? null,
   };
 }
@@ -372,10 +391,13 @@ export async function submitSeedanceJobWithReferenceRetries(
     references: SeedanceReferenceUpload[];
     download: SeedanceReferenceDownloadFn;
     falInput: Omit<SeedanceFalInput, "image_urls">;
+    onEnqueue?: (requestId: string, endpoint: string) => void | Promise<void>;
+    hint?: string;
   },
 ): Promise<SeedanceQueueResult> {
   const maxAttempts = 1 + SEEDANCE_SUBMIT_RETRY_BACKOFF_MS.length;
   let lastError: unknown;
+  const endpoint = seedanceModelId(tier);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -404,6 +426,11 @@ export async function submitSeedanceJobWithReferenceRetries(
       return await submitSeedanceJob(tier, {
         ...options.falInput,
         image_urls,
+      }, {
+        hint: options.hint,
+        onEnqueue: async (requestId) => {
+          await options.onEnqueue?.(requestId, endpoint);
+        },
       });
     } catch (error) {
       lastError = error;
@@ -416,4 +443,187 @@ export async function submitSeedanceJobWithReferenceRetries(
   }
 
   throw lastError ?? new Error("Seedance: reference-to-video submit failed after retries.");
+}
+
+export type FalQueueStatus =
+  | "IN_QUEUE"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "FAILED"
+  | string;
+
+export type FalQueueStatusResponse = {
+  status: FalQueueStatus;
+  error?: string | null;
+  logs?: Array<{ message: string }>;
+};
+
+const SEEDANCE_ENDPOINT_CANDIDATES = [
+  DEFAULT_SEEDANCE_FAST_MODEL,
+  DEFAULT_SEEDANCE_MODEL,
+] as const;
+
+export function inferSeedanceEndpointsForTake(input: {
+  providerEndpoint?: string | null;
+  resolution?: string | null;
+}): string[] {
+  if (input.providerEndpoint?.trim()) {
+    return [input.providerEndpoint.trim()];
+  }
+  // 480p is typically fast tier; 720p may be either — try both for rescue.
+  if (input.resolution === "480p") {
+    return [DEFAULT_SEEDANCE_FAST_MODEL];
+  }
+  return [...SEEDANCE_ENDPOINT_CANDIDATES];
+}
+
+export function extractRequestIdFromText(text: string | null | undefined): string | null {
+  if (!text?.trim()) return null;
+  const match =
+    text.match(/\[request\s+([0-9a-f-]{36})\]/i) ??
+    text.match(/request[_\s-]?id[:\s]+([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
+export async function getSeedanceQueueStatus(
+  endpoint: string,
+  requestId: string,
+): Promise<FalQueueStatusResponse> {
+  configureFalClient();
+  try {
+    return (await fal.queue.status(endpoint, { requestId })) as FalQueueStatusResponse;
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return { status: "NOT_FOUND" };
+    }
+    throw error;
+  }
+}
+
+export async function getSeedanceQueueResult(
+  endpoint: string,
+  requestId: string,
+): Promise<SeedanceQueueResult> {
+  configureFalClient();
+  const result = await fal.queue.result(endpoint, { requestId });
+  const data = result.data as SeedanceFalOutput;
+  const videoUrl = data.video?.url;
+  if (!videoUrl) {
+    throw new ApiError({
+      message: "Seedance job completed but no video URL in fal response.",
+      status: 500,
+      body: data,
+      requestId,
+    });
+  }
+  return {
+    videoUrl,
+    requestId,
+    seed: data.seed ?? null,
+  };
+}
+
+export async function waitForSeedanceQueueCompletion(
+  endpoint: string,
+  requestId: string,
+  options?: { pollIntervalMs?: number },
+): Promise<FalQueueStatusResponse> {
+  configureFalClient();
+  return (await fal.queue.subscribeToStatus(endpoint, {
+    requestId,
+    pollInterval: options?.pollIntervalMs ?? 2_000,
+    logs: false,
+  })) as FalQueueStatusResponse;
+}
+
+export type FalPlatformRequestRow = {
+  request_id: string;
+  endpoint_id: string;
+  status?: string;
+  status_code?: number;
+  created_at?: string;
+  sent_at?: string;
+  started_at?: string;
+  ended_at?: string;
+};
+
+function falRequestTimestamp(row: FalPlatformRequestRow): number {
+  const raw = row.sent_at ?? row.started_at ?? row.created_at ?? row.ended_at;
+  return raw ? new Date(raw).getTime() : 0;
+}
+
+/** List recent fal requests for gallery model endpoints (models API, not serverless). */
+export async function listFalRequestsByEndpoint(input: {
+  endpointId: string;
+  start?: string;
+  end?: string;
+  limit?: number;
+}): Promise<FalPlatformRequestRow[]> {
+  const key = getEnv("FAL_KEY");
+  if (!key) return [];
+
+  const params = new URLSearchParams();
+  params.set("endpoint_id", input.endpointId);
+  params.set("limit", String(input.limit ?? 100));
+  if (input.start) params.set("start", input.start);
+  if (input.end) params.set("end", input.end);
+
+  const response = await fetch(
+    `https://api.fal.ai/v1/models/requests/by-endpoint?${params.toString()}`,
+    {
+      headers: { Authorization: `Key ${key}` },
+    },
+  );
+
+  if (!response.ok) {
+    console.warn("[fal-list-requests] unavailable", {
+      endpointId: input.endpointId,
+      status: response.status,
+      body: await response.text().catch(() => ""),
+    });
+    return [];
+  }
+
+  const payload = (await response.json()) as { items?: FalPlatformRequestRow[] };
+  return payload.items ?? [];
+}
+
+export function matchFalRequestsToTakes<T extends { id: string; created_at: string }>(
+  takes: T[],
+  requests: FalPlatformRequestRow[],
+  maxDeltaMs = 5 * 60_000,
+): Map<string, { requestId: string; endpoint: string }> {
+  const sortedRequests = [...requests].sort(
+    (a, b) => falRequestTimestamp(a) - falRequestTimestamp(b),
+  );
+  const sortedTakes = [...takes].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+  const used = new Set<string>();
+  const matches = new Map<string, { requestId: string; endpoint: string }>();
+
+  for (const take of sortedTakes) {
+    const takeTime = new Date(take.created_at).getTime();
+    let best: FalPlatformRequestRow | null = null;
+    let bestDelta = Infinity;
+
+    for (const row of sortedRequests) {
+      if (!row.request_id || used.has(row.request_id)) continue;
+      const delta = Math.abs(falRequestTimestamp(row) - takeTime);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = row;
+      }
+    }
+
+    if (best?.request_id && bestDelta <= maxDeltaMs) {
+      used.add(best.request_id);
+      matches.set(take.id, {
+        requestId: best.request_id,
+        endpoint: best.endpoint_id,
+      });
+    }
+  }
+
+  return matches;
 }

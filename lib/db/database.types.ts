@@ -735,6 +735,9 @@ export type Database = {
           status: Database["public"]["Enums"]["take_status"];
           error_message: string | null;
           has_audio: boolean | null;
+          provider_request_id: string | null;
+          provider_endpoint: string | null;
+          provider_submitted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -751,6 +754,9 @@ export type Database = {
           status?: Database["public"]["Enums"]["take_status"];
           error_message?: string | null;
           has_audio?: boolean | null;
+          provider_request_id?: string | null;
+          provider_endpoint?: string | null;
+          provider_submitted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -767,6 +773,9 @@ export type Database = {
           status?: Database["public"]["Enums"]["take_status"];
           error_message?: string | null;
           has_audio?: boolean | null;
+          provider_request_id?: string | null;
+          provider_endpoint?: string | null;
+          provider_submitted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

@@ -6,6 +6,7 @@ import { Maximize2, Sparkles, Star } from "lucide-react";
 import {
   starTakeAction,
   clearFailedTakesAction,
+  reconcileTakeAction,
 } from "@/app/(app)/series/[id]/episodes/[episodeId]/generation-actions";
 import {
   deleteTakeAction,
@@ -267,6 +268,17 @@ export function TakesStrip({
     });
   }
 
+  function handleReconcileTake(takeId: string) {
+    startTransition(async () => {
+      const result = await reconcileTakeAction(takeId, episodeId, seriesId);
+      if ("error" in result && result.error) {
+        alert(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   const showStrip = layout === "combined" || layout === "strip";
   const showPreview = layout === "combined" || layout === "preview";
   const isOutputPreview = layout === "preview";
@@ -374,7 +386,18 @@ export function TakesStrip({
                 onSuccess={() => router.refresh()}
               />
               {activeTake.status === "pending" ? (
-                <span className="text-xs text-status-progress">Generating…</span>
+                <>
+                  <span className="text-xs text-status-progress">Generating…</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-auto px-2 py-1 text-[10px] text-muted hover:text-accent"
+                    disabled={pending}
+                    onClick={() => handleReconcileTake(activeTake.id)}
+                  >
+                    Check status
+                  </Button>
+                </>
               ) : activeTake.status === "failed" ? (
                 <span className="max-w-md truncate text-xs text-muted" title={activeTake.error_message ?? undefined}>
                   {activeTake.error_message ?? "Failed"}
