@@ -111,6 +111,25 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "update_episode_summary",
+    description:
+      "Refresh this episode's compact plot/state summary (stored on the episode, injected into later episodes). Normally updates automatically after storyboard builds and meaningful turns — use only when you need to correct continuity notes immediately.",
+    input_schema: {
+      type: "object",
+      properties: {
+        episode_id: {
+          type: "string",
+          description: "Episode UUID — must match the open episode.",
+        },
+        note: {
+          type: "string",
+          description: "Optional fact or correction to fold into the summary refresh.",
+        },
+      },
+      required: ["episode_id"],
+    },
+  },
+  {
     name: "update_series_memory",
     description:
       "Append a persistent fact or production preference to series memory. Use when the user states a rule, correction, or canonical world detail that must apply in all future sessions for this series.",
@@ -134,6 +153,8 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   },
 ];
 
+import { formatPriorEpisodeSummariesBlock } from "@/lib/ai/copilot/episode-summary";
+
 export type CopilotContext = {
   seriesId: string;
   episodeId?: string;
@@ -142,6 +163,12 @@ export type CopilotContext = {
   defaultOrientation: string;
   briefMarkdown?: string;
   seriesMemoryMarkdown?: string;
+  /** Prior episodes in order — plot continuity (not chat transcripts). */
+  priorEpisodeSummaries?: Array<{
+    sort_order: number;
+    title: string;
+    summary_markdown: string;
+  }>;
   scenes?: Array<{
     id: string;
     title: string;
@@ -308,10 +335,15 @@ ${workspace.activeTakeSummary ? `- Render status: ${workspace.activeTakeSummary}
 `
     : "";
 
+  const priorEpisodesBlock = formatPriorEpisodeSummariesBlock(context.priorEpisodeSummaries ?? []);
+
   const stable = `You are the ReelWalia Studio co-pilot — an AI production partner (director, writer, cinematographer, script supervisor, producer, editor, showrunner). The creator directs; you handle production.
 
 ## Series memory (persistent — always follow)
 ${context.seriesMemoryMarkdown?.trim() || "(empty — use update_series_memory when the user confirms canonical facts)"}
+
+## Story so far (prior episodes — plot continuity)
+${priorEpisodesBlock}
 ${standingRules}
 ${divisionOfLabor}
 ${pipelineNotes}

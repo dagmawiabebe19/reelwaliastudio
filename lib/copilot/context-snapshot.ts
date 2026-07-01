@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getEpisode } from "@/lib/db/episodes";
+import { getEpisode, listPriorEpisodeSummaries } from "@/lib/db/episodes";
 import { listCharacterSheetsBySeries } from "@/lib/db/character-sheets";
 import { listIngredientsBySeries } from "@/lib/db/ingredients";
 import { getScene, listScenesByEpisode } from "@/lib/db/scenes";
@@ -9,6 +9,7 @@ import { listTakesByScene } from "@/lib/db/takes";
 import { buildCopilotCharacterSheets } from "@/lib/production/library-data";
 import type { CopilotWorkspaceView } from "@/lib/copilot/workspace-types";
 import type { CopilotContext } from "@/lib/ai/copilot/tools";
+import { PRIOR_EPISODE_SUMMARY_LIMIT } from "@/lib/ai/copilot/episode-summary";
 
 export async function buildCopilotContextSnapshot(input: {
   seriesId: string;
@@ -27,6 +28,15 @@ export async function buildCopilotContextSnapshot(input: {
   ]);
 
   const characterSheets = await buildCopilotCharacterSheets(sheetsRaw);
+
+  const priorEpisodeSummaries =
+    episode && episode.sort_order > 0
+      ? await listPriorEpisodeSummaries(
+          input.seriesId,
+          episode.sort_order,
+          PRIOR_EPISODE_SUMMARY_LIMIT,
+        )
+      : [];
 
   let sceneDetail: Awaited<ReturnType<typeof getScene>> | null = null;
   let activeTakeSummary: string | undefined = input.workspace?.activeTakeSummary;
@@ -62,6 +72,7 @@ export async function buildCopilotContextSnapshot(input: {
     defaultOrientation: series.default_orientation,
     briefMarkdown: series.brief_markdown,
     seriesMemoryMarkdown: series.memory_markdown,
+    priorEpisodeSummaries,
     workspace,
     scenes: scenes.map((s) => ({
       id: s.id,

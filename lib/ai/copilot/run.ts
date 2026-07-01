@@ -36,6 +36,11 @@ import {
 import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
 import { executeDraftStoryboard, normalizeStoryboardSegments } from "@/lib/ai/copilot/draft-storyboard";
 import {
+  generateAndStoreEpisodeSummary,
+  PRIOR_EPISODE_SUMMARY_LIMIT,
+  scheduleEpisodeSummaryRefresh,
+} from "@/lib/ai/copilot/episode-summary";
+import {
   groupCopilotToolsByWave,
   runCopilotToolWave,
   SETUP_GENERATION_CONCURRENCY,
@@ -60,7 +65,7 @@ import {
 } from "@/lib/ai/copilot/tools";
 import { appendChatMessage, listChatMessages } from "@/lib/db/chat";
 import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
-import { getEpisode } from "@/lib/db/episodes";
+import { getEpisode, listPriorEpisodeSummaries } from "@/lib/db/episodes";
 import { getSeries } from "@/lib/db/series";
 
 export type CopilotStreamEvent =
@@ -118,6 +123,7 @@ async function resolveDraftStoryboardEpisodeId(
 type ToolExecutionOptions = {
   abortSignal?: AbortSignal;
   billing?: TurnBillingState;
+  userId?: string;
 };
 
 async function executeTool(
@@ -167,6 +173,14 @@ async function executeTool(
         }
 
         revalidatePath(`/series/${context.seriesId}/episodes/${episodeId}`);
+        if (options?.userId) {
+          scheduleEpisodeSummaryRefresh({
+            episodeId,
+            userId: options.userId,
+            force: true,
+            turnNotes: [`draft_storyboard: ${result.count} segments`],
+          });
+        }
         return result;
       } catch (error) {
         if (error instanceof CopilotAbortError) {
@@ -456,6 +470,44 @@ async function executeTool(
       };
     }
 
+    case "update_episode_summary": {
+      const episodeResolution = await resolveDraftStoryboardEpisodeId(context, args);
+      if ("error" in episodeResolution) {
+        return { error: episodeResolution.error };
+      }
+      const episodeId = episodeResolution.episodeId;
+      if (!options?.userId) {
+        return { error: "Not authenticated." };
+      }
+
+      const note = args.note ? String(args.note).trim() : "";
+      emitProgress("refreshing episode summary…", 1, 1);
+
+      try {
+        const result = await generateAndStoreEpisodeSummary({
+          episodeId,
+          userId: options.userId,
+          force: true,
+          turnNotes: note ? [note] : undefined,
+        });
+        return {
+          updated: result.updated,
+          summary_markdown: result.summary_markdown,
+          skipped: result.skipped,
+        };
+      } catch (error) {
+        if (isInsufficientCreditsError(error)) {
+          return {
+            error: `Not enough credits (need ${error.needed}, have ${error.available}).`,
+            insufficientCredits: toInsufficientCreditsPayload(error),
+          };
+        }
+        return {
+          error: error instanceof Error ? error.message : "update_episode_summary failed.",
+        };
+      }
+    }
+
     case "update_series_memory": {
       const seriesId = String(args.series_id);
       const entry = String(args.entry ?? "").trim();
@@ -511,6 +563,19 @@ export async function runCopilotStream(input: {
   const freshSeries = await getSeries(input.context.seriesId);
   if (freshSeries) {
     input.context.seriesMemoryMarkdown = freshSeries.memory_markdown ?? "";
+  }
+
+  if (input.context.episodeId) {
+    const activeEpisode = await getEpisode(input.context.episodeId);
+    if (activeEpisode && activeEpisode.sort_order > 0) {
+      input.context.priorEpisodeSummaries = await listPriorEpisodeSummaries(
+        input.context.seriesId,
+        activeEpisode.sort_order,
+        PRIOR_EPISODE_SUMMARY_LIMIT,
+      );
+    } else {
+      input.context.priorEpisodeSummaries = [];
+    }
   }
 
   let userId: string;
@@ -611,6 +676,7 @@ export async function runCopilotStream(input: {
 
     let assistantText = "";
     const turnSummaries: string[] = [];
+    const toolsUsedThisTurn = new Set<string>();
 
     let response = await streamAnthropicTurn({
       client,
@@ -665,7 +731,7 @@ export async function runCopilotStream(input: {
             input.context,
             emitProgress,
             emitOutput,
-            { abortSignal: input.abortSignal, billing },
+            { abortSignal: input.abortSignal, billing, userId },
           );
         } catch (error) {
           if (error instanceof CopilotAbortError) {
@@ -726,6 +792,7 @@ export async function runCopilotStream(input: {
 
             const summary = formatToolDoneSummary(tool.name, result);
             turnSummaries.push(summary);
+            toolsUsedThisTurn.add(tool.name);
 
             input.onEvent({
               type: "tool_done",
@@ -785,6 +852,18 @@ export async function runCopilotStream(input: {
     if (turnSummaries.length) {
       const turnSummary = turnSummaries.join(" · ");
       input.onEvent({ type: "turn_complete", summary: turnSummary });
+    }
+
+    const episodeIdForSummary = input.context.episodeId?.trim();
+    const turnEndSummaryTools = [...toolsUsedThisTurn].filter(
+      (tool) => tool === "bind_identity" || tool === "update_series_memory",
+    );
+    if (episodeIdForSummary && !toolsUsedThisTurn.has("draft_storyboard") && turnEndSummaryTools.length) {
+      scheduleEpisodeSummaryRefresh({
+        episodeId: episodeIdForSummary,
+        userId,
+        turnNotes: turnSummaries,
+      });
     }
 
     await settleTurn();

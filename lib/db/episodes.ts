@@ -70,3 +70,48 @@ export async function updateEpisodeStatus(id: string, status: EpisodeStatus): Pr
   if (error) throw new Error(error.message);
   return data;
 }
+
+export type PriorEpisodeSummary = {
+  sort_order: number;
+  title: string;
+  summary_markdown: string;
+};
+
+/** Prior episodes in chronological order (most recent N when series is long). */
+export async function listPriorEpisodeSummaries(
+  seriesId: string,
+  beforeSortOrder: number,
+  limit = 10,
+): Promise<PriorEpisodeSummary[]> {
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from("episodes")
+    .select("sort_order, title, summary_markdown")
+    .eq("series_id", seriesId)
+    .lt("sort_order", beforeSortOrder)
+    .not("summary_markdown", "is", null)
+    .order("sort_order", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? [])
+    .filter((row): row is PriorEpisodeSummary => Boolean(row.summary_markdown?.trim()))
+    .reverse();
+}
+
+export async function updateEpisodeSummary(
+  episodeId: string,
+  summaryMarkdown: string,
+): Promise<Episode> {
+  const supabase = await getDbClient();
+  const { data, error } = await supabase
+    .from("episodes")
+    .update({ summary_markdown: summaryMarkdown.trim() || null })
+    .eq("id", episodeId)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
+}

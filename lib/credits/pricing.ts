@@ -122,6 +122,20 @@ export function copilotTurnCreditsFromUsage(
 }
 
 /**
+ * Conservative upfront reserve for a small Haiku episode-summary refresh.
+ */
+export function estimateEpisodeSummaryCredits(): number {
+  const modelId = "claude-haiku-4-5-20251001";
+  const rates = getAnthropicModelPricing(modelId);
+  const typicalInputTokens = 3_500;
+  const typicalOutputTokens = 450;
+  const usd =
+    (typicalInputTokens / 1_000_000) * rates.inputUsdPerMtok +
+    (typicalOutputTokens / 1_000_000) * rates.outputUsdPerMtok;
+  return Math.max(1, usdToCredits(usd));
+}
+
+/**
  * Conservative upfront reserve so non-admins are blocked before the Anthropic call.
  * Assumes a typical turn without cache reads (first turn in session).
  */

@@ -388,6 +388,7 @@ export type Database = {
           series_id: string;
           title: string;
           logline: string | null;
+          summary_markdown: string | null;
           sort_order: number;
           status: Database["public"]["Enums"]["episode_status"];
           created_at: string;
@@ -398,6 +399,7 @@ export type Database = {
           series_id: string;
           title: string;
           logline?: string | null;
+          summary_markdown?: string | null;
           sort_order?: number;
           status?: Database["public"]["Enums"]["episode_status"];
           created_at?: string;
@@ -408,6 +410,7 @@ export type Database = {
           series_id?: string;
           title?: string;
           logline?: string | null;
+          summary_markdown?: string | null;
           sort_order?: number;
           status?: Database["public"]["Enums"]["episode_status"];
           created_at?: string;

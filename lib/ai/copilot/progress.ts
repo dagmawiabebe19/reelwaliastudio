@@ -59,6 +59,15 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
       const section = result.section === "world" ? "world" : "preferences";
       return `Saved to series memory (${section}): ${entry.slice(0, 80)}${entry.length > 80 ? "…" : ""}`;
     }
+    case "update_episode_summary": {
+      if (result.skipped === "debounced") {
+        return "Episode summary — already fresh";
+      }
+      const chars = result.summary_markdown ? String(result.summary_markdown).length : 0;
+      return result.updated
+        ? `Episode summary refreshed (${chars} chars)`
+        : "Episode summary — unchanged";
+    }
     default:
       return `${toolDisplayName(name)} — done`;
   }
@@ -76,6 +85,8 @@ function toolDisplayName(name: string): string {
       return "create_character_sheet";
     case "update_series_memory":
       return "update_series_memory";
+    case "update_episode_summary":
+      return "update_episode_summary";
     default:
       return name;
   }
