@@ -9,7 +9,8 @@ import {
   getCharacterSheetDeletePreviewAction,
 } from "@/app/(app)/series/[id]/delete-actions";
 import { retryCharacterSheetAction } from "@/app/(app)/series/[id]/production-actions";
-import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
+import { FailedGenerationControls } from "@/components/series/ingredients/FailedGenerationControls";
+import { useFailedIngredientActions } from "@/components/series/ingredients/useFailedIngredientActions";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonThumbnail } from "@/components/ui/Skeleton";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
@@ -133,6 +134,7 @@ export function StudioIngredientsPanel({
 }: StudioIngredientsPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const { renderFailedControls } = useFailedIngredientActions(seriesId);
   const characters = ingredients.filter((item) => item.kind === "character");
   const locations = ingredients.filter((item) => item.kind === "location");
   const voices = ingredients.filter((item) => item.kind === "voice");
@@ -229,13 +231,18 @@ export function StudioIngredientsPanel({
                   status={character.generationStatus}
                   thumbnailUrl={character.assetUrl}
                   referenced={isIngredientReferenced(character)}
-                  disabled={!hasActiveScene}
+                  disabled={!hasActiveScene || character.generationStatus !== "ready"}
                   onInsert={() =>
                     onInsertIngredient({
                       id: character.id,
                       ref_tag: character.ref_tag,
                       name: character.name,
                     })
+                  }
+                  trailingActions={
+                    character.generationStatus === "failed"
+                      ? renderFailedControls(character.id)
+                      : null
                   }
                 />
               ))}
@@ -276,29 +283,20 @@ export function StudioIngredientsPanel({
                     onInsert={() => mention && onInsertSheet(mention)}
                     trailingActions={
                       sheet.status === "failed" ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            disabled={pending}
-                            onClick={() =>
-                              runSheetAction(() =>
-                                retryCharacterSheetAction(sheet.id, seriesId),
-                              )
-                            }
-                            className="studio-btn studio-btn-secondary !min-h-6 !px-1.5 !py-0.5 !text-[9px]"
-                          >
-                            Retry
-                          </button>
-                          <DeleteConfirmButton
-                            ariaLabel="Delete failed sheet"
-                            className="!min-h-6 !min-w-6"
-                            fetchPreview={() =>
-                              getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
-                            }
-                            onDelete={() => deleteCharacterSheetAction(sheet.id, seriesId)}
-                            onSuccess={() => router.refresh()}
-                          />
-                        </div>
+                        <FailedGenerationControls
+                          disabled={pending}
+                          onRetry={() =>
+                            runSheetAction(() =>
+                              retryCharacterSheetAction(sheet.id, seriesId),
+                            )
+                          }
+                          deleteAriaLabel="Delete failed sheet"
+                          fetchDeletePreview={() =>
+                            getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
+                          }
+                          onDelete={() => deleteCharacterSheetAction(sheet.id, seriesId)}
+                          onSuccess={() => router.refresh()}
+                        />
                       ) : null
                     }
                   />
@@ -327,13 +325,18 @@ export function StudioIngredientsPanel({
                   status={location.generationStatus}
                   thumbnailUrl={location.assetUrl}
                   referenced={isIngredientReferenced(location)}
-                  disabled={!hasActiveScene}
+                  disabled={!hasActiveScene || location.generationStatus !== "ready"}
                   onInsert={() =>
                     onInsertIngredient({
                       id: location.id,
                       ref_tag: location.ref_tag,
                       name: location.name,
                     })
+                  }
+                  trailingActions={
+                    location.generationStatus === "failed"
+                      ? renderFailedControls(location.id)
+                      : null
                   }
                 />
               ))}
@@ -360,13 +363,18 @@ export function StudioIngredientsPanel({
                   status={costume.generationStatus}
                   thumbnailUrl={costume.assetUrl}
                   referenced={isIngredientReferenced(costume)}
-                  disabled={!hasActiveScene}
+                  disabled={!hasActiveScene || costume.generationStatus !== "ready"}
                   onInsert={() =>
                     onInsertIngredient({
                       id: costume.id,
                       ref_tag: costume.ref_tag,
                       name: costume.name,
                     })
+                  }
+                  trailingActions={
+                    costume.generationStatus === "failed"
+                      ? renderFailedControls(costume.id)
+                      : null
                   }
                 />
               ))}
@@ -392,13 +400,18 @@ export function StudioIngredientsPanel({
                   refLabel={voice.ref_tag}
                   status={voice.generationStatus}
                   referenced={isIngredientReferenced(voice)}
-                  disabled={!hasActiveScene}
+                  disabled={!hasActiveScene || voice.generationStatus !== "ready"}
                   onInsert={() =>
                     onInsertIngredient({
                       id: voice.id,
                       ref_tag: voice.ref_tag,
                       name: voice.name,
                     })
+                  }
+                  trailingActions={
+                    voice.generationStatus === "failed"
+                      ? renderFailedControls(voice.id)
+                      : null
                   }
                 />
               ))}

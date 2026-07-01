@@ -17,6 +17,7 @@ import {
 } from "@/lib/storage/client-upload";
 import type { IngredientCardData } from "@/lib/production/types";
 import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
+import { useFailedIngredientActions } from "@/components/series/ingredients/useFailedIngredientActions";
 import {
   CharactersSection,
 } from "@/components/series/ingredients/CharactersSection";
@@ -37,6 +38,8 @@ interface IngredientCardProps {
 export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
   const isAudio = ingredient.mediaType === "audio" || ingredient.kind === "voice";
   const lightbox = useLightbox();
+  const { renderFailedControls } = useFailedIngredientActions(seriesId);
+  const isFailed = ingredient.generationStatus === "failed";
 
   return (
     <article
@@ -71,7 +74,11 @@ export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
           <h3 className="truncate text-sm font-medium text-foreground">{ingredient.name}</h3>
           <div className="flex items-center gap-1">
             <RefTag tag={ingredient.ref_tag} />
-            <IngredientDeleteButton ingredientId={ingredient.id} seriesId={seriesId} />
+            {isFailed ? (
+              renderFailedControls(ingredient.id, { size: "md" })
+            ) : (
+              <IngredientDeleteButton ingredientId={ingredient.id} seriesId={seriesId} />
+            )}
           </div>
         </div>
         {ingredient.description ? (

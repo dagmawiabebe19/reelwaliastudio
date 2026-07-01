@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAudioLine } from "@/lib/db/audio-lines";
 import { createAsset } from "@/lib/db/assets";
 import { bindIngredientToScene, unbindIngredientFromScene } from "@/lib/db/scene-ingredients";
+import { assertIngredientReadyForBinding } from "@/lib/production/reference-readiness";
 import {
   archiveScene,
   createScene,
@@ -94,6 +95,9 @@ export async function bindMentionAction(
   seriesId: string,
 ) {
   try {
+    const block = await assertIngredientReadyForBinding(ingredientId);
+    if (block) return { error: block };
+
     await bindIngredientToScene(sceneId, ingredientId, "identity_lock");
     revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
     return { success: true };

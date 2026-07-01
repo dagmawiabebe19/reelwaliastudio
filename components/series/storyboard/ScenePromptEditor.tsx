@@ -24,6 +24,7 @@ export type MentionIngredient = {
   id: string;
   ref_tag: string;
   name: string;
+  generation_status?: string | null;
 };
 
 export type ScenePromptEditorHandle = {
@@ -75,12 +76,15 @@ export const ScenePromptEditor = forwardRef<ScenePromptEditorHandle, ScenePrompt
     }, [prompt, onPromptChange]);
 
     const readySheets = sheets.filter((s) => s.status === "ready");
+    const readyIngredients = ingredients.filter(
+      (i) => !i.generation_status || i.generation_status === "ready",
+    );
     const filteredSheets = readySheets.filter(
       (s) =>
         s.label.toLowerCase().includes(filter.toLowerCase()) ||
         s.character_name.toLowerCase().includes(filter.toLowerCase()),
     );
-    const filteredIngredients = ingredients.filter(
+    const filteredIngredients = readyIngredients.filter(
       (i) =>
         i.ref_tag.toLowerCase().includes(filter.toLowerCase()) ||
         i.name.toLowerCase().includes(filter.toLowerCase()),
@@ -136,7 +140,11 @@ export const ScenePromptEditor = forwardRef<ScenePromptEditorHandle, ScenePrompt
         : insertToken(`${ingredient.ref_tag} `);
 
       applyPrompt(next, async () => {
-        await bindMentionAction(sceneId, ingredient.id, episodeId, seriesId);
+        const bindResult = await bindMentionAction(sceneId, ingredient.id, episodeId, seriesId);
+        if (bindResult.error) {
+          alert(bindResult.error);
+          return;
+        }
         await updateSceneAction(sceneId, episodeId, seriesId, { prompt: next });
       });
     }

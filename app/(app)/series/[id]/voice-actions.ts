@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { runVoiceGeneration } from "@/lib/ai/voice";
-import { createIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
+import { retryVoiceGeneration } from "@/lib/ai/generation/voice-retry";
+import { createIngredient, getIngredient, updateIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
 
 export async function generateVoiceAction(seriesId: string, formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
@@ -29,7 +30,6 @@ export async function generateVoiceAction(seriesId: string, formData: FormData) 
       characterId,
     });
 
-    const { updateIngredient } = await import("@/lib/db/ingredients");
     if (result.error) {
       await updateIngredient(ingredient.id, {
         generation_status: "failed",
@@ -39,9 +39,27 @@ export async function generateVoiceAction(seriesId: string, formData: FormData) 
       return { ingredientId: ingredient.id, ref_tag: ingredient.ref_tag, stub: true, error: result.error };
     }
 
+    await updateIngredient(ingredient.id, {
+      generation_status: "ready",
+      generation_error: null,
+    });
+
     revalidatePath(`/series/${seriesId}`);
     return { ingredientId: ingredient.id, ref_tag: ingredient.ref_tag };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Failed to create voice." };
+  }
+}
+
+export async function retryVoiceAction(ingredientId: string, seriesId: string) {
+  try {
+    await verifySeriesOwnership(seriesId);
+    const result = await retryVoiceGeneration(ingredientId, `/series/${seriesId}`);
+    if (result.status === "failed") {
+      return { error: result.error ?? "Voice setup failed.", stub: result.stub };
+    }
+    return { ingredientId, status: result.status };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Failed to retry voice." };
   }
 }

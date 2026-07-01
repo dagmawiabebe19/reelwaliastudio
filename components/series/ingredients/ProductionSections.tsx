@@ -3,8 +3,13 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, Mic } from "lucide-react";
-import { generateLocationAction } from "@/app/(app)/series/[id]/production-actions";
+import { generateLocationAction, retryIngredientAction } from "@/app/(app)/series/[id]/production-actions";
 import { generateVoiceAction } from "@/app/(app)/series/[id]/voice-actions";
+import {
+  cleanupFailedIngredientsAction,
+  deleteIngredientWithCleanupAction,
+  getIngredientDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
 import { CreditCostHint } from "@/components/credits/CreditCostHint";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
@@ -16,6 +21,7 @@ import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { IngredientCardData } from "@/lib/production/types";
 import { IngredientCard } from "./IngredientsSection";
 import { IngredientDeleteButton } from "./IngredientDeleteButton";
+import { FailedGenerationControls } from "./FailedGenerationControls";
 
 interface LocationsSectionProps {
   seriesId: string;
@@ -33,12 +39,38 @@ export function LocationsSection({ seriesId, locations }: LocationsSectionProps)
 
   usePollWhilePending(locations.some((l) => l.generationStatus === "pending"));
 
+  const failedLocationCount = locations.filter((l) => l.generationStatus === "failed").length;
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
         <h2 className="font-display text-xl text-foreground">
           Locations <span className="text-muted">({locations.length})</span>
         </h2>
+        <div className="flex flex-wrap items-end gap-2">
+          {failedLocationCount > 0 ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    `Remove ${failedLocationCount} failed location${failedLocationCount === 1 ? "" : "s"}?`,
+                  )
+                ) {
+                  return;
+                }
+                startTransition(async () => {
+                  const result = await cleanupFailedIngredientsAction(seriesId, "location");
+                  if (typeof result.error === "string") setError(result.error);
+                  else router.refresh();
+                });
+              }}
+              className="studio-btn studio-btn-ghost !min-h-7 !px-2 !py-1 !text-[10px]"
+            >
+              Clean up failed
+            </button>
+          ) : null}
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
@@ -78,6 +110,7 @@ export function LocationsSection({ seriesId, locations }: LocationsSectionProps)
           </button>
           <CreditCostHint cost={estimateImageCredits(1)} available={null} />
         </form>
+        </div>
       </div>
       {insufficientCredits ? (
         <InsufficientCreditsWall
@@ -116,12 +149,38 @@ export function VoicesSection({ seriesId, voices, characters }: VoicesSectionPro
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  const failedVoiceCount = voices.filter((v) => v.generationStatus === "failed").length;
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
         <h2 className="font-display text-xl text-foreground">
           Voices <span className="text-muted">({voices.length})</span>
         </h2>
+        <div className="flex flex-wrap items-end gap-2">
+          {failedVoiceCount > 0 ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    `Remove ${failedVoiceCount} failed voice${failedVoiceCount === 1 ? "" : "s"}?`,
+                  )
+                ) {
+                  return;
+                }
+                startTransition(async () => {
+                  const result = await cleanupFailedIngredientsAction(seriesId, "voice");
+                  if (typeof result.error === "string") setError(result.error);
+                  else router.refresh();
+                });
+              }}
+              className="studio-btn studio-btn-ghost !min-h-7 !px-2 !py-1 !text-[10px]"
+            >
+              Clean up failed
+            </button>
+          ) : null}
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
@@ -170,6 +229,7 @@ export function VoicesSection({ seriesId, voices, characters }: VoicesSectionPro
             Add voice (generation stubbed)
           </button>
         </form>
+        </div>
       </div>
       {error ? <p className="text-sm text-accent">{error}</p> : null}
       {info ? <p className="text-sm text-muted">{info}</p> : null}
@@ -191,7 +251,26 @@ export function VoicesSection({ seriesId, voices, characters }: VoicesSectionPro
                 <h3 className="font-medium">{voice.name}</h3>
                 <div className="flex items-center gap-1">
                   <RefTag tag={voice.ref_tag} />
-                  <IngredientDeleteButton ingredientId={voice.id} seriesId={seriesId} />
+                  {voice.generationStatus === "failed" ? (
+                    <FailedGenerationControls
+                      size="md"
+                      disabled={pending}
+                      onRetry={() => {
+                        startTransition(async () => {
+                          const result = await retryIngredientAction(voice.id, seriesId);
+                          if (typeof result.error === "string") setError(result.error);
+                          else router.refresh();
+                        });
+                      }}
+                      fetchDeletePreview={() =>
+                        getIngredientDeletePreviewAction(voice.id, seriesId)
+                      }
+                      onDelete={() => deleteIngredientWithCleanupAction(voice.id, seriesId)}
+                      onSuccess={() => router.refresh()}
+                    />
+                  ) : (
+                    <IngredientDeleteButton ingredientId={voice.id} seriesId={seriesId} />
+                  )}
                 </div>
               </div>
               {voice.description ? (

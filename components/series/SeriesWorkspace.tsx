@@ -104,6 +104,7 @@ export function SeriesWorkspace({
         id: i.id,
         ref_tag: i.ref_tag,
         name: i.name,
+        generation_status: i.generationStatus ?? undefined,
       })),
     [ingredients],
   );

@@ -155,3 +155,78 @@ export async function getIngredientRefUrl(ingredientId: string): Promise<string 
   if (!asset) return null;
   return getSignedUrl(asset.bucket, asset.storage_path);
 }
+
+export async function buildIngredientImageRetryInput(
+  ingredientId: string,
+): Promise<{ prompt: string; refImageUrls?: string[] } | { error: string }> {
+  const ingredient = await getIngredient(ingredientId);
+  if (!ingredient) return { error: "Ingredient not found." };
+  if (ingredient.generation_status === "pending") {
+    return { error: "Ingredient is already generating." };
+  }
+
+  const description = ingredient.description?.trim();
+  if (!description) {
+    return { error: "Missing description — cannot retry without the original prompt." };
+  }
+
+  const {
+    CHARACTER_HEADSHOT_PREFIX,
+    LOCATION_ESTABLISHING_PREFIX,
+    costumePreviewPrompt,
+  } = await import("@/lib/production/prompts");
+
+  switch (ingredient.kind) {
+    case "character":
+      return { prompt: `${CHARACTER_HEADSHOT_PREFIX}${description}` };
+    case "location":
+      return { prompt: `${LOCATION_ESTABLISHING_PREFIX}${description}` };
+    case "outfit": {
+      if (!ingredient.character_id) {
+        return { error: "Costume is missing its character link." };
+      }
+      const character = await getIngredient(ingredient.character_id);
+      if (!character || character.kind !== "character") {
+        return { error: "Linked character not found." };
+      }
+      const headshotUrl = await getIngredientRefUrl(ingredient.character_id);
+      if (!headshotUrl) {
+        return { error: "Generate the character headshot first." };
+      }
+      return {
+        prompt: costumePreviewPrompt(character.name, description),
+        refImageUrls: [headshotUrl],
+      };
+    }
+    default:
+      return { error: `Image retry is not supported for ${ingredient.kind} ingredients.` };
+  }
+}
+
+export async function retryIngredientImageGeneration(
+  ingredientId: string,
+  revalidatePath?: string,
+): Promise<{ status: "ready" | "failed"; error?: string }> {
+  const built = await buildIngredientImageRetryInput(ingredientId);
+  if ("error" in built) {
+    return { status: "failed", error: built.error };
+  }
+
+  await updateIngredient(ingredientId, {
+    generation_status: "pending",
+    generation_error: null,
+  });
+
+  const result = await executeIngredientImageGeneration({
+    ingredientId,
+    prompt: built.prompt,
+    refImageUrls: built.refImageUrls,
+  });
+
+  if (revalidatePath) {
+    const { revalidatePath: revalidate } = await import("next/cache");
+    revalidate(revalidatePath);
+  }
+
+  return result;
+}

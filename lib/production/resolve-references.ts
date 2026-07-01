@@ -12,6 +12,7 @@ import {
   isIngredientReadyForBinding,
   isSheetReadyForBinding,
 } from "@/lib/production/reference-readiness";
+import { pickBestReadyIngredient } from "@/lib/production/pick-ready-ingredient";
 
 import type { ResolvedReference } from "@/lib/production/types";
 
@@ -63,7 +64,8 @@ export async function resolveSceneReferences(input: {
 
   const characterNames = extractCharacterNames(prompt, ingredients);
   for (const name of characterNames) {
-    const character = ingredients.find((i) => i.kind === "character" && i.name === name);
+    const matches = ingredients.filter((i) => i.kind === "character" && i.name === name);
+    const character = pickBestReadyIngredient(matches);
     if (!character) continue;
 
     const mentionLabel = sheetMentionLabels[0];
@@ -128,7 +130,8 @@ export async function resolveSceneReferences(input: {
   }
 
   for (const locName of extractLocationNames(prompt, ingredients)) {
-    const location = ingredients.find((i) => i.kind === "location" && i.name === locName);
+    const matches = ingredients.filter((i) => i.kind === "location" && i.name === locName);
+    const location = pickBestReadyIngredient(matches);
     if (!location?.assets || !isIngredientReadyForBinding(location)) continue;
     const url = await getSignedUrl(location.assets.bucket, location.assets.storage_path);
     resolved.push({
@@ -145,6 +148,8 @@ export async function resolveSceneReferences(input: {
 
   for (const voice of ingredients.filter((i) => i.kind === "voice")) {
     if (!prompt.toLowerCase().includes(voice.name.toLowerCase())) continue;
+    const voiceStatus = voice.generation_status ?? "ready";
+    if (voiceStatus === "failed" || voiceStatus === "pending") continue;
     resolved.push({
       type: "voice",
       id: voice.id,

@@ -147,6 +147,17 @@ export async function updateIngredient(
   return data;
 }
 
+export async function listFailedIngredientsBySeries(
+  seriesId: string,
+  kind?: IngredientKind,
+): Promise<IngredientWithAsset[]> {
+  const ingredients = await listIngredientsBySeries(seriesId);
+  return ingredients.filter(
+    (item) =>
+      item.generation_status === "failed" && (kind === undefined || item.kind === kind),
+  );
+}
+
 export async function deleteIngredient(id: string): Promise<void> {
   const supabase = await getDbClient();
   const { error } = await supabase.from("ingredients").delete().eq("id", id);

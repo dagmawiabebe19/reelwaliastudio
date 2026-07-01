@@ -1,6 +1,9 @@
-import "server-only";
-
-import { getCharacterSheet, findSheetForEpisodeCharacter, listCharacterSheetsByCharacter } from "@/lib/db/character-sheets";
+import { pickBestReadyIngredient } from "@/lib/production/pick-ready-ingredient";
+import {
+  findSheetForEpisodeCharacter,
+  getCharacterSheet,
+  listCharacterSheetsByCharacter,
+} from "@/lib/db/character-sheets";
 import type { IngredientWithAsset } from "@/lib/db/ingredients";
 import { getIngredient, listIngredientsBySeries } from "@/lib/db/ingredients";
 import { getScene } from "@/lib/db/scenes";
@@ -115,9 +118,18 @@ export async function assessSegmentLock(input: {
   const voices: string[] = [];
 
   for (const name of extractCharacterNames(prompt, ingredients)) {
-    const character = ingredients.find((i) => i.kind === "character" && i.name === name);
+    const matches = ingredients.filter((i) => i.kind === "character" && i.name === name);
+    const character = pickBestReadyIngredient(matches);
     if (!character) {
-      missing.push(`${name} character`);
+      const any = matches[0];
+      if (any) {
+        const charStatus = ingredientAssetStatus(any);
+        missing.push(
+          `${name} character (${charStatus === "pending" ? "generating" : charStatus === "failed" ? "failed" : "no asset"})`,
+        );
+      } else {
+        missing.push(`${name} character`);
+      }
       continue;
     }
 
@@ -147,22 +159,25 @@ export async function assessSegmentLock(input: {
   }
 
   for (const locName of extractLocationNames(prompt, ingredients)) {
-    const location = ingredients.find((i) => i.kind === "location" && i.name === locName);
+    const matches = ingredients.filter((i) => i.kind === "location" && i.name === locName);
+    const location = pickBestReadyIngredient(matches);
     if (!location) {
-      missing.push(`${locName} location`);
-      continue;
-    }
-    const locStatus = ingredientAssetStatus(location);
-    if (locStatus !== "ready") {
-      missing.push(
-        `${locName} location (${locStatus === "pending" ? "generating" : locStatus === "failed" ? "failed" : "no asset"})`,
-      );
+      const any = matches[0];
+      if (any) {
+        const locStatus = ingredientAssetStatus(any);
+        missing.push(
+          `${locName} location (${locStatus === "pending" ? "generating" : locStatus === "failed" ? "failed" : "no asset"})`,
+        );
+      } else {
+        missing.push(`${locName} location`);
+      }
       continue;
     }
     locations.push(location.name);
   }
 
   for (const voice of ingredients.filter((i) => i.kind === "voice")) {
+    if (!isIngredientReadyForBinding(voice)) continue;
     if (prompt.toLowerCase().includes(voice.name.toLowerCase())) {
       voices.push(voice.name);
     }

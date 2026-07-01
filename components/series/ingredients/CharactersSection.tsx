@@ -4,19 +4,24 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Shirt, User, Users } from "lucide-react";
 import {
+  cleanupFailedIngredientsAction,
+  cleanupFailedSheetsForCharacterAction,
+  deleteCharacterSheetAction,
+  deleteIngredientWithCleanupAction,
+  getCharacterSheetDeletePreviewAction,
+  getIngredientDeletePreviewAction,
+} from "@/app/(app)/series/[id]/delete-actions";
+import {
   createCharacterSheetAction,
   generateCharacterAction,
   generateCostumeAction,
   retryCharacterSheetAction,
+  retryIngredientAction,
 } from "@/app/(app)/series/[id]/production-actions";
-import {
-  cleanupFailedSheetsForCharacterAction,
-  deleteCharacterSheetAction,
-  getCharacterSheetDeletePreviewAction,
-} from "@/app/(app)/series/[id]/delete-actions";
 import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
 import { CreditCostHint } from "@/components/credits/CreditCostHint";
 import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
+import { FailedGenerationControls } from "@/components/series/ingredients/FailedGenerationControls";
 import { estimateImageCredits, estimateSheetCredits } from "@/lib/credits/pricing";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -101,12 +106,55 @@ export function CharactersSection({
     });
   }
 
+  const hasFailedCharacters = characters.some((c) => c.generationStatus === "failed");
+  const hasFailedCostumes = Object.values(costumesByCharacter)
+    .flat()
+    .some((c) => c.generationStatus === "failed");
+
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
         <h2 className="font-display text-xl text-foreground">
           Characters <span className="text-muted">({characters.length})</span>
         </h2>
+        <div className="flex flex-wrap items-end gap-2">
+          {hasFailedCharacters || hasFailedCostumes ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                const failedChars = characters.filter((c) => c.generationStatus === "failed").length;
+                const failedCostumes = Object.values(costumesByCharacter)
+                  .flat()
+                  .filter((c) => c.generationStatus === "failed").length;
+                const total = failedChars + failedCostumes;
+                if (
+                  !window.confirm(
+                    `Remove ${total} failed character/costume item${total === 1 ? "" : "s"}?`,
+                  )
+                ) {
+                  return;
+                }
+                runAction(async () => {
+                  let deleted = 0;
+                  if (failedChars > 0) {
+                    const r = await cleanupFailedIngredientsAction(seriesId, "character");
+                    if (typeof r.error === "string") return r;
+                    deleted += r.deleted ?? 0;
+                  }
+                  if (failedCostumes > 0) {
+                    const r = await cleanupFailedIngredientsAction(seriesId, "outfit");
+                    if (typeof r.error === "string") return r;
+                    deleted += r.deleted ?? 0;
+                  }
+                  return { deleted };
+                });
+              }}
+              className="studio-btn studio-btn-ghost !min-h-7 !px-2 !py-1 !text-[10px]"
+            >
+              Clean up failed
+            </button>
+          ) : null}
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
@@ -135,6 +183,7 @@ export function CharactersSection({
           </button>
           <CreditCostHint cost={estimateImageCredits(1)} available={null} />
         </form>
+        </div>
       </div>
 
       {insufficientCredits ? (
@@ -195,10 +244,27 @@ export function CharactersSection({
                       <h3 className="text-lg font-medium text-foreground">{character.name}</h3>
                       <RefTag tag={character.ref_tag} />
                       <GenerationBadge status={character.generationStatus} />
-                      <IngredientDeleteButton
-                        ingredientId={character.id}
-                        seriesId={seriesId}
-                      />
+                      {character.generationStatus === "failed" ? (
+                        <FailedGenerationControls
+                          size="md"
+                          disabled={pending}
+                          onRetry={() =>
+                            runAction(() => retryIngredientAction(character.id, seriesId))
+                          }
+                          fetchDeletePreview={() =>
+                            getIngredientDeletePreviewAction(character.id, seriesId)
+                          }
+                          onDelete={() =>
+                            deleteIngredientWithCleanupAction(character.id, seriesId)
+                          }
+                          onSuccess={() => router.refresh()}
+                        />
+                      ) : (
+                        <IngredientDeleteButton
+                          ingredientId={character.id}
+                          seriesId={seriesId}
+                        />
+                      )}
                     </div>
                     {character.description ? (
                       <p className="text-sm text-muted">{character.description}</p>
@@ -256,10 +322,28 @@ export function CharactersSection({
                               className="relative w-28 scroll-mt-24 overflow-hidden rounded border border-border"
                             >
                               <div className="absolute right-0 top-0 z-10">
-                                <IngredientDeleteButton
-                                  ingredientId={costume.id}
-                                  seriesId={seriesId}
-                                />
+                                {costume.generationStatus === "failed" ? (
+                                  <FailedGenerationControls
+                                    disabled={pending}
+                                    onRetry={() =>
+                                      runAction(() =>
+                                        retryIngredientAction(costume.id, seriesId),
+                                      )
+                                    }
+                                    fetchDeletePreview={() =>
+                                      getIngredientDeletePreviewAction(costume.id, seriesId)
+                                    }
+                                    onDelete={() =>
+                                      deleteIngredientWithCleanupAction(costume.id, seriesId)
+                                    }
+                                    onSuccess={() => router.refresh()}
+                                  />
+                                ) : (
+                                  <IngredientDeleteButton
+                                    ingredientId={costume.id}
+                                    seriesId={seriesId}
+                                  />
+                                )}
                               </div>
                               <div className="aspect-[3/4] bg-background">
                                 {costume.assetUrl ? (
@@ -399,27 +483,35 @@ export function CharactersSection({
                                 </button>
                                 <div className="ml-2 flex items-center gap-1">
                                   {sheet.status === "failed" ? (
-                                    <button
-                                      type="button"
+                                    <FailedGenerationControls
+                                      size="md"
                                       disabled={pending}
-                                      onClick={() =>
+                                      onRetry={() =>
                                         runAction(() =>
                                           retryCharacterSheetAction(sheet.id, seriesId),
                                         )
                                       }
-                                      className="studio-btn studio-btn-secondary !min-h-7 !px-2 !py-1 !text-[10px]"
-                                    >
-                                      Retry
-                                    </button>
-                                  ) : null}
-                                  <DeleteConfirmButton
-                                    ariaLabel="Delete character sheet"
-                                    fetchPreview={() =>
-                                      getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
-                                    }
-                                    onDelete={() => deleteCharacterSheetAction(sheet.id, seriesId)}
-                                    onSuccess={() => router.refresh()}
-                                  />
+                                      deleteAriaLabel="Delete character sheet"
+                                      fetchDeletePreview={() =>
+                                        getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
+                                      }
+                                      onDelete={() =>
+                                        deleteCharacterSheetAction(sheet.id, seriesId)
+                                      }
+                                      onSuccess={() => router.refresh()}
+                                    />
+                                  ) : (
+                                    <DeleteConfirmButton
+                                      ariaLabel="Delete character sheet"
+                                      fetchPreview={() =>
+                                        getCharacterSheetDeletePreviewAction(sheet.id, seriesId)
+                                      }
+                                      onDelete={() =>
+                                        deleteCharacterSheetAction(sheet.id, seriesId)
+                                      }
+                                      onSuccess={() => router.refresh()}
+                                    />
+                                  )}
                                 </div>
                               </div>
                               <GenerationStatusLine

@@ -13,10 +13,13 @@ import {
   LOCATION_ESTABLISHING_PREFIX,
   costumePreviewPrompt,
 } from "@/lib/production/prompts";
-import { createIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
+import { createIngredient, getIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
 import { queueIngredientImageGeneration, getIngredientRefUrl } from "@/lib/ai/generation/ingredient-generation";
 import { createCharacterSheet, getCharacterSheet } from "@/lib/db/character-sheets";
 import { queueSheetGeneration, retrySheetGeneration } from "@/lib/ai/generation/sheet-generation";
+import {
+  retryIngredientImageGeneration,
+} from "@/lib/ai/generation/ingredient-generation";
 import { bindSheetToScene } from "@/lib/db/scene-sheets";
 import { resolveSceneReferences } from "@/lib/production/resolve-references";
 import { isSheetReadyForBinding } from "@/lib/production/reference-readiness";
@@ -202,6 +205,39 @@ export async function retryCharacterSheetAction(sheetId: string, seriesId: strin
     return { sheetId, status: result.status };
   } catch (error) {
     return formatActionError(error, "Failed to retry character sheet.");
+  }
+}
+
+export async function retryIngredientAction(ingredientId: string, seriesId: string) {
+  try {
+    await verifySeriesOwnership(seriesId);
+    const ingredient = await getIngredient(ingredientId);
+    if (!ingredient) return { error: "Ingredient not found." };
+    if (ingredient.generation_status === "pending") {
+      return { error: "Ingredient is already generating." };
+    }
+    if (ingredient.generation_status !== "failed") {
+      return { error: "Only failed ingredients can be retried." };
+    }
+
+    if (ingredient.kind === "voice") {
+      const { retryVoiceAction } = await import("@/app/(app)/series/[id]/voice-actions");
+      return retryVoiceAction(ingredientId, seriesId);
+    }
+
+    const userId = await getActiveUserId();
+    await assertSufficientCredits(userId, estimateImageCredits(1));
+
+    const result = await retryIngredientImageGeneration(
+      ingredientId,
+      `/series/${seriesId}`,
+    );
+    if (result.status === "failed") {
+      return { error: result.error ?? "Generation failed." };
+    }
+    return { ingredientId, status: result.status };
+  } catch (error) {
+    return formatActionError(error, "Failed to retry ingredient.");
   }
 }
 

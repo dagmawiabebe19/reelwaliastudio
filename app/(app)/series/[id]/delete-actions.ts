@@ -10,13 +10,17 @@ import {
 } from "@/lib/db/delete";
 import { listFailedSheetsByCharacter } from "@/lib/db/character-sheets";
 import {
+  listFailedIngredientsBySeries,
+  verifySeriesOwnership,
+} from "@/lib/db/ingredients";
+import type { IngredientKind } from "@/lib/db/database.types";
+import {
   getAudioLineDeletePreview,
   getCharacterSheetDeletePreview,
   getIngredientDeletePreview,
   getSceneDeletePreview,
   getTakeDeletePreview,
 } from "@/lib/db/delete-preview";
-import { verifySeriesOwnership } from "@/lib/db/ingredients";
 import { verifyEpisodeOwnership } from "@/lib/db/audio-lines";
 
 export async function getIngredientDeletePreviewAction(ingredientId: string, seriesId: string) {
@@ -70,6 +74,28 @@ export async function cleanupFailedSheetsForCharacterAction(
 
     for (const sheet of failed) {
       await deleteCharacterSheetWithCleanup(sheet.id, seriesId);
+    }
+
+    revalidatePath(`/series/${seriesId}`);
+    return { deleted: failed.length };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Cleanup failed." };
+  }
+}
+
+export async function cleanupFailedIngredientsAction(
+  seriesId: string,
+  kind?: IngredientKind,
+) {
+  try {
+    await verifySeriesOwnership(seriesId);
+    const failed = await listFailedIngredientsBySeries(seriesId, kind);
+    if (!failed.length) {
+      return { deleted: 0 };
+    }
+
+    for (const ingredient of failed) {
+      await deleteIngredientWithCleanup(ingredient.id, seriesId);
     }
 
     revalidatePath(`/series/${seriesId}`);
