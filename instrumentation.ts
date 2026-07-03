@@ -9,5 +9,17 @@ export async function register() {
         stack: error instanceof Error ? error.stack : undefined,
       });
     }
+
+    try {
+      const { scheduleStartupStuckReservationSweep } = await import(
+        "@/lib/credits/reservation-reconcile"
+      );
+      scheduleStartupStuckReservationSweep();
+    } catch (error) {
+      console.error("[instrumentation] failed to schedule reservation reconcile startup sweep", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
   }
 }

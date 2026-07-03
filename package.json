@@ -19,6 +19,8 @@
     "test:copilot-meter": "node scripts/test-copilot-metering.mjs",
     "test:onboarding": "node scripts/test-onboarding-status.mjs",
     "reconcile:takes": "node scripts/reconcile-stuck-takes.mjs",
+    "reconcile:reservations": "node scripts/reconcile-stuck-reservations.mjs",
+    "test:reservation-sweep": "node scripts/test-reservation-sweep.mjs",
     "repair:asset-paths": "node scripts/repair-rescued-asset-paths.mjs"
   },
   "dependencies": {
