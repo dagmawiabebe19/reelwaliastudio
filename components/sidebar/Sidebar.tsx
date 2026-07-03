@@ -18,6 +18,8 @@ const navItems = [
   { href: "/favorites", label: "Favorites" },
 ];
 
+const adminNavItem = { href: "/admin/usage", label: "Admin usage" };
+
 interface SidebarProps {
   userEmail?: string | null;
   creditBalance?: CreditBalance | null;
@@ -43,7 +45,7 @@ export function Sidebar({ userEmail, creditBalance, isAdmin = false, onNavigate 
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-6">
-        {navItems.map((item) => {
+        {[...navItems, ...(isAdmin ? [adminNavItem] : [])].map((item) => {
           const isActive =
             item.href === "/"
               ? pathname === "/"
