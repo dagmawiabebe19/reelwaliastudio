@@ -3,21 +3,25 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { getActiveUserId } from "@/lib/auth/getUser";
 import { getDbClient } from "@/lib/db/client";
+import type { ServiceDbClient } from "@/lib/db/service-client";
 import type { Asset, AssetMediaType, TablesInsert } from "@/lib/db/database.types";
 
-export async function createAsset(input: {
-  bucket: string;
-  storagePath: string;
-  mediaType: AssetMediaType;
-  width?: number | null;
-  height?: number | null;
-  durationMs?: number | null;
-  source?: "uploaded" | "generated";
-  model?: string | null;
-  prompt?: string | null;
-}): Promise<Asset> {
-  const supabase = await getDbClient();
-  const ownerId = await getActiveUserId();
+export async function createAsset(
+  input: {
+    bucket: string;
+    storagePath: string;
+    mediaType: AssetMediaType;
+    width?: number | null;
+    height?: number | null;
+    durationMs?: number | null;
+    source?: "uploaded" | "generated";
+    model?: string | null;
+    prompt?: string | null;
+  },
+  options?: { db?: ServiceDbClient; ownerId?: string },
+): Promise<Asset> {
+  const supabase = options?.db ?? (await getDbClient());
+  const ownerId = options?.ownerId ?? (await getActiveUserId());
   const payload: TablesInsert<"assets"> = {
     owner_id: ownerId,
     bucket: input.bucket,

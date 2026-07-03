@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createAsset } from "@/lib/db/assets";
-import { getScene } from "@/lib/db/scenes";
+import { getScene, getSceneBasic } from "@/lib/db/scenes";
+import type { ServiceDbClient } from "@/lib/db/service-client";
 import { getTake, markTakeReady } from "@/lib/db/takes";
 import { seedanceGenerateAudio, type SeedanceAudioMode } from "@/lib/ai/video/seedance-constants";
 import { persistRemoteAsset } from "@/lib/storage/persist-generated";
@@ -39,8 +40,11 @@ export async function finalizeTakeFromRemoteVideo(input: {
   prompt?: string | null;
   seedanceAudioMode?: SeedanceAudioMode;
   fallbackDurationSeconds?: number | null;
+  /** Background ops reconcile — service-role DB, no cookies. */
+  ops?: { db: ServiceDbClient; ownerId: string };
 }): Promise<{ assetId: string; videoDurationSeconds: number }> {
-  const take = await getTake(input.takeId);
+  const db = input.ops?.db;
+  const take = await getTake(input.takeId, db);
   if (!take) throw new Error("Take not found.");
   if (take.status === "ready" && take.asset_id) {
     return {
@@ -49,7 +53,9 @@ export async function finalizeTakeFromRemoteVideo(input: {
     };
   }
 
-  const scene = await getScene(input.sceneId);
+  const scene = db
+    ? await getSceneBasic(input.sceneId, db)
+    : await getScene(input.sceneId);
   if (!scene) throw new Error("Scene not found.");
 
   const videoResponse = await fetch(input.videoUrl);
@@ -68,23 +74,32 @@ export async function finalizeTakeFromRemoteVideo(input: {
     remoteUrl: input.videoUrl,
     model: input.modelId ?? SEGMENT_VIDEO_MODEL_ID,
     prompt: input.prompt ?? scene.prompt ?? scene.title,
+    ownerId: input.ops?.ownerId,
   });
 
-  const asset = await createAsset({
-    bucket: stored.bucket,
-    storagePath: stored.storagePath,
-    mediaType: stored.mediaType,
-    durationMs: videoDurationSeconds * 1000,
-    source: "generated",
-    model: input.modelId ?? SEGMENT_VIDEO_MODEL_ID,
-    prompt: input.prompt ?? scene.prompt ?? scene.title,
-  });
+  const asset = await createAsset(
+    {
+      bucket: stored.bucket,
+      storagePath: stored.storagePath,
+      mediaType: stored.mediaType,
+      durationMs: videoDurationSeconds * 1000,
+      source: "generated",
+      model: input.modelId ?? SEGMENT_VIDEO_MODEL_ID,
+      prompt: input.prompt ?? scene.prompt ?? scene.title,
+    },
+    input.ops ? { db: input.ops.db, ownerId: input.ops.ownerId } : undefined,
+  );
 
   const audioMode = input.seedanceAudioMode ?? "ambient";
-  await markTakeReady(input.takeId, asset.id, {
-    duration_seconds: videoDurationSeconds,
-    has_audio: seedanceGenerateAudio(audioMode),
-  });
+  await markTakeReady(
+    input.takeId,
+    asset.id,
+    {
+      duration_seconds: videoDurationSeconds,
+      has_audio: seedanceGenerateAudio(audioMode),
+    },
+    db,
+  );
 
   return { assetId: asset.id, videoDurationSeconds };
 }

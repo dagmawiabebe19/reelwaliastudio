@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { getActiveUserId } from "@/lib/auth/getUser";
 import { buildGeneratedAssetPath } from "@/lib/db/assets";
 import { detectMediaType } from "@/lib/storage/buckets";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getStorageClient } from "@/lib/storage/client";
 import { getSignedUrl } from "@/lib/storage/signed-url";
 
@@ -75,8 +76,10 @@ export async function persistRemoteAsset(input: {
   width?: number | null;
   height?: number | null;
   durationMs?: number | null;
+  /** Ops reconcile: explicit owner + service-role storage (no cookies). */
+  ownerId?: string;
 }): Promise<{ bucket: string; storagePath: string; mediaType: ReturnType<typeof detectMediaType> }> {
-  const ownerId = await getActiveUserId();
+  const ownerId = input.ownerId ?? (await getActiveUserId());
   const response = await fetch(input.remoteUrl);
   if (!response.ok) {
     throw new Error(`Failed to download generated asset (${response.status}).`);
@@ -89,7 +92,7 @@ export async function persistRemoteAsset(input: {
   const storagePath = buildGeneratedAssetPath(ownerId, input.sceneId, ext, randomUUID());
   const mediaType = detectMediaType(contentType);
 
-  const supabase = await getStorageClient();
+  const supabase = input.ownerId ? createAdminClient() : await getStorageClient();
   const { error } = await supabase.storage.from(GENERATED_BUCKET).upload(storagePath, buffer, {
     contentType,
     upsert: false,

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getDbClient } from "@/lib/db/client";
+import type { ServiceDbClient } from "@/lib/db/service-client";
 import type { Orientation, Scene, SceneStatus, TablesInsert } from "@/lib/db/database.types";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
 
@@ -46,6 +47,23 @@ export async function listScenesBySeries(seriesId: string): Promise<SceneWithBin
 
   if (error) throw new Error(error.message);
   return (data ?? []) as SceneWithBindings[];
+}
+
+export type SceneBasic = Pick<Scene, "id" | "title" | "prompt" | "duration_seconds">;
+
+export async function getSceneBasic(
+  id: string,
+  db?: ServiceDbClient,
+): Promise<SceneBasic | null> {
+  const supabase = db ?? (await getDbClient());
+  const { data, error } = await supabase
+    .from("scenes")
+    .select("id, title, prompt, duration_seconds")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function getScene(id: string): Promise<SceneWithBindings | null> {

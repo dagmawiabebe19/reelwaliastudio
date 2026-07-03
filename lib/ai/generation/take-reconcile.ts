@@ -18,7 +18,9 @@ import {
   waitForSeedanceQueueCompletion,
   type FalQueueStatus,
 } from "@/lib/ai/video/seedance-api";
-import { getScene } from "@/lib/db/scenes";
+import { getSceneBasic } from "@/lib/db/scenes";
+import { resolveOwnerIdForScene } from "@/lib/db/resolve-owner";
+import type { ServiceDbClient } from "@/lib/db/service-client";
 import {
   getTake,
   isTakeProviderSchemaError,
@@ -41,6 +43,20 @@ export type ReconcileTakeOutcome =
   | { takeId: string; result: "skipped"; reason: string };
 
 const activeWatchers = new Set<string>();
+
+/** Service-role reconcile context for startup / detached sweeps (no request cookies). */
+export type ReconcileOps = {
+  db: ServiceDbClient;
+};
+
+type ReconcileCallOptions = {
+  waitForCompletion?: boolean;
+  manualRequestIds?: Record<string, string>;
+  timestampMatches?: Map<string, { requestId: string; endpoint: string }>;
+  revalidatePath?: string;
+  /** When set, all DB/storage access uses the service-role client. */
+  ops?: ReconcileOps;
+};
 
 function logReconcileError(label: string, error: unknown, context?: Record<string, unknown>): void {
   console.error(`[take-reconcile] ${label} failed`, {
@@ -67,8 +83,16 @@ function takeCreditReference(takeId: string): string {
   return `seedance:take:${takeId}`;
 }
 
-function getReconcileAdminDb() {
+function getReconcileAdminDb(): ServiceDbClient {
   return createAdminClient();
+}
+
+function opsFromOptions(options?: ReconcileCallOptions): ReconcileOps | undefined {
+  return options?.ops;
+}
+
+async function resolveOpsOwnerId(sceneId: string, ops: ReconcileOps): Promise<string> {
+  return resolveOwnerIdForScene(sceneId, ops.db);
 }
 
 function inferSeedanceTier(take: TakeWithAsset): "standard" | "fast" {
@@ -186,15 +210,21 @@ export async function rescueCompletedFalTake(input: {
   take: TakeWithAsset;
   requestId: string;
   endpoint: string;
+  ops?: ReconcileOps;
 }): Promise<ReconcileTakeOutcome> {
-  const { take, requestId, endpoint } = input;
+  const { take, requestId, endpoint, ops } = input;
+  const db = ops?.db;
   if (take.status === "ready") {
     return { takeId: take.id, result: "already_ready" };
   }
 
   const queueResult = await getSeedanceQueueResult(endpoint, requestId);
-  const scene = await getScene(take.scene_id);
+  const scene = db
+    ? await getSceneBasic(take.scene_id, db)
+    : await getSceneBasic(take.scene_id);
   if (!scene) throw new Error("Scene not found.");
+
+  const ownerId = ops ? await resolveOpsOwnerId(take.scene_id, ops) : undefined;
 
   const { videoDurationSeconds } = await finalizeTakeFromRemoteVideo({
     takeId: take.id,
@@ -203,14 +233,19 @@ export async function rescueCompletedFalTake(input: {
     modelId: take.model ?? undefined,
     prompt: scene.prompt,
     fallbackDurationSeconds: take.duration_seconds,
+    ops: ops && ownerId ? { db: ops.db, ownerId } : undefined,
   });
 
   const creditsCommitted = await commitOpenTakeReservation(take, videoDurationSeconds);
 
-  await setTakeProviderJob(take.id, {
-    providerRequestId: requestId,
-    providerEndpoint: endpoint,
-  });
+  await setTakeProviderJob(
+    take.id,
+    {
+      providerRequestId: requestId,
+      providerEndpoint: endpoint,
+    },
+    db,
+  );
 
   return {
     takeId: take.id,
@@ -226,6 +261,7 @@ export async function watchFalTakeToCompletion(input: {
   requestId: string;
   endpoint: string;
   revalidatePath?: string;
+  ops?: ReconcileOps;
 }): Promise<ReconcileTakeOutcome> {
   if (activeWatchers.has(input.takeId)) {
     return {
@@ -237,9 +273,10 @@ export async function watchFalTakeToCompletion(input: {
     };
   }
 
+  const db = input.ops?.db;
   activeWatchers.add(input.takeId);
   try {
-    const take = await getTake(input.takeId);
+    const take = await getTake(input.takeId, db);
     if (!take) return { takeId: input.takeId, result: "skipped", reason: "take_not_found" };
     if (take.status === "ready") return { takeId: input.takeId, result: "already_ready" };
 
@@ -248,22 +285,27 @@ export async function watchFalTakeToCompletion(input: {
       return { takeId: take.id, result: "unmatched", reason: "request_not_found_on_fal" };
     }
 
-    await setTakeProviderJob(take.id, {
-      providerRequestId: input.requestId,
-      providerEndpoint: resolved.endpoint,
-    });
+    await setTakeProviderJob(
+      take.id,
+      {
+        providerRequestId: input.requestId,
+        providerEndpoint: resolved.endpoint,
+      },
+      db,
+    );
 
     if (resolved.status === "COMPLETED") {
       return rescueCompletedFalTake({
         take,
         requestId: input.requestId,
         endpoint: resolved.endpoint,
+        ops: input.ops,
       });
     }
 
     if (resolved.status === "FAILED") {
       const error = resolved.error ?? "fal reported job failed";
-      await markTakeFailed(take.id, error);
+      await markTakeFailed(take.id, error, db);
       const refunded = await releaseOpenTakeReservation(take.id);
       return {
         takeId: take.id,
@@ -275,7 +317,7 @@ export async function watchFalTakeToCompletion(input: {
     }
 
     const finalStatus = await waitForSeedanceQueueCompletion(resolved.endpoint, input.requestId);
-    const refreshed = await getTake(take.id);
+    const refreshed = await getTake(take.id, db);
     if (!refreshed) return { takeId: take.id, result: "skipped", reason: "take_not_found" };
 
     if (finalStatus.status === "COMPLETED") {
@@ -283,12 +325,13 @@ export async function watchFalTakeToCompletion(input: {
         take: refreshed,
         requestId: input.requestId,
         endpoint: resolved.endpoint,
+        ops: input.ops,
       });
     }
 
     if (finalStatus.status === "FAILED") {
       const error = finalStatus.error ?? "fal reported job failed";
-      await markTakeFailed(refreshed.id, error);
+      await markTakeFailed(refreshed.id, error, db);
       const refunded = await releaseOpenTakeReservation(refreshed.id);
       return {
         takeId: refreshed.id,
@@ -319,6 +362,7 @@ export function scheduleFalTakeWatcher(input: {
   requestId: string;
   endpoint: string;
   revalidatePath?: string;
+  ops?: ReconcileOps;
 }): void {
   runDetached("watcher", () => watchFalTakeToCompletion(input).then(() => undefined), {
     takeId: input.takeId,
@@ -328,14 +372,11 @@ export function scheduleFalTakeWatcher(input: {
 
 export async function reconcileStuckTake(
   takeId: string,
-  options?: {
-    waitForCompletion?: boolean;
-    manualRequestIds?: Record<string, string>;
-    timestampMatches?: Map<string, { requestId: string; endpoint: string }>;
-    revalidatePath?: string;
-  },
+  options?: ReconcileCallOptions,
 ): Promise<ReconcileTakeOutcome> {
-  const take = await getTake(takeId);
+  const ops = opsFromOptions(options);
+  const db = ops?.db;
+  const take = await getTake(takeId, db);
   if (!take) return { takeId, result: "skipped", reason: "take_not_found" };
   if (take.status === "ready") return { takeId, result: "already_ready" };
   if (take.status !== "pending") {
@@ -361,22 +402,27 @@ export async function reconcileStuckTake(
     return { takeId, result: "unmatched", reason: "request_id_not_found_on_fal" };
   }
 
-  await setTakeProviderJob(take.id, {
-    providerRequestId: discovered.requestId,
-    providerEndpoint: resolved.endpoint,
-  });
+  await setTakeProviderJob(
+    take.id,
+    {
+      providerRequestId: discovered.requestId,
+      providerEndpoint: resolved.endpoint,
+    },
+    db,
+  );
 
   if (resolved.status === "COMPLETED") {
     return rescueCompletedFalTake({
       take,
       requestId: discovered.requestId,
       endpoint: resolved.endpoint,
+      ops,
     });
   }
 
   if (resolved.status === "FAILED") {
     const error = resolved.error ?? "fal reported job failed";
-    await markTakeFailed(take.id, error);
+    await markTakeFailed(take.id, error, db);
     const refunded = await releaseOpenTakeReservation(take.id);
     return {
       takeId: take.id,
@@ -393,6 +439,7 @@ export async function reconcileStuckTake(
       requestId: discovered.requestId,
       endpoint: resolved.endpoint,
       revalidatePath: options?.revalidatePath,
+      ops,
     });
     return {
       takeId: take.id,
@@ -408,6 +455,7 @@ export async function reconcileStuckTake(
     requestId: discovered.requestId,
     endpoint: resolved.endpoint,
     revalidatePath: options?.revalidatePath,
+    ops,
   });
 }
 
@@ -419,10 +467,12 @@ export async function reconcileStuckTakes(input?: {
   waitForCompletion?: boolean;
   manualRequestIds?: Record<string, string>;
   revalidatePath?: string;
+  ops?: ReconcileOps;
 }): Promise<ReconcileTakeOutcome[]> {
   try {
     const minAge = input?.olderThanMinutes ?? STUCK_TAKE_THRESHOLD_MINUTES;
-    const adminDb = getReconcileAdminDb();
+    const adminDb = input?.ops?.db ?? (input?.ops ? getReconcileAdminDb() : undefined);
+    const listDb = adminDb ?? undefined;
     let takes = await listStuckPendingTakes(
       {
         episodeId: input?.episodeId,
@@ -430,7 +480,7 @@ export async function reconcileStuckTakes(input?: {
         olderThanMinutes: input?.takeIds?.length ? 0 : minAge,
         takeIds: input?.takeIds,
       },
-      adminDb,
+      listDb,
     );
 
     if (!input?.takeIds?.length && minAge > 0) {
@@ -442,6 +492,8 @@ export async function reconcileStuckTakes(input?: {
 
     const timestampMatches = await buildTimestampRequestMatches(takes);
 
+    const reconcileOps = input?.ops ?? (adminDb ? { db: adminDb } : undefined);
+
     const outcomes: ReconcileTakeOutcome[] = [];
     for (const take of takes) {
       try {
@@ -451,6 +503,7 @@ export async function reconcileStuckTakes(input?: {
             manualRequestIds: input?.manualRequestIds,
             timestampMatches,
             revalidatePath: input?.revalidatePath,
+            ops: reconcileOps,
           }),
         );
       } catch (error) {
@@ -481,6 +534,7 @@ export function scheduleEpisodeStuckTakeReconcile(input: {
   episodeId: string;
   seriesId: string;
 }): void {
+  const ops: ReconcileOps = { db: getReconcileAdminDb() };
   runDetached(
     "episode sweep",
     async () => {
@@ -488,6 +542,7 @@ export function scheduleEpisodeStuckTakeReconcile(input: {
         episodeId: input.episodeId,
         olderThanMinutes: STUCK_TAKE_THRESHOLD_MINUTES,
         revalidatePath: `/series/${input.seriesId}/episodes/${input.episodeId}`,
+        ops,
       });
     },
     { episodeId: input.episodeId, seriesId: input.seriesId },
@@ -495,17 +550,14 @@ export function scheduleEpisodeStuckTakeReconcile(input: {
 }
 
 export function scheduleStartupStuckTakeSweep(): void {
+  const ops: ReconcileOps = { db: getReconcileAdminDb() };
   runDetached("startup sweep", async () => {
     const outcomes = await reconcileStuckTakes({
       olderThanMinutes: STUCK_TAKE_THRESHOLD_MINUTES,
       waitForCompletion: false,
+      ops,
     });
-    if (outcomes.length) {
-      console.log("[take-reconcile] startup sweep", {
-        count: outcomes.length,
-        summary: outcomes.map((o) => `${o.takeId}:${o.result}`).join(", "),
-      });
-    }
+    console.log(`[take-reconcile] startup sweep: checked ${outcomes.length} takes`);
   });
 }
 

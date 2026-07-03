@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getDbClient } from "@/lib/db/client";
+import type { ServiceDbClient } from "@/lib/db/service-client";
 import {
   TAKE_SELECT_CORE,
   TAKE_SELECT_WITH_PROVIDER,
@@ -40,6 +41,7 @@ export function logTakeProviderSchemaWarning(context: string): void {
 type TakeQueryRow = { data: unknown; error: { message: string } | null };
 
 async function queryTakesWithFallback(
+  supabase: Awaited<ReturnType<typeof getDbClient>>,
   run: (select: string) => PromiseLike<TakeQueryRow>,
 ): Promise<{ data: unknown; error: Error | null }> {
   const primary = await run(TAKE_SELECT_WITH_PROVIDER);
@@ -59,7 +61,7 @@ async function queryTakesWithFallback(
 
 export async function listTakesByScene(sceneId: string): Promise<TakeWithAsset[]> {
   const supabase = await getDbClient();
-  const { data, error } = await queryTakesWithFallback((select) =>
+  const { data, error } = await queryTakesWithFallback(supabase, (select) =>
     supabase
       .from("takes")
       .select(select)
@@ -73,7 +75,7 @@ export async function listTakesByScene(sceneId: string): Promise<TakeWithAsset[]
 export async function listTakesForScenes(sceneIds: string[]): Promise<TakeWithAsset[]> {
   if (!sceneIds.length) return [];
   const supabase = await getDbClient();
-  const { data, error } = await queryTakesWithFallback((select) =>
+  const { data, error } = await queryTakesWithFallback(supabase, (select) =>
     supabase
       .from("takes")
       .select(select)
@@ -84,9 +86,12 @@ export async function listTakesForScenes(sceneIds: string[]): Promise<TakeWithAs
   return (data ?? []) as unknown as TakeWithAsset[];
 }
 
-export async function getTake(id: string): Promise<TakeWithAsset | null> {
-  const supabase = await getDbClient();
-  const { data, error } = await queryTakesWithFallback((select) =>
+export async function getTake(
+  id: string,
+  db?: ServiceDbClient,
+): Promise<TakeWithAsset | null> {
+  const supabase = db ?? (await getDbClient());
+  const { data, error } = await queryTakesWithFallback(supabase, (select) =>
     supabase.from("takes").select(select).eq("id", id).maybeSingle(),
   );
   if (error) throw error;
@@ -148,8 +153,9 @@ export async function updateTake(
       | "provider_submitted_at"
     >
   >,
+  db?: ServiceDbClient,
 ): Promise<Take> {
-  const supabase = await getDbClient();
+  const supabase = db ?? (await getDbClient());
   const { data, error } = await supabase.from("takes").update(patch).eq("id", id).select().single();
   if (error) throw new Error(error.message);
   return data;
@@ -159,21 +165,30 @@ export async function setTakeStarred(id: string, starred: boolean): Promise<Take
   return updateTake(id, { starred });
 }
 
-export async function markTakeFailed(id: string, errorMessage: string): Promise<Take> {
-  return updateTake(id, { status: "failed", error_message: errorMessage });
+export async function markTakeFailed(
+  id: string,
+  errorMessage: string,
+  db?: ServiceDbClient,
+): Promise<Take> {
+  return updateTake(id, { status: "failed", error_message: errorMessage }, db);
 }
 
 export async function markTakeReady(
   id: string,
   assetId: string,
   patch?: Pick<Take, "duration_seconds" | "has_audio">,
+  db?: ServiceDbClient,
 ): Promise<Take> {
-  return updateTake(id, {
-    status: "ready",
-    asset_id: assetId,
-    error_message: null,
-    ...patch,
-  });
+  return updateTake(
+    id,
+    {
+      status: "ready",
+      asset_id: assetId,
+      error_message: null,
+      ...patch,
+    },
+    db,
+  );
 }
 
 export async function setTakeProviderJob(
@@ -183,13 +198,18 @@ export async function setTakeProviderJob(
     providerEndpoint: string;
     providerSubmittedAt?: string;
   },
+  db?: ServiceDbClient,
 ): Promise<Take | null> {
   try {
-    return await updateTake(id, {
-      provider_request_id: input.providerRequestId,
-      provider_endpoint: input.providerEndpoint,
-      provider_submitted_at: input.providerSubmittedAt ?? new Date().toISOString(),
-    });
+    return await updateTake(
+      id,
+      {
+        provider_request_id: input.providerRequestId,
+        provider_endpoint: input.providerEndpoint,
+        provider_submitted_at: input.providerSubmittedAt ?? new Date().toISOString(),
+      },
+      db,
+    );
   } catch (error) {
     if (isTakeProviderSchemaError(error)) {
       logTakeProviderSchemaWarning("setTakeProviderJob skipped");
@@ -206,7 +226,7 @@ export async function listStuckPendingTakes(
     olderThanMinutes?: number;
     takeIds?: string[];
   },
-  db?: Awaited<ReturnType<typeof getDbClient>>,
+  db?: ServiceDbClient,
 ): Promise<TakeWithAsset[]> {
   const supabase = db ?? (await getDbClient());
   const olderThanMinutes = input?.olderThanMinutes ?? 0;
