@@ -1,54 +1,36 @@
 ---
-# ReelWalia Studio — Product & Engineering Context
+# ReelWalia Studio — Project Rules (always apply)
 
-## What this is
-Internal production tool to build serialized AI shows (vertical 9:16 AND horizontal 16:9).
-A SERIES is made of EPISODES, made of SCENES (segments). Each scene generates one or more
-TAKES (image or video). Series share a library of INGREDIENTS (characters, voices, outfits,
-locations, reference media). Episodes have their own AUDIO LINES. A co-pilot (Claude via
-Anthropic API, tool-use) drafts storyboards and edits the sheet. The tool ships EMPTY — the
-user creates all series and content inside it.
+## Environment
+- This project uses **npm**, NOT pnpm. Never create or commit pnpm-lock.yaml. Use package-lock.json.
+- Restart dev with `npm run dev:clean`.
+- Every task ends with: `npm run build` must pass, then `git add / commit / push`.
 
-## Hard requirements
-- Every series and scene supports BOTH orientations: portrait 9:16 and landscape 16:9.
-  Orientation is a first-class DB field. series.default_orientation sets the default;
-  scenes.orientation overrides. Generation MUST pass the correct aspect ratio + resolution.
-- Scenes can BIND ingredient character sheets as identity locks (the @mention pattern);
-  generation prompts inject the bound reference assets.
-- Multi-model generation: image/video providers are swappable per generation, tagged SFW/NSFW.
-  Never hardcode one provider.
+## Database & migrations
+- Supabase migrations: WRITE the migration file, then PRINT the SQL under "RUN THIS MANUALLY IN THE SUPABASE SQL EDITOR". NEVER assume a migration is applied; never auto-apply. Flag it for manual apply.
+- After schema changes that add functions, remember Postgres grants EXECUTE to PUBLIC by default — explicitly REVOKE from PUBLIC/anon/authenticated and GRANT only to service_role for anything sensitive.
 
-## Stack (do not deviate)
-Next.js 15 App Router + TypeScript + Tailwind + pnpm. Supabase (Postgres, Auth, Storage, RLS,
-Edge Functions). Vercel hosting. Anthropic API for co-pilot. Image/video/voice via a
-provider-adapter layer.
+## Credits (money — highest care)
+- The credit ledger is append-only. Balance is derived; never mutate history.
+- All credit movement goes through the RPCs (grant/reserve/commit/release), which are **service_role only**. The browser NEVER calls a credit-moving RPC and never sends the cost — the server computes cost from lib/credits/pricing.ts.
+- Reserve ONCE per logical job; commit at actual on success; release on failure. Retries live INSIDE the job, not per-attempt.
+- Do NOT change reserve/commit/release semantics without explicit instruction.
 
-## Provider-adapter layer
-- lib/ai/image/ adapters (openai-image, seedream, nano-banana, grok), interface:
-  generateImage({ prompt, refImageUrls, aspectRatio, count, resolution, safety }).
-- lib/ai/video/ adapters (seedance, higgsfield), interface:
-  generateVideo({ prompt, startImageUrl, durationSeconds, aspectRatio, resolution }).
-- lib/ai/voice/ adapter: azure only. DO NOT add ElevenLabs.
-- lib/ai/registry.ts lists models { id, label, kind, safety }. Each adapter reads its key
-  from env, is server-only, returns { assetUrls[], providerJobId, costEstimate }.
-- Never fabricate provider API paths. Unknown endpoint = typed stub + clear TODO.
+## Do-not-touch fences (unless explicitly told)
+- Effective-bindings / readiness guard logic (lib/production/effective-bindings.ts, validateSeedanceVideoGeneration).
+- The episode studio three-pane layout and generation panel.
+- Prompt-caching structure of the co-pilot context (cache_control blocks).
+- Auth / magic-link / callback / session code — gate access in the app layout, not the auth flow.
 
-## MIGRATION DISCIPLINE (read every time you touch the schema)
-1. Every schema change is a NEW numbered file in supabase/migrations/. Never edit an applied one.
-2. NEVER assume a migration is applied remotely. The local file existing != the column existing.
-3. At the END of any prompt that changed a migration, print a block titled
-   "⚠️ MANUAL STEP — APPLY IN SUPABASE SQL EDITOR" with the exact copy-pasteable SQL.
-4. Regenerate and commit TypeScript types after schema changes.
+## Background/ops tasks
+- Background sweeps (reconcile, reservation-sweep) run at startup with NO request context — they MUST use the service-role admin client (createAdminClient), never a cookies()/request-scoped client. Wrap detached tasks so they log-and-continue and can never crash a page render.
 
-## Conventions
-Server Components by default; no business logic in components; all Supabase writes go through
-typed helpers in lib/db/. Media in Supabase Storage buckets: assets, references, audio (signed
-URLs via lib/storage/). Ingredients render a mono ref tag ([image10], [voice4], [line92]) used
-as @mention handles.
+## Safety
+- Admins (esp. dagmawiabebe19@gmail.com) must never be locked out by any gate — fail-open for admins.
+- Security-sensitive state (is_admin, approval_status) is writable only by service_role, trigger-protected against self-modification.
 
-## Design language
-Editorial serif display headings, Inter UI, mono for ref tags. Generous whitespace, hairline
-rules, near-black on light-gray. Black primary buttons. Status dots: amber=in progress,
-blue=validated, green=released/approved, gray=open. Light + dark mode. Left sidebar: Home,
-Projects, Shorts (series), AI Training, Utilities, Favorites, New Project, theme toggle, Logout.
+## Working style
+- Audit/diagnose and REPORT before making risky changes. Prefer reverting to a known-good state over forward-debugging under pressure.
+- Keep user-facing copy free of internal jargon (no "stubbed", "TODO", raw errors).
+
 ---
