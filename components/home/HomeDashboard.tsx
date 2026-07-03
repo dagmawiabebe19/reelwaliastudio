@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
-import { Film, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { EpisodeThumbnail } from "@/components/home/EpisodeThumbnail";
 import { RefTag } from "@/components/ui/RefTag";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { CreditBalanceBadge } from "@/components/credits/CreditBalanceBadge";
@@ -38,21 +38,7 @@ function EpisodeRow({ episode }: { episode: HomeRecentEpisode }) {
       href={href}
       className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:bg-surface-elevated"
     >
-      <div className="relative size-14 shrink-0 overflow-hidden rounded-md bg-background">
-        {episode.thumbnailUrl ? (
-          <Image
-            src={episode.thumbnailUrl}
-            alt=""
-            fill
-            className="object-cover"
-            unoptimized
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center text-muted">
-            <Film className="size-5" strokeWidth={1.5} aria-hidden />
-          </div>
-        )}
-      </div>
+      <EpisodeThumbnail url={episode.thumbnailUrl} initial={episode.thumbnailInitial} />
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium text-foreground">{episode.title}</p>
         <p className="truncate text-sm text-muted">{episode.seriesTitle}</p>
@@ -68,9 +54,10 @@ function GeneratingRow({ take }: { take: HomeGeneratingTake }) {
   return (
     <Link
       href={href}
-      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:bg-surface-elevated"
+      className="flex items-center gap-4 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:bg-surface-elevated"
     >
-      <div className="min-w-0">
+      <EpisodeThumbnail url={take.thumbnailUrl} initial={take.thumbnailInitial} />
+      <div className="min-w-0 flex-1">
         <p className="font-medium text-foreground">
           {take.episodeTitle}
           {take.sceneTitle ? (

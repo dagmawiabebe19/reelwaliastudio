@@ -4,7 +4,13 @@ import { getBalance } from "@/lib/credits/balance";
 import type { CreditBalance } from "@/lib/credits/types";
 import { getDbClient } from "@/lib/db/client";
 import { getAsset } from "@/lib/db/assets";
-import { resolveAssetUrl } from "@/lib/storage/resolve-urls";
+import {
+  parseSeriesKeyArtAsset,
+  resolveEpisodeThumbnailUrls,
+  seriesPlaceholderInitial,
+  type StorageAssetRef,
+} from "@/lib/dashboard/episode-thumbnails";
+import { getThumbnailSignedUrl } from "@/lib/storage/signed-url";
 
 export type HomeRecentEpisode = {
   id: string;
@@ -13,6 +19,7 @@ export type HomeRecentEpisode = {
   seriesTitle: string;
   updatedAt: string;
   thumbnailUrl: string | null;
+  thumbnailInitial: string;
 };
 
 export type HomeGeneratingTake = {
@@ -24,6 +31,8 @@ export type HomeGeneratingTake = {
   seriesId: string;
   seriesTitle: string;
   sceneTitle: string | null;
+  thumbnailUrl: string | null;
+  thumbnailInitial: string;
 };
 
 export type HomeDashboardData = {
@@ -37,48 +46,25 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
-async function resolveEpisodeThumbnails(
-  episodeIds: string[],
-): Promise<Map<string, string>> {
-  if (episodeIds.length === 0) return new Map();
-
-  const supabase = await getDbClient();
-  const { data: scenes, error: scenesError } = await supabase
-    .from("scenes")
-    .select("id, episode_id")
-    .in("episode_id", episodeIds);
-
-  if (scenesError || !scenes?.length) return new Map();
-
-  const sceneIds = scenes.map((s) => s.id);
-  const sceneToEpisode = new Map(scenes.map((s) => [s.id, s.episode_id]));
-
-  const { data: takes, error: takesError } = await supabase
-    .from("takes")
-    .select("scene_id, asset_id, created_at, assets:asset_id(bucket, storage_path)")
-    .in("scene_id", sceneIds)
-    .eq("status", "ready")
-    .not("asset_id", "is", null)
-    .order("created_at", { ascending: false });
-
-  if (takesError || !takes?.length) return new Map();
-
-  const thumbByEpisode = new Map<string, string>();
-  for (const take of takes) {
-    const episodeId = sceneToEpisode.get(take.scene_id);
-    if (!episodeId || thumbByEpisode.has(episodeId)) continue;
-    const raw = take.assets;
-    const asset = (Array.isArray(raw) ? raw[0] : raw) as
-      | { bucket: string; storage_path: string }
-      | null
-      | undefined;
-    if (!asset) continue;
-    const url = await resolveAssetUrl(asset);
-    if (url) thumbByEpisode.set(episodeId, url);
-  }
-
-  return thumbByEpisode;
-}
+type EpisodeRow = {
+  id: string;
+  title: string;
+  updated_at: string;
+  series_id: string;
+  series:
+    | {
+        id: string;
+        title: string;
+        thumbnail_asset_id: string | null;
+        key_art: StorageAssetRef | StorageAssetRef[] | null;
+      }
+    | Array<{
+        id: string;
+        title: string;
+        thumbnail_asset_id: string | null;
+        key_art: StorageAssetRef | StorageAssetRef[] | null;
+      }>;
+};
 
 export async function getHomeDashboardData(userId: string): Promise<HomeDashboardData> {
   const supabase = await getDbClient();
@@ -88,7 +74,12 @@ export async function getHomeDashboardData(userId: string): Promise<HomeDashboar
     supabase
       .from("episodes")
       .select(
-        "id, title, updated_at, series_id, series!inner(id, title, projects!inner(owner_id))",
+        `id, title, updated_at, series_id,
+        series!inner(
+          id, title, thumbnail_asset_id,
+          key_art:thumbnail_asset_id(bucket, storage_path, media_type),
+          projects!inner(owner_id)
+        )`,
       )
       .eq("series.projects.owner_id", userId)
       .order("updated_at", { ascending: false })
@@ -114,32 +105,18 @@ export async function getHomeDashboardData(userId: string): Promise<HomeDashboar
   if (episodesResult.error) throw new Error(episodesResult.error.message);
   if (takesResult.error) throw new Error(takesResult.error.message);
 
-  const episodeRows = episodesResult.data ?? [];
-  const thumbMap = await resolveEpisodeThumbnails(episodeRows.map((e) => e.id));
+  const episodeRows = (episodesResult.data ?? []) as unknown as EpisodeRow[];
 
-  const recentEpisodes: HomeRecentEpisode[] = episodeRows.map((row) => {
-    const series = unwrapRelation(row.series as { id: string; title: string } | { id: string; title: string }[]);
-    if (!series) {
-      return {
-        id: row.id,
-        title: row.title,
-        seriesId: row.series_id,
-        seriesTitle: "Series",
-        updatedAt: row.updated_at,
-        thumbnailUrl: thumbMap.get(row.id) ?? null,
-      };
-    }
-    return {
-      id: row.id,
-      title: row.title,
-      seriesId: series.id,
-      seriesTitle: series.title,
-      updatedAt: row.updated_at,
-      thumbnailUrl: thumbMap.get(row.id) ?? null,
-    };
-  });
+  type GeneratingRow = {
+    id: string;
+    status: string;
+    take_number: number;
+    scenes: unknown;
+  };
 
-  const generatingTakes: HomeGeneratingTake[] = (takesResult.data ?? []).flatMap((row) => {
+  const generatingRows = (takesResult.data ?? []) as unknown as GeneratingRow[];
+
+  const parsedGenerating = generatingRows.flatMap((row) => {
     const scene = unwrapRelation(row.scenes as {
       title: string | null;
       episode_id: string;
@@ -156,31 +133,88 @@ export async function getHomeDashboardData(userId: string): Promise<HomeDashboar
             series_id: string;
             series: { id: string; title: string } | { id: string; title: string }[];
           }[];
-    } | {
-      title: string | null;
-      episode_id: string;
-      episodes:
-        | {
-            id: string;
-            title: string;
-            series_id: string;
-            series: { id: string; title: string } | { id: string; title: string }[];
-          }
-        | {
-            id: string;
-            title: string;
-            series_id: string;
-            series: { id: string; title: string } | { id: string; title: string }[];
-          }[];
-    }[]);
+    });
     if (!scene) return [];
-
     const episode = unwrapRelation(scene.episodes);
     if (!episode) return [];
     const series = unwrapRelation(episode.series);
     if (!series) return [];
-
     return [{
+      row,
+      scene,
+      episode,
+      series,
+    }];
+  });
+
+  const seriesKeyArtBySeriesId = new Map<string, StorageAssetRef | null>();
+  const episodeMetaById = new Map<string, { id: string; seriesId: string; seriesTitle: string }>();
+
+  for (const row of episodeRows) {
+    const series = unwrapRelation(row.series);
+    if (!series) continue;
+    episodeMetaById.set(row.id, {
+      id: row.id,
+      seriesId: series.id,
+      seriesTitle: series.title,
+    });
+    if (!seriesKeyArtBySeriesId.has(series.id)) {
+      seriesKeyArtBySeriesId.set(series.id, parseSeriesKeyArtAsset(series.key_art));
+    }
+  }
+
+  for (const item of parsedGenerating) {
+    if (!episodeMetaById.has(item.episode.id)) {
+      episodeMetaById.set(item.episode.id, {
+        id: item.episode.id,
+        seriesId: item.series.id,
+        seriesTitle: item.series.title,
+      });
+    }
+  }
+
+  const missingKeyArtSeriesIds = [
+    ...new Set(
+      [...episodeMetaById.values()]
+        .map((ep) => ep.seriesId)
+        .filter((id) => !seriesKeyArtBySeriesId.has(id)),
+    ),
+  ];
+  if (missingKeyArtSeriesIds.length > 0) {
+    const { data: keyArtRows } = await supabase
+      .from("series")
+      .select("id, key_art:thumbnail_asset_id(bucket, storage_path, media_type)")
+      .in("id", missingKeyArtSeriesIds);
+    for (const row of keyArtRows ?? []) {
+      const parsed = row as { id: string; key_art: StorageAssetRef | StorageAssetRef[] | null };
+      seriesKeyArtBySeriesId.set(parsed.id, parseSeriesKeyArtAsset(parsed.key_art));
+    }
+  }
+
+  const thumbMap = await resolveEpisodeThumbnailUrls({
+    episodes: [...episodeMetaById.values()],
+    seriesKeyArtBySeriesId,
+  });
+
+  const recentEpisodes: HomeRecentEpisode[] = episodeRows.map((row) => {
+    const series = unwrapRelation(row.series);
+    const seriesTitle = series?.title ?? "Series";
+    const seriesId = series?.id ?? row.series_id;
+    const thumb = thumbMap.get(row.id);
+    return {
+      id: row.id,
+      title: row.title,
+      seriesId,
+      seriesTitle,
+      updatedAt: row.updated_at,
+      thumbnailUrl: thumb?.url ?? null,
+      thumbnailInitial: thumb?.initial ?? seriesPlaceholderInitial(seriesTitle),
+    };
+  });
+
+  const generatingTakes: HomeGeneratingTake[] = parsedGenerating.map(({ row, scene, episode, series }) => {
+    const thumb = thumbMap.get(episode.id);
+    return {
       id: row.id,
       status: row.status,
       takeNumber: row.take_number,
@@ -189,7 +223,9 @@ export async function getHomeDashboardData(userId: string): Promise<HomeDashboar
       seriesId: series.id,
       seriesTitle: series.title,
       sceneTitle: scene.title,
-    }];
+      thumbnailUrl: thumb?.url ?? null,
+      thumbnailInitial: thumb?.initial ?? seriesPlaceholderInitial(series.title),
+    };
   });
 
   return { recentEpisodes, generatingTakes, balance };
@@ -202,5 +238,5 @@ export async function resolveSeriesKeyArtUrl(
   if (!thumbnailAssetId) return null;
   const asset = await getAsset(thumbnailAssetId);
   if (!asset) return null;
-  return resolveAssetUrl({ bucket: asset.bucket, storage_path: asset.storage_path });
+  return getThumbnailSignedUrl(asset.bucket, asset.storage_path);
 }
