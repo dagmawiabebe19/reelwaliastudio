@@ -21,11 +21,18 @@ import { getScene, updateScene } from "@/lib/db/scenes";
 import { listTakesByScene, setTakeStarred, verifyTakeOwnership } from "@/lib/db/takes";
 import { reconcileStuckTake } from "@/lib/ai/generation/take-reconcile";
 import { getSignedUrl } from "@/lib/storage/signed-url";
+import { verifyStorageObjectAccess } from "@/lib/storage/verify-access";
 import { resolveAssetUrl } from "@/lib/storage/resolve-urls";
 import { normalizeShotIntent } from "@/lib/production/prompts";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { parseUuid } from "@/lib/validation/uuid";
+import { headers } from "next/headers";
 
 export async function listTakesAction(sceneId: string) {
   try {
+    parseUuid(sceneId, "sceneId");
+    const { verifySceneOwnership } = await import("@/lib/db/scenes");
+    await verifySceneOwnership(sceneId);
     const takes = await listTakesByScene(sceneId);
     const enriched = await Promise.all(
       takes.map(async (take) => ({
@@ -60,14 +67,35 @@ export async function generateTakesAction(input: {
 }) {
   try {
     const userId = await getActiveUserId();
+    parseUuid(input.sceneId, "sceneId");
+    parseUuid(input.seriesId, "seriesId");
+    parseUuid(input.episodeId, "episodeId");
+
+    const headerStore = await headers();
+    const ip =
+      headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      headerStore.get("x-real-ip")?.trim() ||
+      "unknown";
+    const limit = checkRateLimit(`generate:${userId}:${ip}`, 20, 60_000);
+    if (!limit.ok) {
+      return { error: "Too many generation requests. Wait a moment and try again." };
+    }
+
+    const { verifySceneOwnership } = await import("@/lib/db/scenes");
+    await verifySceneOwnership(input.sceneId);
+
     const scene = await getScene(input.sceneId);
     if (!scene) {
+      return { error: "Scene not found." };
+    }
+    if (scene.episode_id !== input.episodeId) {
       return { error: "Scene not found." };
     }
 
     const takeCount = Math.min(5, Math.max(1, Math.round(input.takeCount ?? 1)));
     const { tier, resolution } = resolveQualitySettings(input.quality);
-    const durationSeconds = input.durationSeconds ?? scene.duration_seconds ?? 6;
+    const rawDuration = input.durationSeconds ?? scene.duration_seconds ?? 6;
+    const durationSeconds = Math.min(12, Math.max(4, Math.round(rawDuration)));
     const shotIntent =
       input.shotIntentOverride !== undefined
         ? normalizeShotIntent(input.shotIntentOverride)
@@ -90,7 +118,7 @@ export async function generateTakesAction(input: {
       scenePatch.duration_seconds = durationSeconds;
     }
     if (input.shotIntentOverride !== undefined && shotIntent) {
-      scenePatch.shot_intent = shotIntent;
+      scenePatch.shot_intent = shotIntent.slice(0, 4000);
     }
     if (input.audioModeOverride) {
       scenePatch.audio_mode = seedanceAudioMode;
@@ -153,6 +181,11 @@ export async function clearFailedTakesAction(
   episodeId: string,
 ) {
   try {
+    parseUuid(sceneId, "sceneId");
+    parseUuid(seriesId, "seriesId");
+    parseUuid(episodeId, "episodeId");
+    const { verifySceneOwnership } = await import("@/lib/db/scenes");
+    await verifySceneOwnership(sceneId);
     const deleted = await clearFailedTakesWithCleanup(sceneId, episodeId);
     revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
     return { deleted };
@@ -168,6 +201,10 @@ export async function starTakeAction(
   episodeId: string,
 ) {
   try {
+    parseUuid(takeId, "takeId");
+    parseUuid(seriesId, "seriesId");
+    parseUuid(episodeId, "episodeId");
+    await verifyTakeOwnership(takeId, episodeId);
     await setTakeStarred(takeId, starred);
     revalidatePath(`/series/${seriesId}/episodes/${episodeId}`);
     return { success: true };
@@ -178,6 +215,13 @@ export async function starTakeAction(
 
 export async function getTakeDownloadUrlAction(assetBucket: string, assetPath: string) {
   try {
+    if (!["assets", "references", "audio"].includes(assetBucket)) {
+      return { error: "Invalid bucket." };
+    }
+    if (!assetPath?.trim() || assetPath.length > 1024) {
+      return { error: "Invalid asset path." };
+    }
+    await verifyStorageObjectAccess(assetBucket, assetPath);
     const url = await getSignedUrl(assetBucket, assetPath);
     return { url };
   } catch (error) {
@@ -191,6 +235,21 @@ export async function reconcileTakeAction(
   seriesId: string,
 ) {
   try {
+    const userId = await getActiveUserId();
+    parseUuid(takeId, "takeId");
+    parseUuid(episodeId, "episodeId");
+    parseUuid(seriesId, "seriesId");
+
+    const headerStore = await headers();
+    const ip =
+      headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      headerStore.get("x-real-ip")?.trim() ||
+      "unknown";
+    const limit = checkRateLimit(`reconcile:${userId}:${ip}`, 10, 60_000);
+    if (!limit.ok) {
+      return { error: "Too many reconcile requests. Wait a moment and try again." };
+    }
+
     await verifyTakeOwnership(takeId, episodeId);
     const outcome = await reconcileStuckTake(takeId, {
       waitForCompletion: true,

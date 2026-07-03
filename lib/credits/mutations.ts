@@ -1,7 +1,6 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getDbClient } from "@/lib/db/client";
 import type { CreditLedgerType } from "@/lib/credits/types";
 
 export async function grantCredits(
@@ -33,8 +32,8 @@ export async function reserveCredits(
   reference?: string,
   metadata?: Record<string, unknown>,
 ): Promise<string> {
-  const supabase = await getDbClient();
-  const { data, error } = await supabase.rpc("reserve_credits", {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("reserve_credits", {
     p_user_id: userId,
     p_amount: amount,
     p_reference: reference ?? null,

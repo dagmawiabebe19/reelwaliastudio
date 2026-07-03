@@ -9,6 +9,7 @@ import { createEpisodeExport, updateEpisodeExport } from "@/lib/db/episode-expor
 import { listStarredTakesByEpisode } from "@/lib/db/takes";
 import { getEpisode } from "@/lib/db/episodes";
 import { getSeries } from "@/lib/db/series";
+import { verifyEpisodeOwnership } from "@/lib/db/audio-lines";
 import { getStorageClient } from "@/lib/storage/client";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -20,6 +21,7 @@ async function downloadAssetBuffer(bucket: string, path: string): Promise<Buffer
 }
 
 export async function queueEpisodeFilmExport(episodeId: string, seriesId: string): Promise<string> {
+  await verifyEpisodeOwnership(episodeId);
   const exportJob = await createEpisodeExport(episodeId);
 
   after(async () => {
@@ -54,7 +56,7 @@ async function concatEpisodeStarredTakes(episodeId: string, seriesId: string): P
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  // FLAG: service-role invokes edge function (RLS bypassed server-side). Not user-scoped DB reads.
+  // Server-side invoke uses service_role after ownership was verified at queue time.
   if (supabaseUrl && serviceKey && !isDevAuthBypassActive()) {
     const admin = createAdminClient();
     const { data, error } = await admin.functions.invoke("concat-episode", {

@@ -3,6 +3,9 @@ import { queueEpisodeFilmExport } from "@/lib/export/episode-film";
 import { getLatestEpisodeExport } from "@/lib/db/episode-exports";
 import { getAsset } from "@/lib/db/assets";
 import { getSignedUrl } from "@/lib/storage/signed-url";
+import { getActiveUserId } from "@/lib/auth/getUser";
+import { verifyEpisodeOwnership } from "@/lib/db/audio-lines";
+import { parseUuid } from "@/lib/validation/uuid";
 
 export const runtime = "nodejs";
 
@@ -12,25 +15,33 @@ interface RouteParams {
 
 export async function POST(request: Request, { params }: RouteParams) {
   try {
+    await getActiveUserId();
     const { episodeId } = await params;
+    parseUuid(episodeId, "episodeId");
+    await verifyEpisodeOwnership(episodeId);
+
     const { seriesId } = (await request.json()) as { seriesId: string };
     if (!seriesId) {
       return NextResponse.json({ error: "seriesId required." }, { status: 400 });
     }
+    parseUuid(seriesId, "seriesId");
 
     const exportId = await queueEpisodeFilmExport(episodeId, seriesId);
     return NextResponse.json({ exportId, status: "pending" });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to start export." },
-      { status: 400 },
-    );
+    const message = error instanceof Error ? error.message : "Failed to start export.";
+    const status = message === "Not authenticated" ? 401 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
 export async function GET(_request: Request, { params }: RouteParams) {
   try {
+    await getActiveUserId();
     const { episodeId } = await params;
+    parseUuid(episodeId, "episodeId");
+    await verifyEpisodeOwnership(episodeId);
+
     const latest = await getLatestEpisodeExport(episodeId);
     if (!latest) {
       return NextResponse.json({ status: "none" });
@@ -51,9 +62,8 @@ export async function GET(_request: Request, { params }: RouteParams) {
       downloadUrl,
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to get export status." },
-      { status: 400 },
-    );
+    const message = error instanceof Error ? error.message : "Failed to get export status.";
+    const status = message === "Not authenticated" ? 401 : 400;
+    return NextResponse.json({ error: message }, { status });
   }
 }

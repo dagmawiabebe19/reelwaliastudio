@@ -197,3 +197,11 @@ export function effectiveOrientation(
 ): Orientation {
   return sceneOrientation ?? seriesDefault;
 }
+
+export async function verifySceneOwnership(sceneId: string): Promise<void> {
+  const scene = await getScene(sceneId);
+  if (!scene) throw new Error("Scene not found.");
+
+  const { verifyEpisodeOwnership } = await import("@/lib/db/audio-lines");
+  await verifyEpisodeOwnership(scene.episode_id);
+}
