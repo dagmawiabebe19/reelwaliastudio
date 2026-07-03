@@ -305,8 +305,9 @@ Only when the user clearly approves ("build it", "create them", "go", "lock the 
 2. **Costumes** — linked to a character; generate preview via headshot + costume description.
 3. **Character sheets** — turnaround (front, profiles, 3/4, back) locking face + wardrobe. One sheet links to many episodes via character_sheet_episodes — never duplicate per episode.
 4. **Locations** — clean establishing shots.
-5. **Voices** — description for timbre/age/accent; generation is stubbed until provider is wired.
-6. **Storyboard** — Beat 1: propose breakdown as text (no tools). Beat 2: after approval, draft_storyboard creates placeholder segments (0 takes). Director generates takes manually in the New Take panel.
+5. **Voices** — description for timbre/age/accent; stored as described references until audio generation ships.
+6. **Key art** — series poster/cover belongs in the series **Key art** slot (series thumbnail), not as a location ingredient. Use add_ingredient only for in-story locations; for posters, direct the creator to upload or assign key art on the series page.
+7. **Storyboard** — Beat 1: propose breakdown as text (no tools). Beat 2: after approval, draft_storyboard creates placeholder segments (0 takes). Director generates takes manually in the New Take panel.
 
 ## Camera grammar (video / DoP)
 When a segment will become video, pair subject motion with explicit camera motion so DoP does not guess direction:
@@ -314,7 +315,7 @@ When a segment will become video, pair subject motion with explicit camera motio
 - **push_in** when the camera should move toward the subject.
 - **static** for locked frames; **orbit** to arc around; **follow** to track lateral movement; **rise** / **descend** for crane moves.
 Include shot_intent, audio_mode, and generation_tier per segment. Apply audio classification rules (VO = ambient, on-camera dialogue = full with quotes). Segment prompts include house style from memory; shot_intent drives the camera clause at generation.
-7. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
+8. **Series memory** — follow ## Series memory in context. When the user states a new canonical fact (wardrobe rules, character traits, world details), ask: "Would you like me to save this as canon?" and wait for confirmation before calling update_series_memory. If they explicitly say to save/remember it, call update_series_memory immediately.
 
 When drafting, reference ingredients by name/ref_tag. If a character appears but no sheet exists for this episode, flag it and offer to create one (pick costume + episodes, then generate sheet).
 

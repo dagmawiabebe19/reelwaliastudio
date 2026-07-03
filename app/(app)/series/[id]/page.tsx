@@ -10,6 +10,7 @@ import {
   buildCopilotCharacterSheets,
   buildProductionLibraryData,
 } from "@/lib/production/library-data";
+import { resolveSeriesKeyArtUrl } from "@/lib/dashboard/home-data";
 import { resolveAssetUrls } from "@/lib/storage/resolve-urls";
 import { shouldShowOnboarding } from "@/lib/onboarding/status";
 
@@ -35,7 +36,10 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
 
   if (!series) notFound();
 
-  const chatMessages = await listChatMessages(chatSession.id);
+  const [chatMessages, keyArtUrl] = await Promise.all([
+    listChatMessages(chatSession.id),
+    resolveSeriesKeyArtUrl(series.thumbnail_asset_id),
+  ]);
 
   const ingredientsWithUrls = await resolveAssetUrls(
     ingredientsRaw.map((i) => ({
@@ -60,6 +64,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     assetUrl: i.assetUrl,
     mediaType: i.assets?.media_type ?? null,
     characterId: i.character_id,
+    createdAt: i.created_at,
     generationStatus: i.generation_status,
     generationError: i.generation_error,
   }));
@@ -73,6 +78,15 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     episodeCount: activeEpisodes.length + archivedEpisodes.length,
   });
 
+  const keyArtPickableIngredients = ingredients.filter(
+    (i) =>
+      i.assetUrl &&
+      (i.kind === "location" ||
+        i.kind === "reference" ||
+        i.kind === "character" ||
+        i.kind === "prop"),
+  );
+
   return (
     <SeriesWorkspace
       series={{
@@ -84,7 +98,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         brief_markdown: series.brief_markdown,
         memory_markdown: series.memory_markdown,
       }}
-      stats={stats}
+      stats={{ episodeCount: stats.episodeCount }}
       counts={counts}
       ingredients={ingredients}
       costumesByCharacter={costumesByCharacter}
@@ -102,6 +116,8 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         tool_result: m.tool_result as Record<string, unknown> | null,
       }))}
       showOnboardingPlanEpisode={showOnboardingPlanEpisode}
+      keyArtUrl={keyArtUrl}
+      keyArtPickableIngredients={keyArtPickableIngredients}
     />
   );
 }

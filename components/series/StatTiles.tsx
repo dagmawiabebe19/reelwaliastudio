@@ -2,26 +2,26 @@ import type { Orientation } from "@/lib/db/types";
 
 interface StatTilesProps {
   episodeCount: number;
-  ingredientCount: number;
-  runtimeSeconds: number | null;
+  characterCount: number;
+  locationCount: number;
+  voiceCount: number;
 }
 
-function formatRuntime(seconds: number | null) {
-  if (seconds == null) return "—";
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${String(secs).padStart(2, "0")}`;
-}
-
-export function StatTiles({ episodeCount, ingredientCount, runtimeSeconds }: StatTilesProps) {
+export function StatTiles({
+  episodeCount,
+  characterCount,
+  locationCount,
+  voiceCount,
+}: StatTilesProps) {
   const tiles = [
     { label: "Episodes", value: String(episodeCount) },
-    { label: "Ingredients", value: String(ingredientCount) },
-    { label: "Runtime", value: formatRuntime(runtimeSeconds) },
+    { label: "Characters", value: String(characterCount) },
+    { label: "Locations", value: String(locationCount) },
+    { label: "Voices", value: String(voiceCount) },
   ];
 
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       {tiles.map((tile) => (
         <div
           key={tile.label}

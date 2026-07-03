@@ -6,19 +6,12 @@ import { BrandWordmark } from "@/components/brand/BrandWordmark";
 import { CreditBalanceBadge } from "@/components/credits/CreditBalanceBadge";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import {
+  ADMIN_NAV_ITEM,
+  COMING_SOON_NAV_HIDDEN,
+  PRIMARY_NAV_ITEMS,
+} from "@/lib/nav/constants";
 import type { CreditBalance } from "@/lib/credits/types";
-
-const navItems = [
-  { href: "/", label: "Home" },
-  { href: "/projects", label: "Projects" },
-  { href: "/series", label: "Shorts" },
-  { href: "/credits", label: "Credits" },
-  { href: "/ai-training", label: "AI Training" },
-  { href: "/utilities", label: "Utilities" },
-  { href: "/favorites", label: "Favorites" },
-];
-
-const adminNavItem = { href: "/admin/usage", label: "Admin usage" };
 
 interface SidebarProps {
   userEmail?: string | null;
@@ -27,9 +20,26 @@ interface SidebarProps {
   onNavigate?: () => void;
 }
 
+function isNavActive(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/";
+  if (href === "/projects") {
+    return (
+      pathname === "/projects" ||
+      (pathname.startsWith("/projects/") && pathname !== "/projects/new") ||
+      /^\/series\/[^/]+/.test(pathname)
+    );
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function Sidebar({ userEmail, creditBalance, isAdmin = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+
+  const navItems = [
+    ...PRIMARY_NAV_ITEMS,
+    ...(isAdmin ? [ADMIN_NAV_ITEM] : []),
+  ].filter((item) => !COMING_SOON_NAV_HIDDEN.has(item.href));
 
   async function handleLogout() {
     const supabase = createClient();
@@ -45,14 +55,8 @@ export function Sidebar({ userEmail, creditBalance, isAdmin = false, onNavigate 
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-6">
-        {[...navItems, ...(isAdmin ? [adminNavItem] : [])].map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : item.href === "/projects"
-                ? pathname === "/projects" ||
-                  (pathname.startsWith("/projects/") && pathname !== "/projects/new")
-                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+        {navItems.map((item) => {
+          const active = isNavActive(pathname, item.href);
 
           return (
             <Link
@@ -60,7 +64,7 @@ export function Sidebar({ userEmail, creditBalance, isAdmin = false, onNavigate 
               href={item.href}
               onClick={onNavigate}
               className={`block rounded-md px-3 py-2 text-sm transition-colors ${
-                isActive
+                active
                   ? "bg-accent-muted font-medium text-accent"
                   : "text-muted hover:bg-surface-elevated hover:text-accent"
               }`}
@@ -90,12 +94,18 @@ export function Sidebar({ userEmail, creditBalance, isAdmin = false, onNavigate 
             onClick={onNavigate}
             className="block rounded-md border border-border bg-surface-elevated px-3 py-2 transition-colors hover:border-accent/40"
           >
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Credits</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              {isAdmin ? "Admin usage" : "Credits"}
+            </p>
             {isAdmin ? (
-              <p className="mt-0.5 text-[10px] font-medium text-accent">Admin — unlimited</p>
+              <p className="mt-0.5 text-[10px] font-medium text-accent">Unlimited</p>
             ) : null}
-            <p className={`mt-0.5 ${creditBalance.available < 0 ? "text-amber-600" : ""}`}>
-              <CreditBalanceBadge available={creditBalance.available} compact />
+            <p className={`mt-0.5 ${!isAdmin && creditBalance.available < 0 ? "text-amber-600" : ""}`}>
+              <CreditBalanceBadge
+                available={creditBalance.available}
+                adminMode={isAdmin}
+                compact
+              />
             </p>
             {creditBalance.reserved > 0 ? (
               <p className="mt-0.5 text-xs text-muted">

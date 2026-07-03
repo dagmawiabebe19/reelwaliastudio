@@ -1,25 +1,21 @@
-import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
-import { RefTag } from "@/components/ui/RefTag";
-import { StatusDot } from "@/components/ui/StatusDot";
+import { HomeDashboard } from "@/components/home/HomeDashboard";
+import { requireUser } from "@/lib/auth/getUser";
+import { isAdmin } from "@/lib/auth/isAdmin";
+import { getHomeDashboardData } from "@/lib/dashboard/home-data";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const user = await requireUser();
+  const [data, userIsAdmin] = await Promise.all([
+    getHomeDashboardData(user.id),
+    isAdmin(user.id),
+  ]);
+
   return (
-    <PlaceholderPage
-      title="Home"
-      description="Your serialized AI production workspace. Create series, episodes, and scenes — portrait and landscape."
-    >
-      <div className="space-y-8">
-        <div className="flex flex-wrap gap-6">
-          <StatusDot variant="open" label="Open" />
-          <StatusDot variant="in_progress" label="In progress" />
-          <StatusDot variant="validated" label="Validated" />
-          <StatusDot variant="released" label="Released" />
-        </div>
-        <p className="text-sm text-muted">
-          Reference ingredients with mono tags like{" "}
-          <RefTag tag="image10" /> <RefTag tag="voice4" /> <RefTag tag="line92" />.
-        </p>
-      </div>
-    </PlaceholderPage>
+    <HomeDashboard
+      recentEpisodes={data.recentEpisodes}
+      generatingTakes={data.generatingTakes}
+      balance={data.balance}
+      isAdmin={userIsAdmin}
+    />
   );
 }

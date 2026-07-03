@@ -8,7 +8,7 @@ export default function NewProjectPage() {
     <section>
       <PageHeader
         title="New Project"
-        description="Start a new production project for your serialized shows."
+        description="Start a new project — add series and episodes inside it."
         actions={
           <Link
             href="/projects"

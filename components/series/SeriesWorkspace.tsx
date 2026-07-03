@@ -12,6 +12,7 @@ import {
   SeriesStudioOutputPanel,
   useSeriesStudioOutput,
 } from "@/components/series/SeriesStudioShell";
+import { KeyArtSection } from "@/components/series/KeyArtSection";
 import { IngredientsSection } from "@/components/series/ingredients/IngredientsSection";
 import {
   EpisodesSection,
@@ -49,8 +50,6 @@ interface SeriesWorkspaceProps {
   };
   stats: {
     episodeCount: number;
-    ingredientCount: number;
-    runtimeSeconds: number | null;
   };
   counts: {
     total: number;
@@ -77,6 +76,8 @@ interface SeriesWorkspaceProps {
   archivedEpisodes: EpisodeCardData[];
   chatMessages: ChatMessageData[];
   showOnboardingPlanEpisode?: boolean;
+  keyArtUrl?: string | null;
+  keyArtPickableIngredients?: IngredientCardData[];
 }
 
 export function SeriesWorkspace({
@@ -92,6 +93,8 @@ export function SeriesWorkspace({
   archivedEpisodes,
   chatMessages,
   showOnboardingPlanEpisode = false,
+  keyArtUrl = null,
+  keyArtPickableIngredients = [],
 }: SeriesWorkspaceProps) {
   const [view, setView] = useState<"classic" | "studio">("classic");
   const [tab, setTab] = useState<Tab>(showOnboardingPlanEpisode ? "episodes" : "ingredients");
@@ -212,11 +215,17 @@ export function SeriesWorkspace({
             <OrientationToggle seriesId={series.id} value={series.default_orientation} />
           </div>
         </div>
-        <div className="mt-10">
+        <div className="mt-10 space-y-6">
           <StatTiles
             episodeCount={stats.episodeCount}
-            ingredientCount={stats.ingredientCount}
-            runtimeSeconds={stats.runtimeSeconds}
+            characterCount={counts.characters}
+            locationCount={counts.locations}
+            voiceCount={counts.voices}
+          />
+          <KeyArtSection
+            seriesId={series.id}
+            keyArtUrl={keyArtUrl}
+            pickableIngredients={keyArtPickableIngredients}
           />
         </div>
       </header>

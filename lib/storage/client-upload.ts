@@ -99,3 +99,48 @@ export async function uploadIngredientFromClient(
 
   report(100);
 }
+
+export async function uploadKeyArtFromClient(
+  seriesId: string,
+  file: File,
+  onProgress?: (progress: UploadProgress) => void,
+): Promise<{ width: number | null; height: number | null }> {
+  const report = (percent: number) => {
+    onProgress?.({ fileName: file.name, percent });
+  };
+
+  report(0);
+
+  const { prepareKeyArtUploadAction, finalizeKeyArtUploadAction } = await import(
+    "@/app/(app)/series/[id]/key-art-actions"
+  );
+
+  const prepare = await prepareKeyArtUploadAction(seriesId, {
+    filename: file.name,
+    contentType: file.type,
+    contentLength: file.size,
+  });
+
+  if ("error" in prepare) {
+    throw new Error(prepare.error);
+  }
+
+  await uploadDirectToStorage(prepare.bucket, prepare.storagePath, file, report);
+
+  const dimensions = await readImageDimensions(file);
+
+  const finalize = await finalizeKeyArtUploadAction(seriesId, {
+    bucket: prepare.bucket,
+    storagePath: prepare.storagePath,
+    contentType: file.type,
+    width: dimensions?.width ?? null,
+    height: dimensions?.height ?? null,
+  });
+
+  if ("error" in finalize) {
+    throw new Error(finalize.error);
+  }
+
+  report(100);
+  return { width: dimensions?.width ?? null, height: dimensions?.height ?? null };
+}

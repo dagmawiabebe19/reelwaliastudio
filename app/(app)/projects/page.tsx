@@ -14,7 +14,7 @@ export default async function ProjectsPage() {
     <section>
       <PageHeader
         title="Projects"
-        description="Organize your shows and production pipelines."
+        description="Organize projects — each project contains one or more series."
         actions={
           <Link
             href="/projects/new"

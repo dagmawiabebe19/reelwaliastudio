@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, Mic } from "lucide-react";
 import { generateLocationAction, retryIngredientAction } from "@/app/(app)/series/[id]/production-actions";
-import { generateVoiceAction } from "@/app/(app)/series/[id]/voice-actions";
+import { generateVoiceAction, mergeVoicesAction } from "@/app/(app)/series/[id]/voice-actions";
 import {
   cleanupFailedIngredientsAction,
   deleteIngredientWithCleanupAction,
@@ -19,6 +19,7 @@ import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { IngredientCardData } from "@/lib/production/types";
+import { detectVoiceDuplicateGroups } from "@/lib/series/voice-dedupe";
 import { IngredientCard } from "./IngredientsSection";
 import { IngredientDeleteButton } from "./IngredientDeleteButton";
 import { FailedGenerationControls } from "./FailedGenerationControls";
@@ -143,13 +144,96 @@ interface VoicesSectionProps {
   characters: IngredientCardData[];
 }
 
+function groupVoicesByCharacter(
+  voices: IngredientCardData[],
+  characters: IngredientCardData[],
+): { label: string; voices: IngredientCardData[] }[] {
+  const charMap = new Map(characters.map((c) => [c.id, c.name]));
+  const byChar = new Map<string | null, IngredientCardData[]>();
+
+  for (const voice of voices) {
+    const key = voice.characterId ?? null;
+    const list = byChar.get(key) ?? [];
+    list.push(voice);
+    byChar.set(key, list);
+  }
+
+  const groups: { label: string; voices: IngredientCardData[] }[] = [];
+
+  for (const char of characters) {
+    const group = byChar.get(char.id);
+    if (group?.length) {
+      groups.push({
+        label: char.name,
+        voices: [...group].sort((a, b) => a.name.localeCompare(b.name)),
+      });
+      byChar.delete(char.id);
+    }
+  }
+
+  const unlinked = byChar.get(null);
+  if (unlinked?.length) {
+    groups.push({
+      label: "Unlinked",
+      voices: [...unlinked].sort((a, b) => a.name.localeCompare(b.name)),
+    });
+  }
+
+  for (const [charId, group] of byChar) {
+    if (!charId || !group.length) continue;
+    groups.push({
+      label: charMap.get(charId) ?? "Unknown character",
+      voices: [...group].sort((a, b) => a.name.localeCompare(b.name)),
+    });
+  }
+
+  return groups;
+}
+
 export function VoicesSection({ seriesId, voices, characters }: VoicesSectionProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+
+  const characterNames = useMemo(
+    () => new Map(characters.map((c) => [c.id, c.name])),
+    [characters],
+  );
+
+  const duplicateGroups = useMemo(() => {
+    const rows = voices.map((v) => ({
+      id: v.id,
+      name: v.name,
+      characterId: v.characterId ?? null,
+      ref_tag: v.ref_tag,
+      createdAt: v.createdAt ?? new Date(0).toISOString(),
+    }));
+    return detectVoiceDuplicateGroups(rows, characterNames);
+  }, [voices, characterNames]);
+
+  const voiceGroups = useMemo(
+    () => groupVoicesByCharacter(voices, characters),
+    [voices, characters],
+  );
 
   const failedVoiceCount = voices.filter((v) => v.generationStatus === "failed").length;
+
+  function confirmAndMerge(group: (typeof duplicateGroups)[number]) {
+    const keep = group.voices.find((v) => v.id === group.keepId)!;
+    const mergeList = group.voices.filter((v) => group.mergeIds.includes(v.id));
+    const lines = [
+      `Keep: ${keep.name} (${keep.ref_tag})`,
+      "Merge and remove:",
+      ...mergeList.map((v) => `  · ${v.name} (${v.ref_tag})`),
+    ];
+    if (!window.confirm(`${group.label}\n\n${lines.join("\n")}\n\nContinue?`)) return;
+
+    startTransition(async () => {
+      const result = await mergeVoicesAction(seriesId, group.keepId, group.mergeIds);
+      if (result.error) setError(result.error);
+      else router.refresh();
+    });
+  }
 
   return (
     <section className="space-y-4">
@@ -182,57 +266,80 @@ export function VoicesSection({ seriesId, voices, characters }: VoicesSectionPro
             </button>
           ) : null}
         <form
-          className="flex flex-wrap items-end gap-2"
+          className="flex flex-col items-end gap-1"
           onSubmit={(e) => {
             e.preventDefault();
             setError(null);
-            setInfo(null);
             startTransition(async () => {
               const result = await generateVoiceAction(seriesId, new FormData(e.currentTarget));
               if (result.error) setError(result.error);
-              else {
-                if (result.stub) setInfo(result.error ?? "Voice provider not configured.");
-                router.refresh();
-              }
+              else router.refresh();
             });
           }}
         >
-          <input
-            name="name"
-            required
-            placeholder="Voice name"
-            className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-sm"
-          />
-          <input
-            name="description"
-            required
-            placeholder="Timbre, age, accent, pace…"
-            className="min-w-[14rem] rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-sm"
-          />
-          <select
-            name="characterId"
-            className="rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-sm"
-            defaultValue=""
-          >
-            <option value="">No character link</option>
-            {characters.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
-          >
-            Add voice (generation stubbed)
-          </button>
+          <div className="flex flex-wrap items-end gap-2">
+            <input
+              name="name"
+              required
+              placeholder="Voice name"
+              className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-sm"
+            />
+            <input
+              name="description"
+              required
+              placeholder="Timbre, age, accent, pace…"
+              className="min-w-[14rem] rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-sm"
+            />
+            <select
+              name="characterId"
+              className="rounded-md border border-border bg-surface-elevated px-2 py-1.5 text-sm"
+              defaultValue=""
+            >
+              <option value="">No character link</option>
+              {characters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              disabled={pending}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              Add voice
+            </button>
+          </div>
+          <p className="text-xs text-muted">Described voice — audio generation coming soon.</p>
         </form>
         </div>
       </div>
+
+      {duplicateGroups.length > 0 ? (
+        <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <p className="text-sm font-medium text-foreground">Possible duplicate voices</p>
+          {duplicateGroups.map((group) => (
+            <div
+              key={group.id}
+              className="flex flex-wrap items-center justify-between gap-2 text-sm"
+            >
+              <span className="text-muted">
+                {group.label} ({group.voices.length} voices)
+              </span>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => confirmAndMerge(group)}
+                className="rounded-md border border-border px-2 py-1 text-xs hover:bg-surface-elevated disabled:opacity-50"
+              >
+                Merge duplicates
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {error ? <p className="text-sm text-accent">{error}</p> : null}
-      {info ? <p className="text-sm text-muted">{info}</p> : null}
       {voices.length === 0 ? (
         <EmptyState
           variant="panel"
@@ -241,51 +348,65 @@ export function VoicesSection({ seriesId, voices, characters }: VoicesSectionPro
           description="Add a voice description to reference in segment prompts."
         />
       ) : (
-        <div className="grid grid-cols-2 gap-4">
-          {voices.map((voice) => (
-            <article
-              key={voice.id}
-              className="rounded-lg border border-border bg-surface-elevated p-4"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="font-medium">{voice.name}</h3>
-                <div className="flex items-center gap-1">
-                  <RefTag tag={voice.ref_tag} />
-                  {voice.generationStatus === "failed" ? (
-                    <FailedGenerationControls
-                      size="md"
-                      disabled={pending}
-                      onRetry={() => {
-                        startTransition(async () => {
-                          const result = await retryIngredientAction(voice.id, seriesId);
-                          if (typeof result.error === "string") setError(result.error);
-                          else router.refresh();
-                        });
-                      }}
-                      fetchDeletePreview={() =>
-                        getIngredientDeletePreviewAction(voice.id, seriesId)
-                      }
-                      onDelete={() => deleteIngredientWithCleanupAction(voice.id, seriesId)}
-                      onSuccess={() => router.refresh()}
+        <div className="space-y-8">
+          {voiceGroups.map((group) => (
+            <div key={group.label} className="space-y-3">
+              <h3 className="text-sm font-medium uppercase tracking-wide text-muted">
+                {group.label}
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                {group.voices.map((voice) => (
+                  <article
+                    key={voice.id}
+                    className="rounded-lg border border-border bg-surface-elevated p-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="font-medium">{voice.name}</h3>
+                      <div className="flex items-center gap-1">
+                        <RefTag tag={voice.ref_tag} />
+                        {voice.generationStatus === "failed" ? (
+                          <FailedGenerationControls
+                            size="md"
+                            disabled={pending}
+                            onRetry={() => {
+                              startTransition(async () => {
+                                const result = await retryIngredientAction(voice.id, seriesId);
+                                if (typeof result.error === "string") setError(result.error);
+                                else router.refresh();
+                              });
+                            }}
+                            fetchDeletePreview={() =>
+                              getIngredientDeletePreviewAction(voice.id, seriesId)
+                            }
+                            onDelete={() => deleteIngredientWithCleanupAction(voice.id, seriesId)}
+                            onSuccess={() => router.refresh()}
+                          />
+                        ) : (
+                          <IngredientDeleteButton ingredientId={voice.id} seriesId={seriesId} />
+                        )}
+                      </div>
+                    </div>
+                    {voice.characterId ? (
+                      <p className="mt-1 text-xs text-muted">
+                        Character: {characterNames.get(voice.characterId) ?? "—"}
+                      </p>
+                    ) : null}
+                    {voice.description ? (
+                      <p className="mt-2 text-sm text-muted">{voice.description}</p>
+                    ) : null}
+                    <GenerationStatusLine
+                      status={voice.generationStatus}
+                      error={voice.generationError}
                     />
-                  ) : (
-                    <IngredientDeleteButton ingredientId={voice.id} seriesId={seriesId} />
-                  )}
-                </div>
+                    {voice.generationStatus && voice.generationStatus !== "ready" ? (
+                      <div className="mt-2">
+                        <StatusDot variant="open" label={voice.generationStatus} />
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
               </div>
-              {voice.description ? (
-                <p className="mt-2 text-sm text-muted">{voice.description}</p>
-              ) : null}
-              <GenerationStatusLine
-                status={voice.generationStatus}
-                error={voice.generationError}
-              />
-              {voice.generationStatus && voice.generationStatus !== "ready" ? (
-                <div className="mt-2">
-                  <StatusDot variant="open" label={voice.generationStatus} />
-                </div>
-              ) : null}
-            </article>
+            </div>
           ))}
         </div>
       )}

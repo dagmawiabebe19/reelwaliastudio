@@ -38,6 +38,7 @@ export type IngredientCardData = {
   assetUrl: string | null;
   mediaType: string | null;
   characterId?: string | null;
+  createdAt?: string;
   generationStatus?: string | null;
   generationError?: string | null;
 };

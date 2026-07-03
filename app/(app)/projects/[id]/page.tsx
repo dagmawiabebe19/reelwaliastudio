@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { notFound } from "next/navigation";
-import { CreateSeriesForm } from "@/components/series/CreateSeriesForm";
+import { CollapsibleCreateSeriesForm } from "@/components/series/CollapsibleCreateSeriesForm";
 import { SeriesList } from "@/components/series/SeriesList";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { getActiveUserId } from "@/lib/auth/getUser";
@@ -38,14 +38,13 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
           </Link>
         }
       />
-      <div className="mb-10 grid grid-cols-2 gap-8">
-        <CreateSeriesForm projectId={project.id} />
-        <div className="rounded-lg border border-border bg-surface px-6 py-5">
-          <p className="text-xs uppercase tracking-widest text-muted">Series count</p>
-          <p className="mt-2 font-display text-4xl text-foreground">{series.length}</p>
-        </div>
-      </div>
       <SeriesList series={series} showOnboarding={showOnboarding} />
+      <div className="mt-8 border-t border-border pt-8">
+        <CollapsibleCreateSeriesForm
+          projectId={project.id}
+          defaultExpanded={showOnboarding}
+        />
+      </div>
     </section>
   );
 }
