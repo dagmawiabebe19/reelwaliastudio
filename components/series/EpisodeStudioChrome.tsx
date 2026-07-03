@@ -12,14 +12,17 @@ import {
 import { BrandWordmark } from "@/components/brand/BrandWordmark";
 import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvider";
 import { EpisodeFilmExportButton } from "@/components/series/export/EpisodeFilmExportButton";
+import { EpisodeSwitcher } from "@/components/series/EpisodeSwitcher";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useStudioNav } from "@/components/sidebar/studio-nav-context";
 import { ICON_MD, ICON_STROKE } from "@/components/ui/icon";
+import type { Episode } from "@/lib/db/types";
 
 interface EpisodeStudioChromeProps {
   seriesId: string;
   seriesTitle: string;
   episodeId: string;
-  episodeTitle: string;
+  episodes: Episode[];
   audioLineCount: number;
   showAudio: boolean;
   onToggleAudio: () => void;
@@ -32,7 +35,7 @@ export function EpisodeStudioChrome({
   seriesId,
   seriesTitle,
   episodeId,
-  episodeTitle,
+  episodes,
   audioLineCount,
   showAudio,
   onToggleAudio,
@@ -63,10 +66,8 @@ export function EpisodeStudioChrome({
         </Link>
       </div>
 
-      <div className="min-w-0 flex-1 text-center">
-        <p className="studio-column-heading-sm truncate font-display text-foreground" title={episodeTitle}>
-          {episodeTitle}
-        </p>
+      <div className="flex min-w-0 flex-1 justify-center px-2">
+        <EpisodeSwitcher seriesId={seriesId} episodeId={episodeId} episodes={episodes} />
       </div>
 
       <div className="studio-toolbar shrink-0">
@@ -87,6 +88,7 @@ export function EpisodeStudioChrome({
           Audio{audioLineCount > 0 ? ` (${audioLineCount})` : ""}
         </button>
         <EpisodeFilmExportButton episodeId={episodeId} seriesId={seriesId} compact />
+        <ThemeToggle variant="compact" />
         <span className="studio-toolbar-divider" aria-hidden />
         <button type="button" onClick={toggleCollapsed} className="studio-toolbar-btn">
           {prefs.collapsed ? (

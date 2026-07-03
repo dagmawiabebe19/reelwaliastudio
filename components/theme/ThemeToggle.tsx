@@ -1,38 +1,43 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
+import { useTheme } from "@/hooks/useTheme";
+import { ICON_MD, ICON_STROKE } from "@/components/ui/icon";
 
-type Theme = "light" | "dark";
-
-function getInitialTheme(): Theme {
-  if (typeof window === "undefined") return "dark";
-  const stored = window.localStorage.getItem("theme");
-  if (stored === "light" || stored === "dark") return stored;
-  return "dark";
+interface ThemeToggleProps {
+  /** Sidebar footer button (default) or compact toolbar icon. */
+  variant?: "sidebar" | "compact";
+  className?: string;
 }
 
-export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("dark");
+export function ThemeToggle({ variant = "sidebar", className = "" }: ThemeToggleProps) {
+  const { theme, toggleTheme } = useTheme();
+  const label = theme === "light" ? "Switch to dark mode" : "Switch to light mode";
 
-  useEffect(() => {
-    const initial = getInitialTheme();
-    setTheme(initial);
-    document.documentElement.classList.toggle("dark", initial === "dark");
-  }, []);
-
-  function toggleTheme() {
-    const next: Theme = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-    window.localStorage.setItem("theme", next);
+  if (variant === "compact") {
+    return (
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className={`studio-toolbar-btn ${className}`.trim()}
+        aria-label={label}
+        title={label}
+      >
+        {theme === "light" ? (
+          <Moon className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
+        ) : (
+          <Sun className={ICON_MD} strokeWidth={ICON_STROKE} aria-hidden />
+        )}
+      </button>
+    );
   }
 
   return (
     <button
       type="button"
       onClick={toggleTheme}
-      className="w-full rounded-md border border-border px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-surface-elevated hover:text-accent"
-      aria-label="Toggle light and dark mode"
+      className={`w-full rounded-md border border-border px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-surface-elevated hover:text-accent ${className}`.trim()}
+      aria-label={label}
     >
       {theme === "light" ? "Dark mode" : "Light mode"}
     </button>

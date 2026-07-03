@@ -869,6 +869,30 @@ body {
   background: var(--border-subtle);
 }
 
+.studio-episode-switcher {
+  max-width: min(20rem, 42vw);
+  min-width: 8rem;
+  cursor: pointer;
+  border-radius: calc(var(--radius-md) - 2px);
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0.25rem 0.5rem;
+  text-align: center;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease);
+}
+
+.studio-episode-switcher:hover {
+  background: var(--surface-elevated);
+  border-color: var(--border-subtle);
+}
+
+.studio-episode-switcher:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .studio-segmented {
   display: inline-flex;
   position: relative;

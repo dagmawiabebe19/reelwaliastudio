@@ -58,7 +58,7 @@ export function EpisodeStudioPage(props: EpisodeStudioPageProps) {
         seriesId={props.seriesId}
         seriesTitle={props.seriesTitle}
         episodeId={props.episodeId}
-        episodeTitle={props.episodeTitle}
+        episodes={props.episodes}
         audioLineCount={props.audioLines.length}
         showAudio={showAudio}
         onToggleAudio={() => setShowAudio((v) => !v)}
