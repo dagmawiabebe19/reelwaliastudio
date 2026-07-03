@@ -30,9 +30,14 @@ export default async function AdminUsagePage() {
           <h2 className="text-lg font-semibold text-foreground">
             Accounts ({accounts.length})
           </h2>
-          <Link href="/credits" className="text-sm text-accent hover:underline">
-            Your credits
-          </Link>
+          <div className="flex items-center gap-4 text-sm">
+            <Link href="/admin/approvals" className="text-accent hover:underline">
+              Pending approvals
+            </Link>
+            <Link href="/credits" className="text-accent hover:underline">
+              Your credits
+            </Link>
+          </div>
         </div>
         {accounts.length === 0 ? (
           <p className="text-sm text-muted">No accounts yet.</p>

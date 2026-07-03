@@ -48,6 +48,7 @@ const MIGRATION_PROBES = [
   { file: "016_episode_summary.sql", probes: [{ table: "episodes", column: "summary_markdown" }] },
   { file: "017_take_provider_request.sql", probes: [{ table: "takes", column: "provider_request_id" }] },
   { file: "018_security_credit_rpc_grants.sql", probes: [], note: "GRANT/REVOKE only — verify via SQL Editor" },
+  { file: "019_profile_approval.sql", probes: [{ table: "profiles", column: "approval_status" }] },
 ];
 
 async function probeColumn(supabase, table, column) {

@@ -28,6 +28,7 @@ node scripts/audit-migration-drift.mjs
 | 016 | `016_episode_summary.sql` | Episode summary markdown | ☐ verify |
 | 017 | `017_take_provider_request.sql` | Take provider request metadata | ☐ verify |
 | 018 | `018_security_credit_rpc_grants.sql` | **Revoke `reserve_credits` from authenticated** | ☐ verify |
+| 019 | `019_profile_approval.sql` | **Approval gate + welcome grant on approve only** | ☐ verify |
 
 ## Post-apply verification
 

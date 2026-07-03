@@ -7,6 +7,7 @@ import { CreditBalanceBadge } from "@/components/credits/CreditBalanceBadge";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
+  ADMIN_APPROVALS_NAV_ITEM,
   ADMIN_NAV_ITEM,
   COMING_SOON_NAV_HIDDEN,
   PRIMARY_NAV_ITEMS,
@@ -17,6 +18,7 @@ interface SidebarProps {
   userEmail?: string | null;
   creditBalance?: CreditBalance | null;
   isAdmin?: boolean;
+  pendingApprovalsCount?: number;
   onNavigate?: () => void;
 }
 
@@ -32,13 +34,19 @@ function isNavActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function Sidebar({ userEmail, creditBalance, isAdmin = false, onNavigate }: SidebarProps) {
+export function Sidebar({
+  userEmail,
+  creditBalance,
+  isAdmin = false,
+  pendingApprovalsCount = 0,
+  onNavigate,
+}: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
   const navItems = [
     ...PRIMARY_NAV_ITEMS,
-    ...(isAdmin ? [ADMIN_NAV_ITEM] : []),
+    ...(isAdmin ? [ADMIN_APPROVALS_NAV_ITEM, ADMIN_NAV_ITEM] : []),
   ].filter((item) => !COMING_SOON_NAV_HIDDEN.has(item.href));
 
   async function handleLogout() {
@@ -57,19 +65,26 @@ export function Sidebar({ userEmail, creditBalance, isAdmin = false, onNavigate 
       <nav className="flex-1 space-y-1 px-3 py-6">
         {navItems.map((item) => {
           const active = isNavActive(pathname, item.href);
+          const showPendingBadge =
+            item.href === ADMIN_APPROVALS_NAV_ITEM.href && pendingApprovalsCount > 0;
 
           return (
             <Link
               key={item.href}
               href={item.href}
               onClick={onNavigate}
-              className={`block rounded-md px-3 py-2 text-sm transition-colors ${
+              className={`flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors ${
                 active
                   ? "bg-accent-muted font-medium text-accent"
                   : "text-muted hover:bg-surface-elevated hover:text-accent"
               }`}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {showPendingBadge ? (
+                <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                  {pendingApprovalsCount > 99 ? "99+" : pendingApprovalsCount}
+                </span>
+              ) : null}
             </Link>
           );
         })}

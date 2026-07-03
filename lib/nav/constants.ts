@@ -12,3 +12,8 @@ export const PRIMARY_NAV_ITEMS = [
 ] as const;
 
 export const ADMIN_NAV_ITEM = { href: "/admin/usage", label: "Admin usage" } as const;
+
+export const ADMIN_APPROVALS_NAV_ITEM = {
+  href: "/admin/approvals",
+  label: "Pending approvals",
+} as const;
