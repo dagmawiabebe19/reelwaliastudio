@@ -467,6 +467,14 @@ export function TakesStrip({
               <div className="flex h-full min-h-[12rem] items-center justify-center bg-background">
                 <GeneratingPulse label="Generating…" />
               </div>
+            ) : activeTake.status === "failed" ? (
+              <div className="flex h-full min-h-[12rem] flex-col items-center justify-center gap-2 bg-background px-6 text-center">
+                <p className="text-sm font-medium text-foreground">Generation failed</p>
+                <p className="text-xs leading-relaxed text-muted">
+                  {activeTake.error_message?.trim() ||
+                    "Something went wrong. Try generating again or check status."}
+                </p>
+              </div>
             ) : (
               <EmptyState
                 variant="preview"

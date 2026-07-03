@@ -611,19 +611,39 @@ export async function runCopilotStream(input: {
 
   const settleTurn = async () => {
     if (!reservationId || turnSettled) return;
-    turnSettled = true;
     const creditsCommitted = resolveCopilotTurnCommitCredits(model, turnEstimate, billing);
-    const outcome = await settleCopilotTurnReservation(reservationId, model, billing);
-    console.log(
-      "[copilot-meter]",
-      formatCopilotUsageCostLog({
-        modelId: model,
-        usage: billing.usage ?? {},
-        creditsCommitted,
-        turnLabel: `session:${input.sessionId}`,
-      }),
-      `settle=${outcome}`,
-    );
+    try {
+      const outcome = await settleCopilotTurnReservation(reservationId, model, billing);
+      turnSettled = true;
+      console.log(
+        "[copilot-meter]",
+        formatCopilotUsageCostLog({
+          modelId: model,
+          usage: billing.usage ?? {},
+          creditsCommitted,
+          turnLabel: `session:${input.sessionId}`,
+        }),
+        `settle=${outcome}`,
+      );
+    } catch (settleError) {
+      console.error("[copilot-meter] settle failed — releasing reservation", {
+        sessionId: input.sessionId,
+        reservationId,
+        error: settleError instanceof Error ? settleError.message : String(settleError),
+      });
+      if (!turnSettled) {
+        try {
+          await releaseReservation(reservationId);
+          turnSettled = true;
+        } catch (releaseError) {
+          console.error("[copilot-meter] release after failed settle also failed", {
+            reservationId,
+            error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+          });
+        }
+      }
+      throw settleError;
+    }
   };
 
   try {

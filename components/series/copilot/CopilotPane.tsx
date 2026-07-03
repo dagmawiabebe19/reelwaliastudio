@@ -258,7 +258,24 @@ export function CopilotPane({
         signal: abortRef.current.signal,
       });
 
-      if (!response.ok || !response.body) {
+      if (!response.ok) {
+        let message = "Co-pilot request failed.";
+        try {
+          const body = (await response.json()) as { error?: string };
+          if (typeof body.error === "string" && body.error.trim()) {
+            message = body.error.trim();
+          } else if (response.status === 429) {
+            message = "Too many requests — wait a moment and try again.";
+          }
+        } catch {
+          if (response.status === 429) {
+            message = "Too many requests — wait a moment and try again.";
+          }
+        }
+        throw new Error(message);
+      }
+
+      if (!response.body) {
         throw new Error("Co-pilot request failed.");
       }
 

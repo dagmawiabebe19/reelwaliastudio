@@ -1,5 +1,7 @@
 import "server-only";
 
+import { after } from "next/server";
+
 import { getActiveUserId } from "@/lib/auth/getUser";
 import { CopilotAbortError, throwIfAborted } from "@/lib/ai/copilot/abort";
 import { isInsufficientCreditsError } from "@/lib/credits/errors";
@@ -300,8 +302,16 @@ async function runQueuedSheetGeneration(sheetId: string, revalidatePath?: string
 export async function queueSheetGeneration(sheetId: string, revalidatePath?: string): Promise<void> {
   await updateCharacterSheetStatus(sheetId, "pending", null);
 
-  // Detach from the HTTP/SSE request lifecycle — `after()` can race with closed controllers.
-  void runQueuedSheetGeneration(sheetId, revalidatePath);
+  after(async () => {
+    try {
+      await runQueuedSheetGeneration(sheetId, revalidatePath);
+    } catch (error) {
+      console.error("[sheet-generation] queued generation failed", {
+        sheetId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 }
 
 export async function retrySheetGeneration(

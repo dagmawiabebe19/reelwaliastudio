@@ -56,6 +56,8 @@ type ReconcileCallOptions = {
   revalidatePath?: string;
   /** When set, all DB/storage access uses the service-role client. */
   ops?: ReconcileOps;
+  /** Ops sweeps only: mark failed + release reservation when no fal job can be found. */
+  releaseUnmatchedReservation?: boolean;
 };
 
 function logReconcileError(label: string, error: unknown, context?: Record<string, unknown>): void {
@@ -389,6 +391,19 @@ export async function reconcileStuckTake(
     options?.timestampMatches,
   );
   if (!discovered) {
+    if (options?.releaseUnmatchedReservation) {
+      const reason =
+        "No provider job found — generation may have failed before submit. Credits released.";
+      await markTakeFailed(take.id, reason, db);
+      const refunded = await releaseOpenTakeReservation(take.id);
+      return {
+        takeId,
+        result: "failed_per_fal",
+        requestId: "",
+        error: reason,
+        refunded,
+      };
+    }
     return {
       takeId,
       result: "unmatched",
@@ -399,6 +414,18 @@ export async function reconcileStuckTake(
 
   const resolved = await resolveFalJob(take, discovered.requestId, discovered.endpoint);
   if (!resolved) {
+    if (options?.releaseUnmatchedReservation) {
+      const reason = "Provider job not found on fal — credits released.";
+      await markTakeFailed(take.id, reason, db);
+      const refunded = await releaseOpenTakeReservation(take.id);
+      return {
+        takeId: take.id,
+        result: "failed_per_fal",
+        requestId: discovered.requestId,
+        error: reason,
+        refunded,
+      };
+    }
     return { takeId, result: "unmatched", reason: "request_id_not_found_on_fal" };
   }
 
@@ -493,6 +520,7 @@ export async function reconcileStuckTakes(input?: {
     const timestampMatches = await buildTimestampRequestMatches(takes);
 
     const reconcileOps = input?.ops ?? (adminDb ? { db: adminDb } : undefined);
+    const releaseUnmatched = Boolean(input?.ops);
 
     const outcomes: ReconcileTakeOutcome[] = [];
     for (const take of takes) {
@@ -504,6 +532,7 @@ export async function reconcileStuckTakes(input?: {
             timestampMatches,
             revalidatePath: input?.revalidatePath,
             ops: reconcileOps,
+            releaseUnmatchedReservation: releaseUnmatched,
           }),
         );
       } catch (error) {
