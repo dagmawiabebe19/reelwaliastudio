@@ -18,6 +18,7 @@
     "test:copilot-abort": "node scripts/test-copilot-abort-settle.mjs",
     "test:copilot-meter": "node scripts/test-copilot-metering.mjs",
     "test:onboarding": "node scripts/test-onboarding-status.mjs",
+    "test:screenplay-parse": "tsx scripts/test-screenplay-parse.ts",
     "reconcile:takes": "node scripts/reconcile-stuck-takes.mjs",
     "reconcile:reservations": "node scripts/reconcile-stuck-reservations.mjs",
     "test:reservation-sweep": "node scripts/test-reservation-sweep.mjs",
@@ -28,9 +29,11 @@
     "@fal-ai/client": "^1.10.1",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
+    "fast-xml-parser": "^5.9.3",
     "jszip": "^3.10.1",
     "lucide-react": "^0.511.0",
     "next": "15.5.19",
+    "pdf-parse": "^2.4.5",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-markdown": "^10.1.0",
@@ -40,6 +43,7 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
@@ -47,6 +51,7 @@
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.4",
     "tailwindcss": "^4",
+    "tsx": "^4.23.0",
     "typescript": "^5"
   }
 }

@@ -6,6 +6,7 @@ import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspace
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OnboardingGuide } from "@/components/onboarding/OnboardingGuide";
 import { GenerationPanel } from "@/components/series/generation/GenerationPanel";
+import { EpisodeBatchGenerationPanel } from "@/components/series/generation/EpisodeBatchGenerationPanel";
 import { TakesStrip, type TakeCardData } from "@/components/series/generation/TakesStrip";
 import { StudioIngredientsPanel } from "@/components/series/studio/StudioIngredientsPanel";
 import { SceneMetaControls } from "@/components/series/storyboard/SceneMetaControls";
@@ -286,6 +287,14 @@ export function StudioShell({
         <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden xl:border-l xl:border-border/80">
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-6">
           <p className="mb-4 studio-section-label">Output</p>
+
+          <EpisodeBatchGenerationPanel
+            seriesId={seriesId}
+            episodeId={episodeId}
+            scenes={scenes}
+            takesByScene={takesByScene}
+            seedanceConfigured={seedanceConfigured}
+          />
 
           {selectedScene ? (
             <div className="min-w-0 space-y-6">

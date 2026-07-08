@@ -198,6 +198,35 @@ export function estimateSheetCredits(): number {
   return estimateImageCredits(5);
 }
 
+const SCREENPLAY_MAP_CHUNK_SIZE = 20;
+const SCREENPLAY_MAP_MODEL = "claude-haiku-4-5-20251001";
+const SCREENPLAY_REDUCE_MODEL = "claude-opus-4-8";
+
+/**
+ * Conservative reserve for screenplay map-reduce analysis (one logical job).
+ */
+export function estimateScreenplayAnalysisCredits(sceneCount: number): number {
+  const scenes = Math.max(1, sceneCount);
+  const chunks = Math.ceil(scenes / SCREENPLAY_MAP_CHUNK_SIZE);
+  const mapRates = getAnthropicModelPricing(SCREENPLAY_MAP_MODEL);
+  const reduceRates = getAnthropicModelPricing(SCREENPLAY_REDUCE_MODEL);
+
+  const perChunkInput = 2_000 + SCREENPLAY_MAP_CHUNK_SIZE * 600;
+  const perChunkOutput = SCREENPLAY_MAP_CHUNK_SIZE * 90;
+  const mapUsd =
+    chunks *
+    ((perChunkInput / 1_000_000) * mapRates.inputUsdPerMtok +
+      (perChunkOutput / 1_000_000) * mapRates.outputUsdPerMtok);
+
+  const reduceInput = 5_000 + scenes * 120;
+  const reduceOutput = 4_500;
+  const reduceUsd =
+    (reduceInput / 1_000_000) * reduceRates.inputUsdPerMtok +
+    (reduceOutput / 1_000_000) * reduceRates.outputUsdPerMtok;
+
+  return Math.max(1, usdToCredits(mapUsd + reduceUsd));
+}
+
 export const PRICING_REFERENCE = {
   seedancePerSecond: SEEDANCE_BASE_USD_PER_SECOND,
   openAiImagePerImageUsd: OPENAI_IMAGE_BASE_USD_PER_IMAGE,

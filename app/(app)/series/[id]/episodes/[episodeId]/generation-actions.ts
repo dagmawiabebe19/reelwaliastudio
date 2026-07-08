@@ -3,13 +3,15 @@
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getActiveUserId } from "@/lib/auth/getUser";
-import { formatActionError } from "@/lib/credits/action-result";
+import { formatActionError, type ActionErrorResult } from "@/lib/credits/action-result";
 import { assertSufficientCredits } from "@/lib/credits/meter";
 import { estimateVideoCredits } from "@/lib/credits/pricing";
 import { isInsufficientCreditsError } from "@/lib/credits/errors";
 import { logGenerationError } from "@/lib/ai/generation/errors";
 import { createPendingTakes, executeGenerationJob } from "@/lib/ai/generation/run";
-import { SEGMENT_VIDEO_MODEL_ID } from "@/lib/ai/registry";
+import { planEpisodeBatchGeneration } from "@/lib/ai/generation/episode-batch";
+import { executeEpisodeBatchJob } from "@/lib/ai/generation/episode-batch-run";
+import { isModelConfigured, getModelById, SEGMENT_VIDEO_MODEL_ID } from "@/lib/ai/registry";
 import {
   normalizeSeedanceAudioMode,
   resolveQualitySettings,
@@ -24,9 +26,23 @@ import { getSignedUrl } from "@/lib/storage/signed-url";
 import { verifyStorageObjectAccess } from "@/lib/storage/verify-access";
 import { resolveAssetUrl } from "@/lib/storage/resolve-urls";
 import { normalizeShotIntent } from "@/lib/production/prompts";
+import type { EpisodeBatchSkippedSegment } from "@/lib/ai/generation/episode-batch";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { parseUuid } from "@/lib/validation/uuid";
 import { headers } from "next/headers";
+
+export type GenerateEpisodeBatchSuccess = {
+  status: "pending";
+  queuedCount: number;
+  skipped: EpisodeBatchSkippedSegment[];
+  estimatedCredits: number;
+  jobs: Array<{ sceneId: string; title: string; takeId: string }>;
+};
+
+export type GenerateEpisodeBatchResult =
+  | GenerateEpisodeBatchSuccess
+  | ActionErrorResult
+  | { error: string; skipped?: EpisodeBatchSkippedSegment[] };
 
 export async function listTakesAction(sceneId: string) {
   try {
@@ -269,5 +285,186 @@ export async function reconcileTakeAction(
       };
     }
     return { error: error instanceof Error ? error.message : "Reconcile failed." };
+  }
+}
+
+export async function estimateEpisodeBatchAction(input: {
+  seriesId: string;
+  episodeId: string;
+  quality: GenerationQualityMode;
+}) {
+  try {
+    const userId = await getActiveUserId();
+    parseUuid(input.seriesId, "seriesId");
+    parseUuid(input.episodeId, "episodeId");
+
+    const { verifyEpisodeOwnership } = await import("@/lib/db/audio-lines");
+    await verifyEpisodeOwnership(input.episodeId);
+
+    const model = getModelById(SEGMENT_VIDEO_MODEL_ID);
+    if (!model || !isModelConfigured(model)) {
+      return { error: "Seedance is not configured. Set FAL_KEY to enable video generation." };
+    }
+
+    const plan = await planEpisodeBatchGeneration({
+      seriesId: input.seriesId,
+      episodeId: input.episodeId,
+      quality: input.quality,
+    });
+
+    const { getBalance } = await import("@/lib/credits/balance");
+    const balance = await getBalance(userId);
+
+    return {
+      ready: plan.ready.map((segment) => ({
+        sceneId: segment.sceneId,
+        title: segment.title,
+        estimateCredits: segment.estimateCredits,
+      })),
+      skipped: plan.skipped,
+      totalEstimate: plan.totalEstimate,
+      lockedCount: plan.lockedCount,
+      segmentCount: plan.segmentCount,
+      availableCredits: balance.available,
+    };
+  } catch (error) {
+    return formatActionError(error, "Could not estimate episode generation.");
+  }
+}
+
+export async function generateEpisodeBatchAction(input: {
+  seriesId: string;
+  episodeId: string;
+  quality: GenerationQualityMode;
+  generationApproved: boolean;
+}): Promise<GenerateEpisodeBatchResult> {
+  try {
+    const userId = await getActiveUserId();
+    parseUuid(input.seriesId, "seriesId");
+    parseUuid(input.episodeId, "episodeId");
+
+    if (!input.generationApproved) {
+      return {
+        error:
+          "Confirm episode generation after reviewing the lock report and credit estimate.",
+      };
+    }
+
+    const headerStore = await headers();
+    const ip =
+      headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      headerStore.get("x-real-ip")?.trim() ||
+      "unknown";
+    const limit = checkRateLimit(`generate-episode:${userId}:${ip}`, 6, 60_000);
+    if (!limit.ok) {
+      return { error: "Too many episode generation requests. Wait a moment and try again." };
+    }
+
+    const { verifyEpisodeOwnership } = await import("@/lib/db/audio-lines");
+    await verifyEpisodeOwnership(input.episodeId);
+
+    const model = getModelById(SEGMENT_VIDEO_MODEL_ID);
+    if (!model || !isModelConfigured(model)) {
+      return { error: "Seedance is not configured. Set FAL_KEY to enable video generation." };
+    }
+
+    const plan = await planEpisodeBatchGeneration({
+      seriesId: input.seriesId,
+      episodeId: input.episodeId,
+      quality: input.quality,
+    });
+
+    if (plan.ready.length === 0) {
+      const reasons = plan.skipped.map((s) => `${s.title}: ${s.reason}`).join(" ");
+      return {
+        error: reasons
+          ? `No segments are ready to generate. ${reasons}`
+          : "No segments are ready to generate. Build and lock segments first.",
+        skipped: plan.skipped,
+      };
+    }
+
+    await assertSufficientCredits(userId, plan.totalEstimate);
+
+    const jobs: Array<{
+      sceneId: string;
+      title: string;
+      params: (typeof plan.ready)[number]["params"];
+      takeId: string;
+    }> = [];
+
+    for (const segment of plan.ready) {
+      try {
+        const takeIds = await createPendingTakes(segment.params);
+        const takeId = takeIds[0];
+        if (!takeId) continue;
+        jobs.push({
+          sceneId: segment.sceneId,
+          title: segment.title,
+          params: segment.params,
+          takeId,
+        });
+      } catch (error) {
+        plan.skipped.push({
+          sceneId: segment.sceneId,
+          title: segment.title,
+          status: "skipped_references",
+          reason: error instanceof Error ? error.message : "Could not queue segment.",
+        });
+      }
+    }
+
+    if (jobs.length === 0) {
+      return {
+        error: "No segments could be queued for generation.",
+        skipped: plan.skipped,
+      };
+    }
+
+    const path = `/series/${input.seriesId}/episodes/${input.episodeId}`;
+    const queuedEstimate = jobs.reduce((sum, job) => {
+      const match = plan.ready.find((segment) => segment.sceneId === job.sceneId);
+      return sum + (match?.estimateCredits ?? 0);
+    }, 0);
+
+    after(async () => {
+      try {
+        await executeEpisodeBatchJob({ userId, jobs });
+      } catch (error) {
+        if (isInsufficientCreditsError(error)) {
+          const { markTakeFailed } = await import("@/lib/db/takes");
+          await Promise.all(
+            jobs.map((job) =>
+              markTakeFailed(
+                job.takeId,
+                `Not enough credits (need ${error.needed}, have ${error.available}).`,
+              ),
+            ),
+          );
+        } else {
+          logGenerationError("episode-batch-job", error, {
+            episodeId: input.episodeId,
+            sceneIds: jobs.map((job) => job.sceneId),
+          });
+        }
+      }
+      revalidatePath(path);
+    });
+
+    revalidatePath(path);
+
+    return {
+      status: "pending" as const,
+      queuedCount: jobs.length,
+      skipped: plan.skipped,
+      estimatedCredits: queuedEstimate,
+      jobs: jobs.map((job) => ({
+        sceneId: job.sceneId,
+        title: job.title,
+        takeId: job.takeId,
+      })),
+    };
+  } catch (error) {
+    return formatActionError(error, "Episode generation failed to start.");
   }
 }

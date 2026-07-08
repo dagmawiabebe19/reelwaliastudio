@@ -151,6 +151,26 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
       required: ["series_id", "entry"],
     },
   },
+  {
+    name: "get_screenplay_scenes",
+    description:
+      "Fetch full screenplay scene text for a bounded sort_order range. Use when writing or segmenting mapped screenplay scenes. Max 5 scenes per call — never request the full script.",
+    input_schema: {
+      type: "object",
+      properties: {
+        screenplay_id: { type: "string" },
+        from_scene: {
+          type: "number",
+          description: "Inclusive sort_order (0-based) of the first scene.",
+        },
+        to_scene: {
+          type: "number",
+          description: "Inclusive sort_order of the last scene. Range size max 5.",
+        },
+      },
+      required: ["screenplay_id", "from_scene", "to_scene"],
+    },
+  },
 ];
 
 import { formatPriorEpisodeSummariesBlock } from "@/lib/ai/copilot/episode-summary";
@@ -193,6 +213,9 @@ export type CopilotContext = {
     status: string;
     episode_ids: string[];
   }>;
+  screenplayId?: string;
+  /** Compact digest (sluglines + synopses) — never full screenplay text. */
+  screenplayDigest?: string;
   workspace?: {
     view: string;
     viewLabel: string;
@@ -267,6 +290,11 @@ If series memory defines house style (e.g. hyper-realistic cinematic 9:16, 35mm 
 - **VO over action** / narration / internal monologue / confessional voice-over → audio_mode=**ambient** + note separate voice pass in prompt (NOT lip-synced; do not use full).
 - **Silent coverage** / atmosphere only → audio_mode=**ambient** or **off** if truly silent.
 - Never classify VO confessionals as full/lip-sync.
+
+### Screenplay source (when ## Screenplay digest is present)
+- A parsed screenplay exists for this series. Answer script questions from the digest + get_screenplay_scenes — never assume full text is in context.
+- When the user asks to build an episode from mapped screenplay scenes: pull only the needed scene range via get_screenplay_scenes, then follow Beat 1 PROPOSE → user approval → Beat 2 BUILD (draft_storyboard). Honor dialogue and action from the script in segment prompts.
+- Do not paste entire scenes into chat; quote briefly and reference sluglines.
 `;
 
   const divisionOfLabor = `
@@ -338,8 +366,15 @@ ${workspace.activeTakeSummary ? `- Render status: ${workspace.activeTakeSummary}
 
   const priorEpisodesBlock = formatPriorEpisodeSummariesBlock(context.priorEpisodeSummaries ?? []);
 
-  const stable = `You are the ReelWalia Studio co-pilot — an AI production partner (director, writer, cinematographer, script supervisor, producer, editor, showrunner). The creator directs; you handle production.
+  const screenplayBlock = context.screenplayDigest?.trim()
+    ? `
+## Screenplay digest (compact — use get_screenplay_scenes for full text)
+${context.screenplayDigest}
+`
+    : "";
 
+  const stable = `You are the ReelWalia Studio co-pilot — an AI production partner (director, writer, cinematographer, script supervisor, producer, editor, showrunner). The creator directs; you handle production.
+${screenplayBlock}
 ## Series memory (persistent — always follow)
 ${context.seriesMemoryMarkdown?.trim() || "(empty — use update_series_memory when the user confirms canonical facts)"}
 

@@ -277,8 +277,9 @@ export async function executeGenerationJob(
   params: GenerateTakeParams,
   takeIds: string[],
   onProgress?: GenerationProgressCallback,
+  options?: { userId?: string },
 ): Promise<GenerationJobOutcome> {
-  const userId = await getActiveUserId();
+  const userId = options?.userId ?? (await getActiveUserId());
   const seedanceTier = params.seedanceTier ?? "fast";
   const durationSeconds = params.durationSeconds ?? 6;
 

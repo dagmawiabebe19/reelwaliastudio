@@ -10,6 +10,8 @@ import { buildCopilotCharacterSheets } from "@/lib/production/library-data";
 import type { CopilotWorkspaceView } from "@/lib/copilot/workspace-types";
 import type { CopilotContext } from "@/lib/ai/copilot/tools";
 import { PRIOR_EPISODE_SUMMARY_LIMIT } from "@/lib/ai/copilot/episode-summary";
+import { getScreenplayBySeries, listScreenplayScenes } from "@/lib/db/screenplays";
+import { buildScreenplayDigest, formatScreenplayDigestForCopilot } from "@/lib/screenplay/digest";
 
 export async function buildCopilotContextSnapshot(input: {
   seriesId: string;
@@ -20,14 +22,27 @@ export async function buildCopilotContextSnapshot(input: {
   const series = await getSeries(input.seriesId);
   if (!series) throw new Error("Series not found.");
 
-  const [ingredientsRaw, sheetsRaw, episode, scenes] = await Promise.all([
+  const [ingredientsRaw, sheetsRaw, episode, scenes, screenplayRow] = await Promise.all([
     listIngredientsBySeries(input.seriesId),
     listCharacterSheetsBySeries(input.seriesId),
     input.episodeId ? getEpisode(input.episodeId) : Promise.resolve(null),
     input.episodeId ? listScenesByEpisode(input.episodeId) : Promise.resolve([]),
+    getScreenplayBySeries(input.seriesId).catch(() => null),
   ]);
 
   const characterSheets = await buildCopilotCharacterSheets(sheetsRaw);
+
+  let screenplayId: string | undefined;
+  let screenplayDigest: string | undefined;
+  if (screenplayRow?.status === "parsed") {
+    const screenplayScenes = await listScreenplayScenes(screenplayRow.id);
+    if (screenplayScenes.length > 0) {
+      screenplayId = screenplayRow.id;
+      screenplayDigest = formatScreenplayDigestForCopilot(
+        buildScreenplayDigest({ screenplay: screenplayRow, scenes: screenplayScenes }),
+      );
+    }
+  }
 
   const priorEpisodeSummaries =
     episode && episode.sort_order > 0
@@ -90,5 +105,7 @@ export async function buildCopilotContextSnapshot(input: {
       generation_status: i.generation_status,
     })),
     characterSheets,
+    screenplayId,
+    screenplayDigest,
   };
 }

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FinalDraft DocumentType="Script" Template="No" Version="5">
+  <Content>
+    <Paragraph Type="Scene Heading">
+      <Text>INT. OFFICE - DAY</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>ALEX reviews a stack of contracts.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>ALEX</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>We need to close this by Friday.</Text>
+    </Paragraph>
+    <Paragraph Type="Scene Heading">
+      <Text>EXT. ROOFTOP - SUNSET</Text>
+    </Paragraph>
+    <Paragraph Type="Action">
+      <Text>City lights flicker on below.</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>JORDAN</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Still thinking about the deal?</Text>
+    </Paragraph>
+    <Paragraph Type="Character">
+      <Text>ALEX</Text>
+    </Paragraph>
+    <Paragraph Type="Dialogue">
+      <Text>Always.</Text>
+    </Paragraph>
+  </Content>
+</FinalDraft>

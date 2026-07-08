@@ -65,8 +65,11 @@ import {
 } from "@/lib/ai/copilot/tools";
 import { appendChatMessage, listChatMessages } from "@/lib/db/chat";
 import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
+import { getScreenplayById, getScreenplayScenesInRange } from "@/lib/db/screenplays";
 import { getEpisode, listPriorEpisodeSummaries } from "@/lib/db/episodes";
 import { getSeries } from "@/lib/db/series";
+
+const SCREENPLAY_SCENE_TOOL_MAX_RANGE = 5;
 
 export type CopilotStreamEvent =
   | { type: "text"; content: string }
@@ -528,6 +531,55 @@ async function executeTool(
         section,
         entry,
         memory_length: next.length,
+      };
+    }
+
+    case "get_screenplay_scenes": {
+      const screenplayId = String(args.screenplay_id ?? "").trim();
+      const fromScene = Number(args.from_scene);
+      const toScene = Number(args.to_scene);
+
+      if (!screenplayId) return { error: "screenplay_id is required." };
+      if (!Number.isInteger(fromScene) || !Number.isInteger(toScene)) {
+        return { error: "from_scene and to_scene must be integers (sort_order)." };
+      }
+      if (toScene < fromScene) {
+        return { error: "to_scene must be >= from_scene." };
+      }
+      if (toScene - fromScene + 1 > SCREENPLAY_SCENE_TOOL_MAX_RANGE) {
+        return {
+          error: `Maximum ${SCREENPLAY_SCENE_TOOL_MAX_RANGE} scenes per request.`,
+        };
+      }
+
+      const screenplay = await getScreenplayById(screenplayId);
+      if (!screenplay || screenplay.series_id !== context.seriesId) {
+        return { error: "Screenplay not found for this series." };
+      }
+      if (context.screenplayId && context.screenplayId !== screenplayId) {
+        return { error: "screenplay_id does not match the active series screenplay." };
+      }
+
+      emitProgress(`loading scenes ${fromScene}–${toScene}…`, 1, 1);
+      const scenes = await getScreenplayScenesInRange({
+        screenplayId,
+        fromScene,
+        toScene,
+      });
+
+      return {
+        screenplay_id: screenplayId,
+        from_scene: fromScene,
+        to_scene: toScene,
+        scenes: scenes.map((scene) => ({
+          sort_order: scene.sort_order,
+          scene_number: scene.scene_number,
+          slugline: scene.slugline,
+          synopsis: scene.synopsis,
+          characters: scene.characters,
+          location: scene.location,
+          full_text: scene.full_text,
+        })),
       };
     }
 

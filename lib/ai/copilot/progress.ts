@@ -68,6 +68,10 @@ export function formatToolDoneSummary(name: string, result: Record<string, unkno
         ? `Episode summary refreshed (${chars} chars)`
         : "Episode summary — unchanged";
     }
+    case "get_screenplay_scenes": {
+      const count = Array.isArray(result.scenes) ? result.scenes.length : 0;
+      return `Loaded ${count} screenplay scene${count === 1 ? "" : "s"}`;
+    }
     default:
       return `${toolDisplayName(name)} — done`;
   }
@@ -87,6 +91,8 @@ function toolDisplayName(name: string): string {
       return "update_series_memory";
     case "update_episode_summary":
       return "update_episode_summary";
+    case "get_screenplay_scenes":
+      return "get_screenplay_scenes";
     default:
       return name;
   }

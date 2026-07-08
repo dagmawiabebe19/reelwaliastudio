@@ -13,6 +13,7 @@ import {
   useSeriesStudioOutput,
 } from "@/components/series/SeriesStudioShell";
 import { KeyArtSection } from "@/components/series/KeyArtSection";
+import { ScreenplaySection, type ScreenplayCardData } from "@/components/series/ScreenplaySection";
 import { IngredientsSection } from "@/components/series/ingredients/IngredientsSection";
 import {
   EpisodesSection,
@@ -78,6 +79,9 @@ interface SeriesWorkspaceProps {
   showOnboardingPlanEpisode?: boolean;
   keyArtUrl?: string | null;
   keyArtPickableIngredients?: IngredientCardData[];
+  screenplay?: ScreenplayCardData | null;
+  screenplayDigest?: string | null;
+  screenplayId?: string | null;
 }
 
 export function SeriesWorkspace({
@@ -95,6 +99,9 @@ export function SeriesWorkspace({
   showOnboardingPlanEpisode = false,
   keyArtUrl = null,
   keyArtPickableIngredients = [],
+  screenplay = null,
+  screenplayDigest = null,
+  screenplayId = null,
 }: SeriesWorkspaceProps) {
   const [view, setView] = useState<"classic" | "studio">("classic");
   const [tab, setTab] = useState<Tab>(showOnboardingPlanEpisode ? "episodes" : "ingredients");
@@ -162,6 +169,8 @@ export function SeriesWorkspace({
           view: view === "studio" ? "studio-output" : tab,
           viewLabel,
         },
+        screenplayId: screenplayId ?? undefined,
+        screenplayDigest: screenplayDigest ?? undefined,
       },
       ingredients: mentionIngredients,
       initialMessages: chatMessages,
@@ -183,6 +192,8 @@ export function SeriesWorkspace({
     stats.episodeCount,
     showOnboardingPlanEpisode,
     handleOutputEvent,
+    screenplayId,
+    screenplayDigest,
   ]);
 
   useRegisterCopilotContext(copilotRegistration);
@@ -227,6 +238,7 @@ export function SeriesWorkspace({
             keyArtUrl={keyArtUrl}
             pickableIngredients={keyArtPickableIngredients}
           />
+          <ScreenplaySection seriesId={series.id} screenplay={screenplay} />
         </div>
       </header>
 

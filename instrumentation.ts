@@ -21,5 +21,15 @@ export async function register() {
         stack: error instanceof Error ? error.stack : undefined,
       });
     }
+
+    try {
+      const { scheduleStartupScreenplayParseSweep } = await import("@/lib/screenplay/parse-sweep");
+      scheduleStartupScreenplayParseSweep();
+    } catch (error) {
+      console.error("[instrumentation] failed to schedule screenplay parse startup sweep", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
   }
 }

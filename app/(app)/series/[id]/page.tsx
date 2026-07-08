@@ -13,6 +13,8 @@ import {
 import { resolveSeriesKeyArtUrl } from "@/lib/dashboard/home-data";
 import { resolveAssetUrls } from "@/lib/storage/resolve-urls";
 import { shouldShowOnboarding } from "@/lib/onboarding/status";
+import { getScreenplayBySeries, listScreenplayScenes } from "@/lib/db/screenplays";
+import { buildScreenplayDigest, formatScreenplayDigestForCopilot } from "@/lib/screenplay/digest";
 
 interface SeriesPageProps {
   params: Promise<{ id: string }>;
@@ -22,17 +24,27 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
   const { id } = await params;
   const userId = await getActiveUserId();
 
-  const [series, stats, ingredientsRaw, counts, activeEpisodes, archivedEpisodes, chatSession, sheetsRaw] =
-    await Promise.all([
-      getSeries(id),
-      getSeriesStats(id),
-      listIngredientsBySeries(id),
-      getIngredientCounts(id),
-      listEpisodesBySeries(id, "active"),
-      listEpisodesBySeries(id, "archived"),
-      getOrCreateChatSession("series", id),
-      listCharacterSheetsBySeries(id),
-    ]);
+  const [
+    series,
+    stats,
+    ingredientsRaw,
+    counts,
+    activeEpisodes,
+    archivedEpisodes,
+    chatSession,
+    sheetsRaw,
+    screenplayRow,
+  ] = await Promise.all([
+    getSeries(id),
+    getSeriesStats(id),
+    listIngredientsBySeries(id),
+    getIngredientCounts(id),
+    listEpisodesBySeries(id, "active"),
+    listEpisodesBySeries(id, "archived"),
+    getOrCreateChatSession("series", id),
+    listCharacterSheetsBySeries(id),
+    getScreenplayBySeries(id),
+  ]);
 
   if (!series) notFound();
 
@@ -87,6 +99,20 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         i.kind === "prop"),
   );
 
+  const screenplayScenes =
+    screenplayRow?.status === "parsed"
+      ? await listScreenplayScenes(screenplayRow.id)
+      : [];
+  const screenplayDigest =
+    screenplayRow?.status === "parsed" && screenplayScenes.length > 0
+      ? formatScreenplayDigestForCopilot(
+          buildScreenplayDigest({
+            screenplay: screenplayRow,
+            scenes: screenplayScenes,
+          }),
+        )
+      : null;
+
   return (
     <SeriesWorkspace
       series={{
@@ -118,6 +144,27 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       showOnboardingPlanEpisode={showOnboardingPlanEpisode}
       keyArtUrl={keyArtUrl}
       keyArtPickableIngredients={keyArtPickableIngredients}
+      screenplay={
+        screenplayRow
+          ? {
+              id: screenplayRow.id,
+              title: screenplayRow.title,
+              format: screenplayRow.format,
+              status: screenplayRow.status,
+              failReason: screenplayRow.fail_reason,
+              sceneCount: screenplayRow.scene_count,
+              pageCountEst: screenplayRow.page_count_est,
+              characterCount: screenplayRow.characterCount,
+              locationCount: screenplayRow.locationCount,
+              createdAt: screenplayRow.created_at,
+              analysisStatus: screenplayRow.analysis_status,
+              analysisFailReason: screenplayRow.analysis_fail_reason,
+              analysisProposal: screenplayRow.analysis_proposal,
+            }
+          : null
+      }
+      screenplayDigest={screenplayDigest}
+      screenplayId={screenplayRow?.status === "parsed" ? screenplayRow.id : null}
     />
   );
 }
