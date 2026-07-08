@@ -1,7 +1,7 @@
 import "server-only";
 
-import { ApiError, fal } from "@fal-ai/client";
-import { configureFalClient } from "@/lib/ai/video/seedance-api";
+import { ApiError, ValidationError, fal } from "@fal-ai/client";
+import { configureFalClient, formatFalError } from "@/lib/ai/video/seedance-api";
 import type {
   FalQueueStatus,
   FalQueueStatusResponse,
@@ -10,16 +10,17 @@ import type { BurnInStyle } from "@/lib/captioning/burn-style";
 
 /**
  * fal endpoint that burns provided subtitles into a video (open captions).
- * VEED renders styled, burned-in subtitles; passing `srt_content` skips
- * transcription and burns exactly our reviewed English cues.
+ * VEED renders styled, burned-in subtitles; passing SRT skips transcription
+ * and burns exactly our reviewed English cues.
  * Docs: https://fal.ai/models/veed/subtitles/api
  */
 export const SUBTITLE_BURN_ENDPOINT = "veed/subtitles";
 
 export type VeedSubtitleInput = {
   video_url: string;
-  srt_content: string;
+  srt_file_url: string;
   preset: string;
+  language: string;
   customization: {
     position: "top" | "center" | "bottom";
     shadow: "none" | "min" | "mid" | "max";
@@ -33,15 +34,24 @@ export type VeedSubtitleInput = {
   };
 };
 
+/** Upload SRT text to fal.storage — VEED fetches a stable fal-hosted URL reliably. */
+export async function uploadSrtToFal(srtContent: string): Promise<string> {
+  configureFalClient();
+  const blob = new Blob([srtContent], { type: "application/x-subrip" });
+  const file = new File([blob], "captions.srt", { type: "application/x-subrip" });
+  return fal.storage.upload(file);
+}
+
 export function buildVeedInput(params: {
   videoUrl: string;
-  srtContent: string;
+  srtFileUrl: string;
   style: BurnInStyle;
 }): VeedSubtitleInput {
   return {
     video_url: params.videoUrl,
-    srt_content: params.srtContent,
+    srt_file_url: params.srtFileUrl,
     preset: params.style.preset,
+    language: "en-US",
     customization: {
       position: params.style.position,
       shadow: params.style.shadow,
@@ -70,18 +80,22 @@ export async function submitSubtitleBurnJob(
     JSON.stringify({
       endpoint: SUBTITLE_BURN_ENDPOINT,
       preset: input.preset,
+      language: input.language,
       position: input.customization.position,
-      srt_bytes: input.srt_content.length,
+      srt_file_url_host: safeHost(input.srt_file_url),
       video_url_host: safeHost(input.video_url),
     }),
   );
 
-  const { request_id: requestId } = await fal.queue.submit(SUBTITLE_BURN_ENDPOINT, {
-    input,
-  });
-
-  await options?.onEnqueue?.(requestId);
-  return requestId;
+  try {
+    const { request_id: requestId } = await fal.queue.submit(SUBTITLE_BURN_ENDPOINT, {
+      input,
+    });
+    await options?.onEnqueue?.(requestId);
+    return requestId;
+  } catch (error) {
+    throw new Error(formatFalError(error) || "veed/subtitles submit failed.");
+  }
 }
 
 export async function getSubtitleBurnStatus(
@@ -127,6 +141,13 @@ export async function getSubtitleBurnResultUrl(requestId: string): Promise<strin
     });
   }
   return url;
+}
+
+export function formatVeedError(error: unknown): string {
+  if (error instanceof ValidationError || error instanceof ApiError) {
+    return formatFalError(error);
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 export type { FalQueueStatus };

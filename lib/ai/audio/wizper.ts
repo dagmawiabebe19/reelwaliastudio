@@ -18,7 +18,7 @@ type WizperChunk = {
   text?: string;
 };
 
-type WizperOutput = {
+export type WizperOutput = {
   text?: string;
   chunks?: WizperChunk[];
   languages?: string[];
@@ -28,6 +28,34 @@ export interface WizperTranscription {
   segments: WhisperSegment[];
   durationSeconds: number;
   text: string;
+  requestId: string;
+  rawResponse: WizperOutput;
+}
+
+/**
+ * Thrown when Wizper completes without usable speech chunks. Transient fal
+ * failures (balance lock, bad demux) often surface this way — callers should
+ * mark the job failed and allow retry rather than "transcribed / 0 cues".
+ */
+export class WizperEmptyResultError extends Error {
+  readonly name = "WizperEmptyResultError";
+
+  constructor(
+    message: string,
+    readonly requestId: string,
+    readonly rawResponse: WizperOutput,
+    readonly inputSummary: Record<string, unknown>,
+  ) {
+    super(message);
+  }
+}
+
+function safeHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "invalid-url";
+  }
 }
 
 /** Map Wizper's timestamped chunks into our segment shape (seconds). */
@@ -55,6 +83,9 @@ function chunksToSegments(chunks: WizperChunk[]): WhisperSegment[] {
 /**
  * Transcribe a media URL with fal Wizper. Submits to the queue, waits for
  * completion, and returns timestamped English segments.
+ *
+ * Throws {@link WizperEmptyResultError} when Wizper returns zero usable chunks
+ * (default: treat as failed — retry — not a silent success).
  */
 export async function wizperTranscribe(input: {
   mediaUrl: string;
@@ -63,19 +94,29 @@ export async function wizperTranscribe(input: {
 }): Promise<WizperTranscription> {
   configureFalClient();
 
-  console.log("[wizper-submit]", JSON.stringify({ endpoint: WIZPER_ENDPOINT }));
+  const wizperInput = {
+    audio_url: input.mediaUrl,
+    task: "transcribe" as const,
+    language: (input.language ?? "en") as "en",
+    chunk_level: "segment" as const,
+    max_segment_len: 10,
+    merge_chunks: false,
+  };
+
+  console.log(
+    "[wizper-submit]",
+    JSON.stringify({
+      endpoint: WIZPER_ENDPOINT,
+      audio_url_host: safeHost(input.mediaUrl),
+      language: wizperInput.language,
+      chunk_level: wizperInput.chunk_level,
+      max_segment_len: wizperInput.max_segment_len,
+      merge_chunks: wizperInput.merge_chunks,
+    }),
+  );
 
   const { request_id: requestId } = await fal.queue.submit(WIZPER_ENDPOINT, {
-    input: {
-      audio_url: input.mediaUrl,
-      task: "transcribe",
-      // fal types this as a language enum; we only ever pass ISO codes.
-      language: (input.language ?? "en") as "en",
-      chunk_level: "segment",
-      // Finer, unmerged segments → tighter caption timing for review/sync.
-      max_segment_len: 10,
-      merge_chunks: false,
-    },
+    input: wizperInput,
   });
 
   await input.onEnqueue?.(requestId);
@@ -89,15 +130,42 @@ export async function wizperTranscribe(input: {
   const result = await fal.queue.result(WIZPER_ENDPOINT, { requestId });
   const data = result.data as WizperOutput;
 
+  console.log(
+    "[wizper-response]",
+    JSON.stringify({
+      requestId,
+      chunkCount: data.chunks?.length ?? 0,
+      textLength: (data.text ?? "").length,
+      languages: data.languages ?? null,
+      raw: data,
+    }),
+  );
+
   const segments = chunksToSegments(data.chunks ?? []);
   const durationSeconds = segments.length ? segments[segments.length - 1].end : 0;
 
-  if (!segments.length && !(data.text ?? "").trim()) {
-    // Genuinely no speech detected — surface as empty, not an error.
-    return { segments: [], durationSeconds: 0, text: "" };
+  if (segments.length === 0) {
+    throw new WizperEmptyResultError(
+      `Wizper returned no speech chunks (fal request ${requestId}). ` +
+        "This usually indicates a transient fal failure, balance lock, or a bad audio read — retry transcription. " +
+        "Genuinely silent/music-only clips are rare; we fail rather than mark 'transcribed' with zero cues.",
+      requestId,
+      data,
+      {
+        audio_url_host: safeHost(input.mediaUrl),
+        language: wizperInput.language,
+        textLength: (data.text ?? "").length,
+      },
+    );
   }
 
-  return { segments, durationSeconds, text: data.text ?? "" };
+  return {
+    segments,
+    durationSeconds,
+    text: data.text ?? "",
+    requestId,
+    rawResponse: data,
+  };
 }
 
 export function isWizperNotFound(error: unknown): boolean {

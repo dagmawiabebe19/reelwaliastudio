@@ -33,6 +33,7 @@ import {
   getSubtitleBurnStatus,
   submitSubtitleBurnJob,
   SUBTITLE_BURN_ENDPOINT,
+  uploadSrtToFal,
   waitForSubtitleBurnCompletion,
 } from "@/lib/ai/video/subtitle-burn";
 
@@ -191,9 +192,12 @@ export async function runBurnIn(input: {
       throw new Error("Could not create a source video URL for fal.");
     }
 
+    const srtContent = buildSrt(cues);
+    const srtFileUrl = await uploadSrtToFal(srtContent);
+
     const veedInput = buildVeedInput({
       videoUrl: signed.signedUrl,
-      srtContent: buildSrt(cues),
+      srtFileUrl,
       style,
     });
 

@@ -20,6 +20,7 @@ export function formatSrtTimestamp(ms: number): string {
 export function buildSrt(cues: CaptionCue[]): string {
   const ordered = [...cues]
     .filter((cue) => cue.text.trim().length > 0)
+    .filter((cue) => /[\p{L}\p{N}]/u.test(cue.text))
     .sort((a, b) => a.startMs - b.startMs || a.cueIndex - b.cueIndex);
 
   const blocks = ordered.map((cue, index) => {

@@ -27,7 +27,7 @@ const DEFAULT_STYLE: BurnInStyle = {
   font: undefined,
   // Bold for phone readability on muted autoplay.
   fontWeight: 800,
-  color: "white",
+  color: "#FFFFFF",
 };
 
 function normalizePosition(value: string | undefined): BurnInStyle["position"] {

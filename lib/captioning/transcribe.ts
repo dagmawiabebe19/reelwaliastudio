@@ -12,7 +12,7 @@ import {
 import { uploadVttForLanguage } from "@/lib/captioning/export";
 import { segmentsToCues } from "@/lib/captioning/segmentation";
 import { SOURCE_LANG } from "@/lib/captioning/types";
-import { wizperTranscribe } from "@/lib/ai/audio/wizper";
+import { wizperTranscribe, WizperEmptyResultError } from "@/lib/ai/audio/wizper";
 import { extractAudioOnFal } from "@/lib/ai/audio/extract-audio";
 
 /** fal fetches the source itself from a signed URL — keep it valid for the whole job. */
@@ -74,12 +74,23 @@ export async function runTranscription(input: {
           });
         }
 
-        const { segments, durationSeconds } = await wizperTranscribe({
+        const wizperResult = await wizperTranscribe({
           mediaUrl: transcribeUrl,
           language: "en",
         });
 
+        const { segments, durationSeconds } = wizperResult;
         const cues = segmentsToCues(segments);
+
+        if (cues.length === 0) {
+          throw new WizperEmptyResultError(
+            `Wizper returned segments but no caption cues were produced (fal request ${wizperResult.requestId}). Retry transcription.`,
+            wizperResult.requestId,
+            wizperResult.rawResponse,
+            { jobId: job.id },
+          );
+        }
+
         await replaceCuesWith(input.db, job.id, SOURCE_LANG, cues);
         await uploadVttForLanguage(input.db, {
           ownerId: job.owner_id,
@@ -104,7 +115,12 @@ export async function runTranscription(input: {
     console.log("[captioning] transcribed", { jobId: job.id, cueCount });
     return { status: "transcribed", cueCount };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "Transcription failed.";
+    const reason =
+      error instanceof WizperEmptyResultError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : "Transcription failed.";
     await setJobStatus(input.db, job.id, "failed", reason);
     return { status: "failed", reason };
   }
