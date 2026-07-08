@@ -31,5 +31,15 @@ export async function register() {
         stack: error instanceof Error ? error.stack : undefined,
       });
     }
+
+    try {
+      const { scheduleStartupCaptioningSweep } = await import("@/lib/captioning/sweep");
+      scheduleStartupCaptioningSweep();
+    } catch (error) {
+      console.error("[instrumentation] failed to schedule captioning startup sweep", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+    }
   }
 }

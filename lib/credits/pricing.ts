@@ -227,8 +227,59 @@ export function estimateScreenplayAnalysisCredits(sceneCount: number): number {
   return Math.max(1, usdToCredits(mapUsd + reduceUsd));
 }
 
+// ---------------------------------------------------------------------------
+// Captioning — transcription (OpenAI Whisper) + translation (Claude)
+// ---------------------------------------------------------------------------
+
+/** OpenAI whisper-1 list price (USD per audio-minute). */
+export const WHISPER_USD_PER_MINUTE = 0.006;
+
+/** Model used for subtitle translation (quality across non-Latin scripts). */
+export const TRANSLATION_MODEL = "claude-sonnet-4-6";
+
+/** Billed audio minutes, rounded up (Whisper bills per second but we reserve per minute). */
+function billedAudioMinutes(durationSeconds: number): number {
+  return Math.max(1, Math.ceil(Math.max(0, durationSeconds) / 60));
+}
+
+/** Upfront reserve for transcribing one episode's audio. */
+export function estimateTranscriptionCredits(durationSeconds: number): number {
+  const minutes = billedAudioMinutes(durationSeconds);
+  return Math.max(1, usdToCredits(WHISPER_USD_PER_MINUTE * minutes));
+}
+
+/** Actual commit once real audio duration is known. */
+export function transcriptionCreditsFromSeconds(durationSeconds: number): number {
+  return estimateTranscriptionCredits(durationSeconds);
+}
+
+/**
+ * Conservative reserve for translating a caption track into ONE language.
+ * Chunked Claude call: cue text in, translated cue text out (similar size),
+ * plus a fixed prompt overhead. ~14 tokens per English cue in and out.
+ */
+export function estimateTranslationCreditsPerLanguage(cueCount: number): number {
+  const cues = Math.max(1, cueCount);
+  const rates = getAnthropicModelPricing(TRANSLATION_MODEL);
+  const promptOverheadTokens = 1_200;
+  const inputTokens = promptOverheadTokens + cues * 18;
+  // Non-Latin scripts can be token-heavier than English; pad the output side.
+  const outputTokens = cues * 26;
+  const usd =
+    (inputTokens / 1_000_000) * rates.inputUsdPerMtok +
+    (outputTokens / 1_000_000) * rates.outputUsdPerMtok;
+  return Math.max(1, usdToCredits(usd));
+}
+
+/** Upfront reserve for translating into several languages at once. */
+export function estimateTranslationCredits(cueCount: number, languageCount: number): number {
+  const langs = Math.max(1, languageCount);
+  return estimateTranslationCreditsPerLanguage(cueCount) * langs;
+}
+
 export const PRICING_REFERENCE = {
   seedancePerSecond: SEEDANCE_BASE_USD_PER_SECOND,
   openAiImagePerImageUsd: OPENAI_IMAGE_BASE_USD_PER_IMAGE,
   anthropicModels: ANTHROPIC_MODEL_PRICING,
+  whisperUsdPerMinute: WHISPER_USD_PER_MINUTE,
 } as const;

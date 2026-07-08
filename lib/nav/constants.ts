@@ -8,6 +8,7 @@ export const COMING_SOON_NAV_HIDDEN = new Set([
 export const PRIMARY_NAV_ITEMS = [
   { href: "/", label: "Home" },
   { href: "/projects", label: "Projects" },
+  { href: "/captioning", label: "Captioning" },
   { href: "/credits", label: "Credits" },
 ] as const;
 
