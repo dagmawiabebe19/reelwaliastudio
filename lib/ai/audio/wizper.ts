@@ -61,19 +61,24 @@ function safeHost(url: string): string {
 /** Map Wizper's timestamped chunks into our segment shape (seconds). */
 function chunksToSegments(chunks: WizperChunk[]): WhisperSegment[] {
   const segments: WhisperSegment[] = [];
-  let lastEnd = 0;
 
   for (const chunk of chunks) {
     const text = (chunk.text ?? "").trim();
-    if (!text) continue;
+    if (!text || !/[\p{L}\p{N}]/u.test(text)) continue;
 
     const ts = chunk.timestamp ?? [];
-    const rawStart = typeof ts[0] === "number" ? (ts[0] as number) : lastEnd;
-    const rawEnd = typeof ts[1] === "number" ? (ts[1] as number) : rawStart + 2;
-    const start = Math.max(0, rawStart);
-    const end = Math.max(start + 0.2, rawEnd);
-    lastEnd = end;
+    const rawStart = ts[0];
+    const rawEnd = ts[1];
 
+    // Require Wizper's explicit speech timestamps — never invent a start at 0
+    // (or the previous cue's end) when fal omits the start time.
+    if (typeof rawStart !== "number" || typeof rawEnd !== "number") {
+      console.warn("[wizper] skipping chunk with incomplete timestamps", { text, ts });
+      continue;
+    }
+
+    const start = rawStart;
+    const end = Math.max(start + 0.2, rawEnd);
     segments.push({ start, end, text });
   }
 

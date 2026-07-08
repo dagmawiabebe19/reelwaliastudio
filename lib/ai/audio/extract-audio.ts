@@ -25,8 +25,12 @@ type MergeAudiosOutput = { audio?: { url?: string; content_type?: string } };
 
 /**
  * merge-audios requires >= 2 inputs, so we append a fraction of a second of
- * silence as the second track. Real speech is at the start, so its timecodes
- * are unaffected; the trailing silence carries no cues.
+ * silence as the second track.
+ *
+ * WARNING: fal's merge-audios output drops leading silence from the video
+ * audio track, rebasing timestamps ~N seconds early vs the original video.
+ * Only use this as a last-resort fallback when Wizper cannot read the muxed
+ * video directly — never for timing-accurate captions.
  */
 function silentWavBuffer(seconds = 0.2, sampleRate = 16000): Buffer {
   const samples = Math.floor(seconds * sampleRate);

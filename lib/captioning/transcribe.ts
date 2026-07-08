@@ -26,10 +26,11 @@ export type TranscriptionOutcome =
 /**
  * Metered transcription job (background, service-role).
  *
- * Transcription runs entirely on fal (Wizper / Whisper v3): we hand fal a
- * signed URL to the uploaded episode and it pulls + transcribes on real
- * compute. No audio extraction, no ffmpeg on Vercel, and no OpenAI 25 MB file
- * cap — a full 40–150 MB+ episode transcribes without any client-side work.
+ * Transcription runs on fal Wizper against the **video URL directly** so
+ * timestamps stay on the original video timeline (leading silence preserved).
+ * Audio extraction via merge-audios is only used as a fallback when Wizper
+ * cannot read the muxed container — extraction trims leading silence and would
+ * shift every cue early.
  */
 export async function runTranscription(input: {
   jobId: string;
@@ -60,24 +61,33 @@ export async function runTranscription(input: {
           throw new Error("Could not create a source video URL for transcription.");
         }
 
-        // Extract a clean audio-only file on fal first. Handing the muxed video
-        // straight to Wizper can yield an empty transcript for some MP4 exports
-        // (container/demux quirks); a bare audio track transcribes reliably.
-        let transcribeUrl = signed.signedUrl;
+        let wizperResult;
         try {
-          transcribeUrl = await extractAudioOnFal({ mediaUrl: signed.signedUrl });
-          console.log("[captioning] audio extracted for transcription", { jobId: job.id });
-        } catch (extractError) {
-          console.warn("[captioning] fal audio extraction failed; using video directly", {
-            jobId: job.id,
-            error: extractError instanceof Error ? extractError.message : String(extractError),
+          wizperResult = await wizperTranscribe({
+            mediaUrl: signed.signedUrl,
+            language: "en",
           });
-        }
+          console.log("[captioning] transcribed video directly (video-relative timestamps)", {
+            jobId: job.id,
+            requestId: wizperResult.requestId,
+          });
+        } catch (directError) {
+          if (!(directError instanceof WizperEmptyResultError)) throw directError;
 
-        const wizperResult = await wizperTranscribe({
-          mediaUrl: transcribeUrl,
-          language: "en",
-        });
+          console.warn(
+            "[captioning] Wizper returned empty on video; falling back to fal audio extraction",
+            { jobId: job.id, requestId: directError.requestId },
+          );
+          const audioUrl = await extractAudioOnFal({ mediaUrl: signed.signedUrl });
+          wizperResult = await wizperTranscribe({
+            mediaUrl: audioUrl,
+            language: "en",
+          });
+          console.warn(
+            "[captioning] transcribed extracted audio (timestamps may drift from video — prefer direct video)",
+            { jobId: job.id, requestId: wizperResult.requestId },
+          );
+        }
 
         const { segments, durationSeconds } = wizperResult;
         const cues = segmentsToCues(segments);
