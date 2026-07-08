@@ -13,6 +13,7 @@ import { uploadVttForLanguage } from "@/lib/captioning/export";
 import { segmentsToCues } from "@/lib/captioning/segmentation";
 import { SOURCE_LANG } from "@/lib/captioning/types";
 import { wizperTranscribe } from "@/lib/ai/audio/wizper";
+import { extractAudioOnFal } from "@/lib/ai/audio/extract-audio";
 
 /** fal fetches the source itself from a signed URL — keep it valid for the whole job. */
 const SOURCE_SIGNED_URL_TTL_SECONDS = 6 * 3600;
@@ -59,8 +60,22 @@ export async function runTranscription(input: {
           throw new Error("Could not create a source video URL for transcription.");
         }
 
+        // Extract a clean audio-only file on fal first. Handing the muxed video
+        // straight to Wizper can yield an empty transcript for some MP4 exports
+        // (container/demux quirks); a bare audio track transcribes reliably.
+        let transcribeUrl = signed.signedUrl;
+        try {
+          transcribeUrl = await extractAudioOnFal({ mediaUrl: signed.signedUrl });
+          console.log("[captioning] audio extracted for transcription", { jobId: job.id });
+        } catch (extractError) {
+          console.warn("[captioning] fal audio extraction failed; using video directly", {
+            jobId: job.id,
+            error: extractError instanceof Error ? extractError.message : String(extractError),
+          });
+        }
+
         const { segments, durationSeconds } = await wizperTranscribe({
-          mediaUrl: signed.signedUrl,
+          mediaUrl: transcribeUrl,
           language: "en",
         });
 
