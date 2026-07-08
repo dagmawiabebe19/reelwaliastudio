@@ -12,20 +12,27 @@ import {
   releaseReservation,
   reserveCredits,
 } from "@/lib/credits/mutations";
+import type { ServiceDbClient } from "@/lib/db/service-client";
 
 export type BillableWorkContext = {
   markBillableWorkStarted: () => void;
 };
 
+/**
+ * `db` (service-role client) MUST be passed from detached/background tasks that
+ * have no request scope — otherwise the admin/balance reads reach for cookies()
+ * and throw "cookies was called outside a request scope".
+ */
 export async function assertSufficientCredits(
   userId: string,
   estimateCredits: number,
+  db?: ServiceDbClient,
 ): Promise<void> {
-  if (await isAdmin(userId)) {
+  if (await isAdmin(userId, db)) {
     return;
   }
 
-  const { available } = await getBalance(userId);
+  const { available } = await getBalance(userId, db);
   if (available < estimateCredits) {
     throw new InsufficientCreditsError(estimateCredits, available);
   }
@@ -34,6 +41,9 @@ export async function assertSufficientCredits(
 /**
  * Single chokepoint for paid generation: reserve once, run provider, commit actual or release on failure.
  * Admins are never blocked by insufficient credits; reserve/commit/release still run (balance may go negative).
+ *
+ * Pass `options.db` (service-role client) from background/ops tasks with no
+ * request scope. reserve/commit/release already use the admin client.
  */
 export async function withCredits<T>(
   userId: string,
@@ -41,8 +51,9 @@ export async function withCredits<T>(
   reference: string,
   fn: () => Promise<{ result: T; actualCredits: number }>,
   metadata?: Record<string, unknown>,
+  options?: { db?: ServiceDbClient },
 ): Promise<T> {
-  const admin = await isAdmin(userId);
+  const admin = await isAdmin(userId, options?.db);
   let reservationId: string | null = null;
 
   try {
@@ -58,12 +69,12 @@ export async function withCredits<T>(
 
     const message = error instanceof Error ? error.message : String(error);
     if (message === "insufficient_credits") {
-      const { available } = await getBalance(userId);
+      const { available } = await getBalance(userId, options?.db);
       throw new InsufficientCreditsError(estimateCredits, available);
     }
     const parsed = insufficientCreditsFromMessage(message, estimateCredits, 0);
     if (parsed) {
-      const { available } = await getBalance(userId);
+      const { available } = await getBalance(userId, options?.db);
       throw new InsufficientCreditsError(estimateCredits, available);
     }
     throw error;

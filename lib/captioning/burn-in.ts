@@ -152,7 +152,7 @@ export async function runBurnIn(input: {
 
   // Block non-admins before any paid fal work.
   try {
-    await assertSufficientCredits(job.owner_id, estimate);
+    await assertSufficientCredits(job.owner_id, estimate, input.db);
   } catch (error) {
     await failBurn(input.db, job.id, error instanceof Error ? error.message : "Insufficient credits.");
     return {
@@ -163,7 +163,7 @@ export async function runBurnIn(input: {
   }
 
   // Reserve once for this logical burn job.
-  const admin = await isAdmin(job.owner_id);
+  const admin = await isAdmin(job.owner_id, input.db);
   let reserved = false;
   try {
     await reserveCredits(job.owner_id, estimate, burnCreditReference(job.id), {

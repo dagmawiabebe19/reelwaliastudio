@@ -165,6 +165,7 @@ export async function runTranslation(input: {
         return { result: cues.length, actualCredits };
       },
       { jobId: input.jobId, lang: input.lang, kind: "translation" },
+      { db: input.db },
     );
 
     return { status: "ready", lang: input.lang, cueCount };

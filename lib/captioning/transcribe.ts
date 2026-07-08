@@ -139,6 +139,7 @@ export async function runTranscription(input: {
         return { result: cues.length, actualCredits };
       },
       { jobId: job.id, kind: "transcription" },
+      { db: input.db },
     );
 
     console.log("[captioning] transcribed", { jobId: job.id, cueCount });
