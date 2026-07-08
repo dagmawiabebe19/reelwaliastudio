@@ -228,24 +228,33 @@ export function estimateScreenplayAnalysisCredits(sceneCount: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Captioning — transcription (OpenAI Whisper) + translation (Claude)
+// Captioning — transcription (fal Wizper / Whisper v3) + translation (Claude)
 // ---------------------------------------------------------------------------
 
-/** OpenAI whisper-1 list price (USD per audio-minute). */
-export const WHISPER_USD_PER_MINUTE = 0.006;
+/**
+ * fal Wizper (Whisper v3 Large) transcription cost (USD per audio-minute).
+ * Wizper is GPU/compute-second billed with a ~250× realtime factor, so the
+ * effective per-audio-minute cost is ~$0.0003. We keep a small headroom and a
+ * 1-credit floor so short clips still reserve at least 1 credit.
+ * @see https://fal.ai/models/fal-ai/wizper
+ */
+export const WIZPER_USD_PER_MINUTE = 0.001;
+
+/** @deprecated Kept for compatibility; transcription now runs on fal Wizper. */
+export const WHISPER_USD_PER_MINUTE = WIZPER_USD_PER_MINUTE;
 
 /** Model used for subtitle translation (quality across non-Latin scripts). */
 export const TRANSLATION_MODEL = "claude-sonnet-4-6";
 
-/** Billed audio minutes, rounded up (Whisper bills per second but we reserve per minute). */
+/** Billed audio minutes, rounded up. */
 function billedAudioMinutes(durationSeconds: number): number {
   return Math.max(1, Math.ceil(Math.max(0, durationSeconds) / 60));
 }
 
-/** Upfront reserve for transcribing one episode's audio. */
+/** Upfront reserve for transcribing one episode's audio on fal Wizper. */
 export function estimateTranscriptionCredits(durationSeconds: number): number {
   const minutes = billedAudioMinutes(durationSeconds);
-  return Math.max(1, usdToCredits(WHISPER_USD_PER_MINUTE * minutes));
+  return Math.max(1, usdToCredits(WIZPER_USD_PER_MINUTE * minutes));
 }
 
 /** Actual commit once real audio duration is known. */
@@ -321,6 +330,6 @@ export const PRICING_REFERENCE = {
   seedancePerSecond: SEEDANCE_BASE_USD_PER_SECOND,
   openAiImagePerImageUsd: OPENAI_IMAGE_BASE_USD_PER_IMAGE,
   anthropicModels: ANTHROPIC_MODEL_PRICING,
-  whisperUsdPerMinute: WHISPER_USD_PER_MINUTE,
+  wizperUsdPerMinute: WIZPER_USD_PER_MINUTE,
   veedSubtitlesUsdPerMinute: VEED_SUBTITLES_USD_PER_MINUTE,
 } as const;

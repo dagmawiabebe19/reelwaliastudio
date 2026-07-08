@@ -38,7 +38,13 @@ export function CaptioningUpload() {
         <strong className="font-medium text-foreground">actual audio</strong>, not the script.
         Direct upload — large files never pass through the server.
       </p>
-      <p className="mt-1 text-xs text-muted">.mp4, .mov, .m4v, .webm, or .mkv · up to 500 MB</p>
+      <p className="mt-1 text-xs text-muted">
+        .mp4, .mov, .m4v, .webm, or .mkv · storage limit 500 MB per file
+      </p>
+      <p className="mt-1 text-xs text-muted">
+        Transcription runs on fal Wizper (Whisper v3), which reads the video directly — a
+        full-length episode anywhere up to the 500 MB storage limit transcribes fine.
+      </p>
 
       <input
         ref={fileRef}

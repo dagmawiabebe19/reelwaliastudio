@@ -10,7 +10,6 @@ import { getBurnInStyle } from "@/lib/captioning/burn-style";
 import {
   estimateBurnInCredits,
   estimateTranscriptionCredits,
-  WHISPER_USD_PER_MINUTE,
 } from "@/lib/credits/pricing";
 import {
   getCaptioningJob,
@@ -62,8 +61,8 @@ export default async function CaptionJobPage({ params }: CaptionJobPageProps) {
 
       <div className="mb-8 rounded-lg border border-border bg-surface-elevated px-4 py-3 text-sm text-muted">
         <p>
-          <strong className="text-foreground">Transcription:</strong> OpenAI Whisper (
-          <code className="text-xs">whisper-1</code>) · ${WHISPER_USD_PER_MINUTE}/audio-min ·
+          <strong className="text-foreground">Transcription:</strong> fal Wizper (Whisper v3) ·
+          runs on fal compute, reads the episode directly — no size/extraction limits ·
           this job ≈ {transcribeCredits} credits
           {job.duration_seconds ? ` (${Math.ceil(durationSec / 60)} min billed)` : ""}.
         </p>
