@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BurnInPanel } from "@/components/captioning/BurnInPanel";
 import { CaptionExportPanel } from "@/components/captioning/CaptionExportPanel";
 import { CaptionReviewPanel } from "@/components/captioning/CaptionReviewPanel";
 import { CaptionJobPoller } from "@/components/captioning/CaptionJobPoller";
 import { TranslationPanel } from "@/components/captioning/TranslationPanel";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { getBurnInStyle } from "@/lib/captioning/burn-style";
 import {
+  estimateBurnInCredits,
   estimateTranscriptionCredits,
   WHISPER_USD_PER_MINUTE,
 } from "@/lib/credits/pricing";
@@ -35,10 +38,13 @@ export default async function CaptionJobPage({ params }: CaptionJobPageProps) {
     job.status === "transcribing" ||
     job.status === "uploaded" ||
     job.status === "translating" ||
+    job.burn_status === "processing" ||
     translations.some((t) => t.status === "translating" || t.status === "pending");
 
   const durationSec = job.duration_seconds ? Number(job.duration_seconds) : 90;
   const transcribeCredits = estimateTranscriptionCredits(durationSec);
+  const burnStyle = getBurnInStyle();
+  const burnInCredits = estimateBurnInCredits(durationSec, burnStyle.preset);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
@@ -78,6 +84,16 @@ export default async function CaptionJobPage({ params }: CaptionJobPageProps) {
           title={job.title}
           hasEnglish={englishCues.length > 0}
           readyLangs={readyLangs}
+        />
+        <BurnInPanel
+          jobId={job.id}
+          englishApproved={!!job.english_approved_at}
+          burnStatus={job.burn_status}
+          burnFailReason={job.burn_fail_reason}
+          hasBurnedVideo={!!job.burned_video_path}
+          estimateCredits={burnInCredits}
+          preset={burnStyle.preset}
+          position={burnStyle.position}
         />
       </section>
     </div>

@@ -277,9 +277,50 @@ export function estimateTranslationCredits(cueCount: number, languageCount: numb
   return estimateTranslationCreditsPerLanguage(cueCount) * langs;
 }
 
+// ---------------------------------------------------------------------------
+// Captioning — burned-in (open caption) video via fal veed/subtitles
+// ---------------------------------------------------------------------------
+
+/** VEED subtitles base rate (USD per video-minute). */
+export const VEED_SUBTITLES_USD_PER_MINUTE = 0.1;
+
+/**
+ * VEED preset pricing tiers: "dynamic" presets bill 2×, "basic" presets 1×.
+ * We default to a basic preset for cheaper, predictable social captions.
+ */
+export function veedPresetMultiplier(preset: string): number {
+  const dynamic = new Set([
+    "glass",
+    "whisper",
+    "glide2",
+    "fusion",
+    "glide",
+    "terminal",
+    "handwritten",
+    "backdrop",
+    "backdrop2",
+  ]);
+  return dynamic.has(preset) ? 2 : 1;
+}
+
+function billedVideoMinutes(durationSeconds: number): number {
+  return Math.max(1, Math.ceil(Math.max(0, durationSeconds) / 60));
+}
+
+/** Reserve/commit for burning English captions into one video. */
+export function estimateBurnInCredits(
+  durationSeconds: number,
+  preset: string,
+): number {
+  const minutes = billedVideoMinutes(durationSeconds);
+  const usd = VEED_SUBTITLES_USD_PER_MINUTE * minutes * veedPresetMultiplier(preset);
+  return Math.max(1, usdToCredits(usd));
+}
+
 export const PRICING_REFERENCE = {
   seedancePerSecond: SEEDANCE_BASE_USD_PER_SECOND,
   openAiImagePerImageUsd: OPENAI_IMAGE_BASE_USD_PER_IMAGE,
   anthropicModels: ANTHROPIC_MODEL_PRICING,
   whisperUsdPerMinute: WHISPER_USD_PER_MINUTE,
+  veedSubtitlesUsdPerMinute: VEED_SUBTITLES_USD_PER_MINUTE,
 } as const;

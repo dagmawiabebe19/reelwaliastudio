@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { getActiveUserId } from "@/lib/auth/getUser";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  beginBurnIn,
   createCaptioningJob,
   getCaptioningJob,
   listCues,
@@ -15,14 +16,17 @@ import {
 import { CAPTIONING_BUCKET } from "@/lib/captioning/export";
 import { TARGET_LANGUAGE_CODES } from "@/lib/captioning/languages";
 import {
+  scheduleBurnIn,
   scheduleTranscription,
   scheduleTranslation,
   scheduleTranslations,
 } from "@/lib/captioning/sweep";
 import { uploadVttForLanguage } from "@/lib/captioning/export";
 import { buildVtt } from "@/lib/captioning/vtt";
+import { getBurnInStyle } from "@/lib/captioning/burn-style";
 import { SOURCE_LANG, type CaptionCue } from "@/lib/captioning/types";
 import {
+  estimateBurnInCredits,
   estimateTranscriptionCredits,
   estimateTranslationCredits,
   estimateTranslationCreditsPerLanguage,
@@ -264,6 +268,78 @@ export async function getCaptionVideoUrlAction(jobId: string) {
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "Could not load video.",
+    };
+  }
+}
+
+export async function estimateBurnInAction(jobId: string) {
+  try {
+    const job = await getCaptioningJob(jobId);
+    if (!job) return { error: "Job not found." };
+    const seconds = job.duration_seconds ?? 90;
+    const preset = getBurnInStyle().preset;
+    return {
+      estimateCredits: estimateBurnInCredits(seconds, preset),
+      durationSeconds: seconds,
+      preset,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Could not estimate burn-in cost.",
+    };
+  }
+}
+
+export async function generateBurnInAction(jobId: string) {
+  try {
+    const job = await getCaptioningJob(jobId);
+    if (!job) return { error: "Job not found." };
+    if (!job.english_approved_at) {
+      return { error: "Approve English before generating a burned-in video." };
+    }
+    if (job.burn_status === "processing") {
+      return { error: "A burned-in video is already being generated." };
+    }
+
+    // Owner-scoped read already confirmed ownership; use admin for the write.
+    const admin = createAdminClient();
+    const claimed = await beginBurnIn(admin, jobId);
+    if (!claimed) {
+      return { error: "Could not start burn-in. Approve English and try again." };
+    }
+
+    scheduleBurnIn(jobId);
+    revalidatePath(`/captioning/${jobId}`);
+    return { success: true as const };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Failed to start burn-in.",
+    };
+  }
+}
+
+export async function getBurnedVideoUrlAction(jobId: string) {
+  try {
+    const job = await getCaptioningJob(jobId);
+    if (!job) return { error: "Job not found." };
+    if (job.burn_status !== "ready" || !job.burned_video_path) {
+      return { error: "Burned-in video is not ready yet." };
+    }
+
+    const supabase = await createClient();
+    const { data, error } = await supabase.storage
+      .from(job.video_bucket)
+      .createSignedUrl(job.burned_video_path, 3600, {
+        download: `${job.title}-english-social.mp4`,
+      });
+
+    if (error || !data?.signedUrl) {
+      return { error: "Could not load the burned-in video." };
+    }
+    return { url: data.signedUrl };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Could not load the burned-in video.",
     };
   }
 }

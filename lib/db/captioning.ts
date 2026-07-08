@@ -7,6 +7,8 @@ import type { ServiceDbClient } from "@/lib/db/service-client";
 import type { CaptionCue, CaptioningStatus, TranslationStatus } from "@/lib/captioning/types";
 import { SOURCE_LANG } from "@/lib/captioning/types";
 
+export type BurnStatus = "none" | "processing" | "ready" | "failed";
+
 export type CaptioningJobRow = {
   id: string;
   owner_id: string;
@@ -19,6 +21,11 @@ export type CaptioningJobRow = {
   status: CaptioningStatus;
   fail_reason: string | null;
   english_approved_at: string | null;
+  burn_status: BurnStatus;
+  burn_fail_reason: string | null;
+  burn_request_id: string | null;
+  burn_endpoint: string | null;
+  burned_video_path: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -311,6 +318,102 @@ export async function listPendingTranslations(
     .limit(100);
   if (error) throw new Error(error.message);
   return (data ?? []) as Array<{ job_id: string; lang: string }>;
+}
+
+// --- burn-in (open captions) ------------------------------------------------
+
+export async function setBurnStatus(
+  db: ServiceDbClient,
+  jobId: string,
+  status: BurnStatus,
+  failReason: string | null = null,
+): Promise<void> {
+  const { error } = await db
+    .from("captioning_jobs")
+    .update({ burn_status: status, burn_fail_reason: failReason })
+    .eq("id", jobId);
+  if (error) throw new Error(error.message);
+}
+
+export async function setBurnRequest(
+  db: ServiceDbClient,
+  jobId: string,
+  input: { requestId: string; endpoint: string },
+): Promise<void> {
+  const { error } = await db
+    .from("captioning_jobs")
+    .update({
+      burn_status: "processing",
+      burn_request_id: input.requestId,
+      burn_endpoint: input.endpoint,
+      burn_fail_reason: null,
+    })
+    .eq("id", jobId);
+  if (error) throw new Error(error.message);
+}
+
+export async function setBurnedVideo(
+  db: ServiceDbClient,
+  jobId: string,
+  burnedVideoPath: string,
+): Promise<void> {
+  const { error } = await db
+    .from("captioning_jobs")
+    .update({
+      burn_status: "ready",
+      burned_video_path: burnedVideoPath,
+      burn_fail_reason: null,
+    })
+    .eq("id", jobId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Atomically move an approved job into burn 'processing' from none/failed.
+ * Clears any prior request id so a retry submits a fresh fal job. Returns the
+ * row when claimed, or null if it wasn't eligible (already processing/ready,
+ * or English not yet approved).
+ */
+export async function beginBurnIn(
+  db: ServiceDbClient,
+  jobId: string,
+): Promise<CaptioningJobRow | null> {
+  const { data: current, error: readError } = await db
+    .from("captioning_jobs")
+    .select("english_approved_at")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (readError) throw new Error(readError.message);
+  if (!current?.english_approved_at) return null;
+
+  const { data, error } = await db
+    .from("captioning_jobs")
+    .update({
+      burn_status: "processing",
+      burn_request_id: null,
+      burn_endpoint: null,
+      burn_fail_reason: null,
+    })
+    .eq("id", jobId)
+    .in("burn_status", ["none", "failed"])
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return (data as CaptioningJobRow | null) ?? null;
+}
+
+export async function listBurnInProcessingJobs(
+  db: ServiceDbClient,
+): Promise<CaptioningJobRow[]> {
+  const { data, error } = await db
+    .from("captioning_jobs")
+    .select("*")
+    .eq("burn_status", "processing")
+    .order("updated_at", { ascending: true })
+    .limit(20);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CaptioningJobRow[];
 }
 
 export function cueRowsToCues(rows: CaptionCueRow[]): CaptionCue[] {

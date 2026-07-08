@@ -5,6 +5,7 @@ import type { ServiceDbClient } from "@/lib/db/service-client";
 import { listPendingTranscriptionJobIds, listPendingTranslations } from "@/lib/db/captioning";
 import { runTranscription } from "@/lib/captioning/transcribe";
 import { runTranslation } from "@/lib/captioning/translate";
+import { reconcileProcessingBurnJobs, runBurnIn } from "@/lib/captioning/burn-in";
 
 export type CaptioningOps = { db: ServiceDbClient };
 
@@ -100,14 +101,29 @@ export function scheduleTranslations(jobId: string, langs: string[]): void {
   );
 }
 
+export function scheduleBurnIn(jobId: string): void {
+  const db = createAdminClient();
+  runDetached(
+    "burn-in",
+    async () => {
+      const outcome = await runBurnIn({ jobId, db });
+      if (outcome.status !== "skipped") {
+        console.log("[captioning] burn-in finished", { jobId, outcome });
+      }
+    },
+    { jobId },
+  );
+}
+
 export function scheduleStartupCaptioningSweep(): void {
   const ops: CaptioningOps = { db: createAdminClient() };
   runDetached("startup sweep", async () => {
     const t = await reconcilePendingTranscriptions({ ops });
     const tr = await reconcilePendingTranslations({ ops });
-    if (t.processed > 0 || tr.processed > 0) {
+    const b = await reconcileProcessingBurnJobs({ db: ops.db });
+    if (t.processed > 0 || tr.processed > 0 || b.processed > 0) {
       console.log(
-        `[captioning] startup sweep transcriptions:${t.processed} translations:${tr.processed}`,
+        `[captioning] startup sweep transcriptions:${t.processed} translations:${tr.processed} burns:${b.processed}`,
       );
     }
   });
