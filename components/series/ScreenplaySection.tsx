@@ -237,12 +237,18 @@ export function ScreenplaySection({ seriesId, screenplay }: ScreenplaySectionPro
             </div>
           </div>
 
-          {screenplay.analysisStatus === "proposed" && screenplay.analysisProposal ? (
+          {(screenplay.analysisStatus === "proposed" || screenplay.analysisStatus === "approved") &&
+          screenplay.analysisProposal ? (
             <ScreenplayBreakdownReview
               seriesId={seriesId}
               screenplayId={screenplay.id}
               proposal={screenplay.analysisProposal}
+              readOnly={screenplay.analysisStatus === "approved"}
             />
+          ) : screenplay.analysisStatus === "proposed" && !screenplay.analysisProposal ? (
+            <p className="mt-4 text-sm text-amber-300">
+              Analysis marked ready but breakdown data is missing. Run Analyze screenplay again.
+            </p>
           ) : null}
         </div>
       ) : (

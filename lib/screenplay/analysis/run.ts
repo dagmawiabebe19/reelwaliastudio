@@ -24,6 +24,7 @@ import {
   SCREENPLAY_REDUCE_MODEL,
 } from "@/lib/screenplay/analysis/reduce";
 import type { MapChunkSceneResult, ScreenplayBreakdownProposal } from "@/lib/screenplay/analysis/types";
+import { isNonEmptyScreenplayBreakdown } from "@/lib/screenplay/analysis/validate";
 import { mergeAnthropicUsage } from "@/lib/screenplay/analysis/usage";
 import type { AnthropicUsageLike } from "@/lib/credits/pricing";
 
@@ -99,6 +100,10 @@ export async function runScreenplayAnalysis(input: {
           scenes: enrichedScenes,
           mapNotes,
         });
+
+        if (!isNonEmptyScreenplayBreakdown(proposal)) {
+          throw new Error("Analysis produced an empty breakdown. Try again.");
+        }
 
         await setScreenplayAnalysisProposed(input.screenplayId, proposal);
 

@@ -9,12 +9,14 @@ interface ScreenplayBreakdownReviewProps {
   seriesId: string;
   screenplayId: string;
   proposal: ScreenplayBreakdownProposal;
+  readOnly?: boolean;
 }
 
 export function ScreenplayBreakdownReview({
   seriesId,
   screenplayId,
   proposal,
+  readOnly = false,
 }: ScreenplayBreakdownReviewProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -90,6 +92,7 @@ export function ScreenplayBreakdownReview({
             <button
               key={key}
               type="button"
+              disabled={readOnly}
               onClick={() => {
                 setStructure(key);
                 const nextEpisodes =
@@ -100,7 +103,7 @@ export function ScreenplayBreakdownReview({
               }}
               className={`rounded px-3 py-1 ${
                 structure === key ? "bg-accent text-white" : "text-muted hover:text-foreground"
-              }`}
+              } ${readOnly ? "cursor-default opacity-80" : ""}`}
             >
               {label}
             </button>
@@ -116,14 +119,18 @@ export function ScreenplayBreakdownReview({
 
       <section className="space-y-2">
         <h4 className="text-sm font-medium text-foreground">Characters</h4>
+        {proposal.characters.length === 0 ? (
+          <p className="text-sm text-muted">No characters in this breakdown.</p>
+        ) : (
         <div className="space-y-2">
           {proposal.characters.map((character) => (
             <label
               key={character.key}
-              className="flex cursor-pointer gap-3 rounded border border-border/70 p-3 text-sm"
+              className={`flex gap-3 rounded border border-border/70 p-3 text-sm ${readOnly ? "" : "cursor-pointer"}`}
             >
               <input
                 type="checkbox"
+                disabled={readOnly}
                 checked={selectedCharacters.has(character.key)}
                 onChange={() => toggle(setSelectedCharacters, character.key)}
               />
@@ -135,18 +142,23 @@ export function ScreenplayBreakdownReview({
             </label>
           ))}
         </div>
+        )}
       </section>
 
       <section className="space-y-2">
         <h4 className="text-sm font-medium text-foreground">Locations</h4>
+        {proposal.locations.length === 0 ? (
+          <p className="text-sm text-muted">No locations in this breakdown.</p>
+        ) : (
         <div className="space-y-2">
           {proposal.locations.map((location) => (
             <label
               key={location.key}
-              className="flex cursor-pointer gap-3 rounded border border-border/70 p-3 text-sm"
+              className={`flex gap-3 rounded border border-border/70 p-3 text-sm ${readOnly ? "" : "cursor-pointer"}`}
             >
               <input
                 type="checkbox"
+                disabled={readOnly}
                 checked={selectedLocations.has(location.key)}
                 onChange={() => toggle(setSelectedLocations, location.key)}
               />
@@ -157,18 +169,23 @@ export function ScreenplayBreakdownReview({
             </label>
           ))}
         </div>
+        )}
       </section>
 
       <section className="space-y-2">
         <h4 className="text-sm font-medium text-foreground">Episodes ({structure})</h4>
+        {episodes.length === 0 ? (
+          <p className="text-sm text-muted">No episodes in this breakdown.</p>
+        ) : (
         <div className="space-y-2">
           {episodes.map((episode) => (
             <label
               key={episode.key}
-              className="flex cursor-pointer gap-3 rounded border border-border/70 p-3 text-sm"
+              className={`flex gap-3 rounded border border-border/70 p-3 text-sm ${readOnly ? "" : "cursor-pointer"}`}
             >
               <input
                 type="checkbox"
+                disabled={readOnly}
                 checked={selectedEpisodes.has(episode.key)}
                 onChange={() => toggle(setSelectedEpisodes, episode.key)}
               />
@@ -191,10 +208,16 @@ export function ScreenplayBreakdownReview({
             </label>
           ))}
         </div>
+        )}
       </section>
 
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
 
+      {readOnly ? (
+        <p className="border-t border-border pt-4 text-sm text-muted">
+          Breakdown approved — ingredients and episodes were created from your selection.
+        </p>
+      ) : (
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
         <p className="text-sm text-muted">{selectionSummary}</p>
         <button
@@ -206,6 +229,7 @@ export function ScreenplayBreakdownReview({
           Approve selected
         </button>
       </div>
+      )}
     </div>
   );
 }

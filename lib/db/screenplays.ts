@@ -9,6 +9,10 @@ import type {
   ScreenplayAnalysisStatus,
   ScreenplayBreakdownProposal,
 } from "@/lib/screenplay/analysis/types";
+import {
+  describeEmptyScreenplayBreakdown,
+  isNonEmptyScreenplayBreakdown,
+} from "@/lib/screenplay/analysis/validate";
 
 export type ScreenplayRow = {
   id: string;
@@ -194,6 +198,10 @@ export async function setScreenplayAnalysisProposed(
   screenplayId: string,
   proposal: ScreenplayBreakdownProposal,
 ): Promise<void> {
+  if (!isNonEmptyScreenplayBreakdown(proposal)) {
+    throw new Error(describeEmptyScreenplayBreakdown(proposal));
+  }
+
   const supabase = await getDbClient();
   const { error } = await supabase
     .from("screenplays")
@@ -205,6 +213,17 @@ export async function setScreenplayAnalysisProposed(
     .eq("id", screenplayId);
 
   if (error) throw new Error(error.message);
+
+  const { data: stored, error: readError } = await supabase
+    .from("screenplays")
+    .select("analysis_status, analysis_proposal")
+    .eq("id", screenplayId)
+    .maybeSingle();
+
+  if (readError) throw new Error(readError.message);
+  if (stored?.analysis_status !== "proposed" || !isNonEmptyScreenplayBreakdown(stored.analysis_proposal)) {
+    throw new Error("Breakdown was not saved correctly. Try analyzing again.");
+  }
 }
 
 export async function setScreenplayAnalysisFailed(
