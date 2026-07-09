@@ -1,6 +1,6 @@
 export type ScreenplayFormat = "pdf" | "fdx" | "fountain" | "txt";
 
-export type ScreenplayStatus = "uploaded" | "parsing" | "parsed" | "failed";
+export type ScreenplayStatus = "uploaded" | "reading_pdf" | "parsing" | "parsed" | "failed";
 
 export type ParsedScreenplayScene = {
   sceneNumber: number;

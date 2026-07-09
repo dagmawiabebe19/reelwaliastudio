@@ -331,12 +331,26 @@ export async function listPendingScreenplayIds(db: ServiceDbClient): Promise<str
   const { data, error } = await db
     .from("screenplays")
     .select("id")
-    .in("status", ["uploaded", "parsing"])
+    .in("status", ["uploaded", "reading_pdf", "parsing"])
     .order("created_at", { ascending: true })
     .limit(20);
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => row.id);
+}
+
+export async function setScreenplayParseStatus(
+  db: ServiceDbClient,
+  screenplayId: string,
+  status: "reading_pdf" | "parsing",
+): Promise<void> {
+  const { error } = await db
+    .from("screenplays")
+    .update({ status })
+    .eq("id", screenplayId)
+    .in("status", ["uploaded", "reading_pdf", "parsing"]);
+
+  if (error) throw new Error(error.message);
 }
 
 export async function claimScreenplayForParsing(
@@ -350,13 +364,15 @@ export async function claimScreenplayForParsing(
     .maybeSingle();
 
   if (readError) throw new Error(readError.message);
-  if (!current || !["uploaded", "parsing"].includes(current.status)) return null;
+  if (!current || !["uploaded", "reading_pdf", "parsing"].includes(current.status)) return null;
+
+  const initialStatus = current.format === "pdf" ? "reading_pdf" : "parsing";
 
   const { data, error } = await db
     .from("screenplays")
-    .update({ status: "parsing" })
+    .update({ status: initialStatus, fail_reason: null })
     .eq("id", screenplayId)
-    .in("status", ["uploaded", "parsing"])
+    .in("status", ["uploaded", "reading_pdf", "parsing"])
     .select("*")
     .maybeSingle();
 

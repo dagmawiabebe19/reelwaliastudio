@@ -202,6 +202,18 @@ const SCREENPLAY_MAP_CHUNK_SIZE = 20;
 const SCREENPLAY_MAP_MODEL = "claude-haiku-4-5-20251001";
 const SCREENPLAY_REDUCE_MODEL = "claude-opus-4-8";
 
+/** Claude vision OCR fallback for scanned PDF screenplays (Anthropic API, not Vercel). */
+export const PDF_VISION_OCR_MODEL = "claude-sonnet-4-6";
+
+/** Rough API cost for an ~8-page screenplay PDF vision OCR (~15k in / ~2k out tokens). */
+export function estimatePdfVisionOcrUsd(inputTokens: number, outputTokens: number): number {
+  const rates = getAnthropicModelPricing(PDF_VISION_OCR_MODEL);
+  return (
+    (inputTokens / 1_000_000) * rates.inputUsdPerMtok +
+    (outputTokens / 1_000_000) * rates.outputUsdPerMtok
+  );
+}
+
 /**
  * Conservative reserve for screenplay map-reduce analysis (one logical job).
  */

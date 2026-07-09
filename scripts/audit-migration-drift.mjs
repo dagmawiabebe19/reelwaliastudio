@@ -53,6 +53,7 @@ const MIGRATION_PROBES = [
   { file: "021_screenplay_analysis.sql", probes: [{ table: "screenplays", column: "analysis_status" }, { table: "screenplays", column: "analysis_proposal" }, { table: "screenplays", column: "analysis_fail_reason" }] },
   { file: "022_captioning.sql", probes: [{ table: "captioning_jobs", column: "id" }, { table: "caption_cues", column: "id" }, { table: "caption_translations", column: "id" }] },
   { file: "023_captioning_burn_in.sql", probes: [{ table: "captioning_jobs", column: "burn_status" }, { table: "captioning_jobs", column: "burned_video_path" }, { table: "captioning_jobs", column: "burn_request_id" }] },
+  { file: "024_screenplay_reading_pdf_status.sql", probes: [], note: "CHECK constraint only — verify by setting screenplays.status=reading_pdf" },
 ];
 
 async function probeColumn(supabase, table, column) {

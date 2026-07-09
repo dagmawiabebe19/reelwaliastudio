@@ -35,10 +35,11 @@ Last live probe: **2026-07-09** — all column probes **applied** on Studio Supa
 | 021 | `021_screenplay_analysis.sql` | Analysis columns on `screenplays` (`analysis_status`, `analysis_proposal`, `analysis_fail_reason`) — **no separate table** | ☑ 2026-07-09 |
 | 022 | `022_captioning.sql` | Captioning jobs/cues/translations + bucket | ☑ 2026-07-09 |
 | 023 | `023_captioning_burn_in.sql` | Burn-in columns on captioning_jobs | ☑ 2026-07-09 |
+| 024 | `024_screenplay_reading_pdf_status.sql` | `reading_pdf` status for PDF import phase | ☐ apply before PDF import |
 
 ## Unapplied migrations
 
-**None** — all schema migrations (001–023) are present on live Studio Supabase as of 2026-07-09.
+- **024** `024_screenplay_reading_pdf_status.sql` — required for PDF import status (`reading_pdf`). Apply in Studio Supabase SQL Editor before relying on PDF upload status UI.
 
 If drift appears later, apply missing files **in numeric order** from `supabase/migrations/`.
 

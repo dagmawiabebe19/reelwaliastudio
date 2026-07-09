@@ -6,6 +6,7 @@ import {
   insertScreenplayScenes,
   markScreenplayFailed,
   markScreenplayParsed,
+  setScreenplayParseStatus,
 } from "@/lib/db/screenplays";
 import { parseScreenplayBuffer } from "@/lib/screenplay/parse-content";
 import type { ScreenplayFormat } from "@/lib/screenplay/types";
@@ -34,7 +35,18 @@ export async function runScreenplayParse(input: {
   }
 
   const buffer = Buffer.from(await fileData.arrayBuffer());
-  const parsed = await parseScreenplayBuffer(claimed.format as ScreenplayFormat, buffer);
+  const format = claimed.format as ScreenplayFormat;
+
+  const parsed = await parseScreenplayBuffer(format, buffer, {
+    onPhase: async (phase) => {
+      if (format !== "pdf") return;
+      if (phase === "reading") {
+        await setScreenplayParseStatus(input.db, input.screenplayId, "reading_pdf");
+      } else if (phase === "structuring") {
+        await setScreenplayParseStatus(input.db, input.screenplayId, "parsing");
+      }
+    },
+  });
 
   if ("error" in parsed) {
     await markScreenplayFailed(input.db, input.screenplayId, parsed.error);

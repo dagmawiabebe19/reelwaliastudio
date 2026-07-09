@@ -36,6 +36,7 @@ interface ScreenplaySectionProps {
 
 const STATUS_LABELS: Record<ScreenplayStatus, string> = {
   uploaded: "Uploaded — parsing soon",
+  reading_pdf: "Reading PDF…",
   parsing: "Parsing screenplay…",
   parsed: "Parsed",
   failed: "Import failed",
@@ -105,7 +106,10 @@ export function ScreenplaySection({ seriesId, screenplay }: ScreenplaySectionPro
     });
   }
 
-  const isProcessing = screenplay?.status === "uploaded" || screenplay?.status === "parsing";
+  const isProcessing =
+    screenplay?.status === "uploaded" ||
+    screenplay?.status === "reading_pdf" ||
+    screenplay?.status === "parsing";
   const isAnalyzing = screenplay?.analysisStatus === "analyzing";
 
   useEffect(() => {
@@ -201,7 +205,9 @@ export function ScreenplaySection({ seriesId, screenplay }: ScreenplaySectionPro
 
               {isProcessing ? (
                 <p className="text-sm text-muted">
-                  Extracting scene structure from your file. This usually takes a few seconds.
+                  {screenplay.status === "reading_pdf"
+                    ? "Reading PDF text… scanned scripts use vision OCR and may take up to a minute."
+                    : "Parsing scenes, characters, and locations…"}
                 </p>
               ) : null}
 
