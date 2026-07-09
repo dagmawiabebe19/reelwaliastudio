@@ -37,17 +37,26 @@ async function main() {
   const fountainPath = customPath ?? path.join(__dirname, "fixtures/sample.fountain");
   const fdxPath = path.join(__dirname, "fixtures/sample.fdx");
 
-  const fountainBuf = await readFile(fountainPath);
-  const fdxBuf = await readFile(fdxPath);
+  let fountainOk = true;
+  let fdxOk = true;
+  let pdfOk = true;
 
-  const fountainOk = printReport(
-    customPath ? `Custom (${path.basename(fountainPath)})` : "Fountain fixture",
-    parseFountainContent(
-      fountainBuf,
-      fountainPath.endsWith(".txt") ? "txt" : "fountain",
-    ),
-  );
-  const fdxOk = printReport("FDX fixture", parseFdxContent(fdxBuf));
+  if (customPath?.toLowerCase().endsWith(".pdf")) {
+    const pdfBuf = await readFile(customPath);
+    pdfOk = printReport(`PDF (${path.basename(customPath)})`, await parsePdfContent(pdfBuf));
+  } else {
+    const fountainBuf = await readFile(fountainPath);
+    const fdxBuf = await readFile(fdxPath);
+
+    fountainOk = printReport(
+      customPath ? `Custom (${path.basename(fountainPath)})` : "Fountain fixture",
+      parseFountainContent(
+        fountainBuf,
+        fountainPath.endsWith(".txt") ? "txt" : "fountain",
+      ),
+    );
+    fdxOk = printReport("FDX fixture", parseFdxContent(fdxBuf));
+  }
 
   const emptyPdf = Buffer.from(
     "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
@@ -56,7 +65,7 @@ async function main() {
   console.log("\n=== Scanned / empty PDF ===");
   console.log("FAILED (expected):", "error" in scanned ? scanned.error : "(unexpected success)");
 
-  const allOk = fountainOk && fdxOk && "error" in scanned;
+  const allOk = fountainOk && fdxOk && pdfOk && "error" in scanned;
   if (!allOk) {
     process.exitCode = 1;
     console.error("\nOne or more parse checks failed.");
