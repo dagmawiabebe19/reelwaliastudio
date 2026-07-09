@@ -10,6 +10,8 @@ type DeleteResult = { error?: string } | void;
 interface FailedGenerationControlsProps {
   disabled?: boolean;
   onRetry: () => void;
+  /** When true, label retry as a safety-adjusted regenerate. */
+  safetyBlocked?: boolean;
   deleteAriaLabel?: string;
   deleteClassName?: string;
   fetchDeletePreview: () => Promise<DeletePreviewResult>;
@@ -27,6 +29,7 @@ const retrySizeClass: Record<NonNullable<FailedGenerationControlsProps["size"]>,
 export function FailedGenerationControls({
   disabled,
   onRetry,
+  safetyBlocked = false,
   deleteAriaLabel = "Delete failed item",
   deleteClassName = "!min-h-6 !min-w-6",
   fetchDeletePreview,
@@ -44,9 +47,14 @@ export function FailedGenerationControls({
           onRetry();
         }}
         className={`focus-ring inline-flex items-center gap-1 ${retrySizeClass[size]}`}
+        title={
+          safetyBlocked
+            ? "Retry with a sanitized identity-only headshot prompt"
+            : undefined
+        }
       >
         <RotateCcw className={ICON_SM} strokeWidth={ICON_STROKE} aria-hidden />
-        Retry
+        {safetyBlocked ? "Retry (adjusted)" : "Retry"}
       </button>
       <DeleteConfirmButton
         ariaLabel={deleteAriaLabel}

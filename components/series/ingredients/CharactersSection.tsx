@@ -236,6 +236,12 @@ export function CharactersSection({
                         <FailedGenerationControls
                           size="md"
                           disabled={pending}
+                          safetyBlocked={
+                            !!character.generationError &&
+                            (/blocked by safety|safety filter|safety system|safety_violations|content moderation|content blocked/i.test(
+                              character.generationError,
+                            ))
+                          }
                           onRetry={() =>
                             runAction(() => retryIngredientAction(character.id, seriesId))
                           }

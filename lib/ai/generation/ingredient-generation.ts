@@ -7,7 +7,13 @@ import { isInsufficientCreditsError } from "@/lib/credits/errors";
 import { estimateImageCredits } from "@/lib/credits/pricing";
 import { withCredits, withCreditsAbortable } from "@/lib/credits/meter";
 import { runOpenAiImage } from "@/lib/ai/image/openai-image";
+import {
+  classifyImageError,
+  moderationUserMessage,
+} from "@/lib/ai/generation/image-errors";
+import { withImageRetries } from "@/lib/ai/generation/image-retry";
 import { defaultAspectRatioForIngredients } from "@/lib/production/prompts";
+import { buildCharacterHeadshotPrompt } from "@/lib/production/headshot-prompt";
 import { createAsset } from "@/lib/db/assets";
 import { getIngredient, updateIngredient } from "@/lib/db/ingredients";
 import type { GenerationProgressCallback } from "@/lib/generation/progress";
@@ -23,35 +29,46 @@ async function runIngredientImageCore(input: {
 }): Promise<{ status: "ready" }> {
   input.onProgress?.("Rendering image…", 1, 1);
 
-  const result = await runOpenAiImage({
-    prompt: input.prompt,
-    refImageUrls: input.refImageUrls ?? [],
-    aspectRatio: defaultAspectRatioForIngredients(),
-    count: 1,
-    resolution: "720p",
-    safety: "sfw",
-    sceneId: input.ingredientId,
-    abortSignal: input.abortSignal,
-    onBillableWorkStarted: input.onBillableWorkStarted,
-    ownerId: input.ownerId,
-  });
+  const result = await withImageRetries(
+    `ingredient:${input.ingredientId}`,
+    async () => {
+      const imageResult = await runOpenAiImage({
+        prompt: input.prompt,
+        refImageUrls: input.refImageUrls ?? [],
+        aspectRatio: defaultAspectRatioForIngredients(),
+        count: 1,
+        resolution: "720p",
+        safety: "sfw",
+        sceneId: input.ingredientId,
+        abortSignal: input.abortSignal,
+        onBillableWorkStarted: input.onBillableWorkStarted,
+        ownerId: input.ownerId,
+      });
 
-  if (result.error || !result.persistedAssets?.[0]) {
-    throw new Error(result.error ?? "No image returned.");
-  }
+      if (imageResult.error || !imageResult.persistedAssets?.[0]) {
+        throw new Error(imageResult.error ?? "No image returned.");
+      }
 
-  const persisted = result.persistedAssets[0];
+      return imageResult;
+    },
+    { abortSignal: input.abortSignal },
+  );
+
+  const persisted = result.persistedAssets![0];
   input.onProgress?.("Saving to library…", 1, 1);
-  const asset = await createAsset({
-    bucket: persisted.bucket,
-    storagePath: persisted.storagePath,
-    mediaType: persisted.mediaType,
-    width: persisted.width ?? null,
-    height: persisted.height ?? null,
-    source: "generated",
-    model: "openai-image",
-    prompt: input.prompt,
-  }, { ownerId: input.ownerId });
+  const asset = await createAsset(
+    {
+      bucket: persisted.bucket,
+      storagePath: persisted.storagePath,
+      mediaType: persisted.mediaType,
+      width: persisted.width ?? null,
+      height: persisted.height ?? null,
+      source: "generated",
+      model: "openai-image",
+      prompt: input.prompt,
+    },
+    { ownerId: input.ownerId },
+  );
 
   await updateIngredient(input.ingredientId, {
     primary_asset_id: asset.id,
@@ -60,6 +77,14 @@ async function runIngredientImageCore(input: {
   });
 
   return { status: "ready" };
+}
+
+function userFacingIngredientError(error: unknown): string {
+  const classified = classifyImageError(error);
+  if (classified.category === "moderation") {
+    return moderationUserMessage();
+  }
+  return classified.message || "Generation failed.";
 }
 
 export async function executeIngredientImageGeneration(input: {
@@ -109,7 +134,7 @@ export async function executeIngredientImageGeneration(input: {
       throw error;
     }
 
-    const message = error instanceof Error ? error.message : "Generation failed.";
+    const message = userFacingIngredientError(error);
     await updateIngredient(input.ingredientId, {
       generation_status: "failed",
       generation_error: message,
@@ -175,15 +200,14 @@ export async function buildIngredientImageRetryInput(
     return { error: "Missing description — cannot retry without the original prompt." };
   }
 
-  const {
-    CHARACTER_HEADSHOT_PREFIX,
-    LOCATION_ESTABLISHING_PREFIX,
-    costumePreviewPrompt,
-  } = await import("@/lib/production/prompts");
+  const { LOCATION_ESTABLISHING_PREFIX, costumePreviewPrompt } = await import(
+    "@/lib/production/prompts"
+  );
 
   switch (ingredient.kind) {
     case "character":
-      return { prompt: `${CHARACTER_HEADSHOT_PREFIX}${description}` };
+      // Always use sanitized identity-only headshot prompt (incl. safety-retry).
+      return { prompt: buildCharacterHeadshotPrompt(description) };
     case "location":
       return { prompt: `${LOCATION_ESTABLISHING_PREFIX}${description}` };
     case "outfit": {

@@ -3,10 +3,8 @@ import "server-only";
 import { queueIngredientImageGeneration } from "@/lib/ai/generation/ingredient-generation";
 import { createIngredient } from "@/lib/db/ingredients";
 import type { Ingredient } from "@/lib/db/database.types";
-import {
-  CHARACTER_HEADSHOT_PREFIX,
-  LOCATION_ESTABLISHING_PREFIX,
-} from "@/lib/production/prompts";
+import { buildCharacterHeadshotPrompt } from "@/lib/production/headshot-prompt";
+import { LOCATION_ESTABLISHING_PREFIX } from "@/lib/production/prompts";
 
 export async function createBreakdownCharacterIngredient(input: {
   seriesId: string;
@@ -23,7 +21,7 @@ export async function createBreakdownCharacterIngredient(input: {
 
   await queueIngredientImageGeneration({
     ingredientId: ingredient.id,
-    prompt: `${CHARACTER_HEADSHOT_PREFIX}${input.description}`,
+    prompt: buildCharacterHeadshotPrompt(input.description),
     revalidatePath: `/series/${input.seriesId}`,
   });
 

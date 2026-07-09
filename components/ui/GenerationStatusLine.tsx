@@ -1,5 +1,17 @@
 import { GENERATION_ETA_HINT } from "@/lib/generation/progress";
 
+function isSafetyBlockMessage(error: string | null | undefined): boolean {
+  if (!error?.trim()) return false;
+  return (
+    /blocked by safety/i.test(error) ||
+    /safety filter/i.test(error) ||
+    /safety system/i.test(error) ||
+    /safety_violations/i.test(error) ||
+    /content moderation/i.test(error) ||
+    /content blocked/i.test(error)
+  );
+}
+
 interface GenerationStatusLineProps {
   status?: string | null;
   error?: string | null;
@@ -26,6 +38,13 @@ export function GenerationStatusLine({
   }
 
   if (status === "failed") {
+    if (isSafetyBlockMessage(error)) {
+      return (
+        <p className="max-w-full break-words text-xs text-amber-400">
+          Blocked by safety filter — prompt adjusted retry available
+        </p>
+      );
+    }
     return (
       <p className="max-w-full break-words text-xs text-accent">
         Failed: {error?.trim() || "Generation failed"}

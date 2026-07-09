@@ -66,7 +66,10 @@ export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
           <div className="flex items-center gap-1">
             <RefTag tag={ingredient.ref_tag} />
             {isFailed ? (
-              renderFailedControls(ingredient.id, { size: "md" })
+              renderFailedControls(ingredient.id, {
+                size: "md",
+                generationError: ingredient.generationError,
+              })
             ) : (
               <IngredientDeleteButton ingredientId={ingredient.id} seriesId={seriesId} />
             )}

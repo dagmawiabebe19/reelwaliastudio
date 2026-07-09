@@ -9,10 +9,10 @@ import {
   estimateSheetCredits,
 } from "@/lib/credits/pricing";
 import {
-  CHARACTER_HEADSHOT_PREFIX,
   LOCATION_ESTABLISHING_PREFIX,
   costumePreviewPrompt,
 } from "@/lib/production/prompts";
+import { buildCharacterHeadshotPrompt } from "@/lib/production/headshot-prompt";
 import { createIngredient, getIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
 import { queueIngredientImageGeneration, getIngredientRefUrl } from "@/lib/ai/generation/ingredient-generation";
 import { createCharacterSheet, getCharacterSheet } from "@/lib/db/character-sheets";
@@ -43,7 +43,7 @@ export async function generateCharacterAction(seriesId: string, formData: FormDa
       generationStatus: "pending",
     });
 
-    const prompt = `${CHARACTER_HEADSHOT_PREFIX}${description}`;
+    const prompt = buildCharacterHeadshotPrompt(description);
     await queueIngredientImageGeneration({
       ingredientId: ingredient.id,
       prompt,

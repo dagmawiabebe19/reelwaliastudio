@@ -18,6 +18,49 @@ const LOCATION_ESTABLISHING_PREFIX =
   "Clean establishing shot of a location. Neutral daylight, clear composition, no people, no cinematic color grading, no text. Location: ";
 
 const BUCKET = "assets";
+const IMAGE_RETRY_BACKOFF_MS = [1000, 2000] as const;
+
+function sanitizeCharacterHeadshotDescription(description: string): string {
+  const raw = description.trim();
+  if (!raw) return "Adult person, neutral expression, plain casual clothing.";
+
+  let cleaned = raw;
+  const stripPatterns = [
+    /\b(strip(?:per|ping)?|dancer|dancewear|stage makeup|pole|club|brothel|escort)\b/gi,
+    /\b(cash|money|bills?)\s+(tucked|stuffed|hidden)\s+(in|into|under)\s+(her|his|their)\s+\w+/gi,
+    /\b(tucked|stuffed)\s+in\s+(her|his|their)\s+(bra|underwear|panties|cleavage)\b/gi,
+    /\b(lingerie|bra|panties|thong|g-string|bikini|revealing|skimpy|sexy|seductive|provocative)\b/gi,
+    /\b(nude|naked|topless|bottomless|undressed|disheveled after)\b/gi,
+    /\b(first successful night|after (?:her|his|their) (?:first )?night)\b/gi,
+    /\b(elaborate dancewear|polished stage makeup)\b/gi,
+    /\b(handles? a makeup brush[^.!]*)/gi,
+    /\b(with cash[^.!]*)/gi,
+    /\b(mentor figure in the strip club|newcomer dancer|performance|on stage|backstage)\b/gi,
+    /\b(in the (?:strip )?club|at the club|on the dance floor)\b/gi,
+  ];
+  for (const pattern of stripPatterns) cleaned = cleaned.replace(pattern, " ");
+  cleaned = cleaned.replace(/\s{2,}/g, " ").replace(/^[.,;:\s]+|[.,;:\s]+$/g, "").trim();
+
+  return (
+    `${cleaned || raw.slice(0, 180)}. ` +
+    "Neutral everyday clothing (plain crew-neck shirt), shoulders visible, " +
+    "no costumes, no props, no suggestive wardrobe."
+  ).replace(/\s{2,}/g, " ").trim();
+}
+
+function isSafetyRejection(message: string): boolean {
+  return /moderat|safety system|safety_violations|content blocked|policy/i.test(message);
+}
+
+function isTransientError(message: string): boolean {
+  return /fetch failed|failed to fetch|timeout|timed out|econnreset|network|socket hang up|\b5\d{2}\b|\b429\b/i.test(
+    message,
+  );
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function loadEnv(): void {
   const raw = readFileSync(resolve(process.cwd(), ".env.local"), "utf8");
@@ -36,7 +79,7 @@ function buildGeneratedAssetPath(ownerId: string, ingredientId: string, ext: str
   return `${ownerId}/generated/${ingredientId}/${randomUUID()}.${ext}`;
 }
 
-async function generateImage(prompt: string): Promise<Buffer> {
+async function generateImageOnce(prompt: string): Promise<Buffer> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is not set.");
 
@@ -67,6 +110,31 @@ async function generateImage(prompt: string): Promise<Buffer> {
   const b64 = body.data?.[0]?.b64_json;
   if (!b64) throw new Error("OpenAI returned no image data.");
   return Buffer.from(b64, "base64");
+}
+
+/** Retry transient failures only; fail fast on safety rejections. */
+async function generateImage(prompt: string): Promise<Buffer> {
+  const maxAttempts = 1 + IMAGE_RETRY_BACKOFF_MS.length;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      const backoffMs = IMAGE_RETRY_BACKOFF_MS[attempt - 1];
+      console.log(`  retry ${attempt + 1}/${maxAttempts} after ${backoffMs}ms…`);
+      await sleep(backoffMs);
+    }
+    try {
+      return await generateImageOnce(prompt);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      lastError = error instanceof Error ? error : new Error(message);
+      if (isSafetyRejection(message) || !isTransientError(message)) {
+        throw lastError;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Image generation failed.");
 }
 
 async function main(): Promise<void> {
@@ -119,7 +187,7 @@ async function main(): Promise<void> {
 
     const prompt =
       ingredient.kind === "character"
-        ? `${CHARACTER_HEADSHOT_PREFIX}${description}`
+        ? `${CHARACTER_HEADSHOT_PREFIX}${sanitizeCharacterHeadshotDescription(description)}`
         : `${LOCATION_ESTABLISHING_PREFIX}${description}`;
 
     console.log(`Generating ${ingredient.kind} "${ingredient.name}"…`);
@@ -170,10 +238,13 @@ async function main(): Promise<void> {
       ok += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Generation failed.";
-      errors.push(`${ingredient.name}: ${message}`);
+      const stored = isSafetyRejection(message)
+        ? "Blocked by safety filter — prompt adjusted retry available"
+        : message;
+      errors.push(`${ingredient.name}: ${stored}`);
       await db
         .from("ingredients")
-        .update({ generation_status: "failed", generation_error: message })
+        .update({ generation_status: "failed", generation_error: stored })
         .eq("id", ingredient.id);
     }
   }

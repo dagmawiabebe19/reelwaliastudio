@@ -29,10 +29,10 @@ import {
   getIngredientRefUrl,
 } from "@/lib/ai/generation/ingredient-generation";
 import {
-  CHARACTER_HEADSHOT_PREFIX,
   LOCATION_ESTABLISHING_PREFIX,
   costumePreviewPrompt,
 } from "@/lib/production/prompts";
+import { buildCharacterHeadshotPrompt } from "@/lib/production/headshot-prompt";
 import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
 import { executeDraftStoryboard, normalizeStoryboardSegments } from "@/lib/ai/copilot/draft-storyboard";
 import {
@@ -249,7 +249,7 @@ async function executeTool(
         }
 
         if (kind === "character") {
-          prompt = `${CHARACTER_HEADSHOT_PREFIX}${description}`;
+          prompt = buildCharacterHeadshotPrompt(description);
           emitProgress("generating headshot…", 2, 2);
         } else if (kind === "location") {
           prompt = `${LOCATION_ESTABLISHING_PREFIX}${description}`;
