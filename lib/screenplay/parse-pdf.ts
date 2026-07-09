@@ -1,11 +1,11 @@
-import { PDFParse } from "pdf-parse";
 import { structureScreenplayText } from "@/lib/screenplay/structure";
 import type { ScreenplayParseResult } from "@/lib/screenplay/types";
 
 export async function parsePdfContent(buffer: Buffer): Promise<ScreenplayParseResult | { error: string }> {
-  let parser: PDFParse | null = null;
+  let parser: InstanceType<(typeof import("pdf-parse"))["PDFParse"]> | null = null;
 
   try {
+    const { PDFParse } = await import("pdf-parse");
     parser = new PDFParse({ data: buffer });
     const result = await parser.getText();
     const text = result.text?.replace(/\r\n/g, "\n").trim() ?? "";

@@ -1,6 +1,5 @@
 import { parseFdxContent } from "@/lib/screenplay/parse-fdx";
 import { parseFountainContent } from "@/lib/screenplay/parse-fountain";
-import { parsePdfContent } from "@/lib/screenplay/parse-pdf";
 import type { ScreenplayFormat, ScreenplayParseResult } from "@/lib/screenplay/types";
 
 export async function parseScreenplayBuffer(
@@ -14,8 +13,10 @@ export async function parseScreenplayBuffer(
       return parseFountainContent(buffer, "fountain");
     case "txt":
       return parseFountainContent(buffer, "txt");
-    case "pdf":
+    case "pdf": {
+      const { parsePdfContent } = await import("@/lib/screenplay/parse-pdf");
       return parsePdfContent(buffer);
+    }
     default:
       return { error: `Unsupported format: ${format}` };
   }

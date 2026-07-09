@@ -11,9 +11,6 @@ import {
 import { verifySeriesOwnership, createIngredient } from "@/lib/db/ingredients";
 import { createEpisode } from "@/lib/db/episodes";
 import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
-import { scheduleScreenplayParse } from "@/lib/screenplay/parse-sweep";
-import { runScreenplayAnalysis } from "@/lib/screenplay/analysis/run";
-import { estimateScreenplayAnalysisCredits } from "@/lib/credits/pricing";
 import type { ScreenplayFormat } from "@/lib/screenplay/types";
 
 const MAX_SCREENPLAY_BYTES = 52_428_800;
@@ -97,6 +94,7 @@ export async function finalizeScreenplayUploadAction(
       storagePath: input.storagePath,
     });
 
+    const { scheduleScreenplayParse } = await import("@/lib/screenplay/parse-sweep");
     scheduleScreenplayParse(screenplay.id);
     revalidatePath(`/series/${seriesId}`);
 
@@ -110,6 +108,7 @@ export async function finalizeScreenplayUploadAction(
 
 export async function estimateScreenplayAnalysisAction(seriesId: string, screenplayId: string) {
   try {
+    const { estimateScreenplayAnalysisCredits } = await import("@/lib/credits/pricing");
     await verifySeriesOwnership(seriesId);
     const screenplay = await getScreenplayById(screenplayId);
     if (!screenplay || screenplay.series_id !== seriesId) {
@@ -139,6 +138,7 @@ export async function analyzeScreenplayAction(seriesId: string, screenplayId: st
     }
 
     const userId = await getActiveUserId();
+    const { runScreenplayAnalysis } = await import("@/lib/screenplay/analysis/run");
     const proposal = await runScreenplayAnalysis({ screenplayId, userId });
     revalidatePath(`/series/${seriesId}`);
     return { success: true as const, proposal };
