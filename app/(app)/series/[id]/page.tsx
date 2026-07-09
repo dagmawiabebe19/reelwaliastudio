@@ -58,10 +58,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     listEpisodesBySeries(id, "archived"),
     getOrCreateChatSession("series", id),
     listCharacterSheetsBySeries(id),
-    queryScreenplayBySeries(id).catch((error) => {
-      logSeriesLoadWarning("screenplay load failed", error, { seriesId: id });
-      return null;
-    }),
+    queryScreenplayBySeries(id),
   ]);
 
   const [chatMessages, keyArtUrl] = await Promise.all([
@@ -126,23 +123,25 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
 
   let screenplayScenes: Awaited<ReturnType<typeof listScreenplayScenes>> = [];
   if (screenplayRow?.status === "parsed") {
-    screenplayScenes = await listScreenplayScenes(screenplayRow.id).catch((error) => {
-      logSeriesLoadWarning("screenplay scenes load failed", error, {
+    screenplayScenes = await listScreenplayScenes(screenplayRow.id);
+  }
+
+  let screenplayDigest: string | null = null;
+  if (screenplayRow?.status === "parsed" && screenplayScenes.length > 0) {
+    try {
+      screenplayDigest = formatScreenplayDigestForCopilot(
+        buildScreenplayDigest({
+          screenplay: screenplayRow,
+          scenes: screenplayScenes,
+        }),
+      );
+    } catch (error) {
+      logSeriesLoadWarning("screenplay digest build failed", error, {
         seriesId: id,
         screenplayId: screenplayRow.id,
       });
-      return [];
-    });
+    }
   }
-  const screenplayDigest =
-    screenplayRow?.status === "parsed" && screenplayScenes.length > 0
-      ? formatScreenplayDigestForCopilot(
-          buildScreenplayDigest({
-            screenplay: screenplayRow,
-            scenes: screenplayScenes,
-          }),
-        )
-      : null;
 
   return (
     <SeriesWorkspace

@@ -47,23 +47,95 @@ export type ScreenplaySummary = ScreenplayRow & {
   locationCount: number;
 };
 
-/** Load screenplay for a series (caller must verify ownership first). */
+const SCREENPLAY_BASE_SELECT =
+  "id, series_id, owner_id, title, format, storage_path, page_count_est, scene_count, status, fail_reason, created_at";
+
+const SCREENPLAY_ANALYSIS_SELECT = "analysis_status, analysis_proposal, analysis_fail_reason";
+
+function isScreenplaySchemaMissingError(error: { message?: string }): boolean {
+  const msg = error.message ?? "";
+  return (
+    (msg.includes("column") && msg.includes("does not exist")) ||
+    (msg.includes("relation") && msg.includes("does not exist"))
+  );
+}
+
+function logScreenplayQueryWarning(label: string, error: unknown, context?: Record<string, unknown>): void {
+  console.error(`[screenplays] ${label}`, {
+    ...context,
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+function normalizeScreenplayRow(data: Record<string, unknown>): ScreenplayRow {
+  return {
+    ...(data as ScreenplayRow),
+    analysis_status: (data.analysis_status as ScreenplayRow["analysis_status"]) ?? null,
+    analysis_proposal: (data.analysis_proposal as ScreenplayRow["analysis_proposal"]) ?? null,
+    analysis_fail_reason: (data.analysis_fail_reason as string | null) ?? null,
+  };
+}
+
+/** Load screenplay for a series (caller must verify ownership first). Never throws — optional feature. */
 export async function queryScreenplayBySeries(
   seriesId: string,
 ): Promise<ScreenplaySummary | null> {
-  const supabase = await getDbClient();
-  const { data, error } = await supabase
-    .from("screenplays")
-    .select("*")
-    .eq("series_id", seriesId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  try {
+    const supabase = await getDbClient();
+    const baseQuery = () =>
+      supabase
+        .from("screenplays")
+        .select(SCREENPLAY_BASE_SELECT)
+        .eq("series_id", seriesId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!data) return null;
+    const fullQuery = () =>
+      supabase
+        .from("screenplays")
+        .select(`${SCREENPLAY_BASE_SELECT}, ${SCREENPLAY_ANALYSIS_SELECT}`)
+        .eq("series_id", seriesId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-  return enrichScreenplaySummary(data as ScreenplayRow, supabase);
+    const full = await fullQuery();
+    let data: Record<string, unknown> | null = null;
+
+    if (full.error) {
+      if (isScreenplaySchemaMissingError(full.error)) {
+        const base = await baseQuery();
+        if (base.error) {
+          logScreenplayQueryWarning("screenplay load failed (base columns)", base.error, { seriesId });
+          return null;
+        }
+        data = (base.data as Record<string, unknown> | null) ?? null;
+      } else {
+        logScreenplayQueryWarning("screenplay load failed", full.error, { seriesId });
+        return null;
+      }
+    } else {
+      data = (full.data as Record<string, unknown> | null) ?? null;
+    }
+
+    if (!data) return null;
+
+    const row = normalizeScreenplayRow(data);
+
+    try {
+      return await enrichScreenplaySummary(row, supabase);
+    } catch (error) {
+      logScreenplayQueryWarning("screenplay summary enrichment failed", error, {
+        seriesId,
+        screenplayId: row.id,
+      });
+      return { ...row, characterCount: 0, locationCount: 0 };
+    }
+  } catch (error) {
+    logScreenplayQueryWarning("screenplay load unexpected error", error, { seriesId });
+    return null;
+  }
 }
 
 export async function getScreenplayBySeries(seriesId: string): Promise<ScreenplaySummary | null> {
@@ -83,16 +155,25 @@ export async function getScreenplayById(screenplayId: string): Promise<Screenpla
   return (data as ScreenplayRow | null) ?? null;
 }
 
+/** Never throws — returns [] on failure (optional feature). */
 export async function listScreenplayScenes(screenplayId: string): Promise<ScreenplaySceneRow[]> {
-  const supabase = await getDbClient();
-  const { data, error } = await supabase
-    .from("screenplay_scenes")
-    .select("*")
-    .eq("screenplay_id", screenplayId)
-    .order("sort_order", { ascending: true });
+  try {
+    const supabase = await getDbClient();
+    const { data, error } = await supabase
+      .from("screenplay_scenes")
+      .select("*")
+      .eq("screenplay_id", screenplayId)
+      .order("sort_order", { ascending: true });
 
-  if (error) throw new Error(error.message);
-  return (data ?? []) as ScreenplaySceneRow[];
+    if (error) {
+      logScreenplayQueryWarning("screenplay scenes load failed", error, { screenplayId });
+      return [];
+    }
+    return (data ?? []) as ScreenplaySceneRow[];
+  } catch (error) {
+    logScreenplayQueryWarning("screenplay scenes load unexpected error", error, { screenplayId });
+    return [];
+  }
 }
 
 export async function setScreenplayAnalysisStarted(screenplayId: string): Promise<void> {

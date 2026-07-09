@@ -32,7 +32,7 @@ Last live probe: **2026-07-09** — all column probes **applied** on Studio Supa
 | 018 | `018_security_credit_rpc_grants.sql` | **Revoke `reserve_credits` from authenticated** | ☐ verify grants |
 | 019 | `019_profile_approval.sql` | **Approval gate + welcome grant on approve only** | ☑ 2026-07-09 |
 | 020 | `020_screenplays.sql` | Screenplay upload + scene tables | ☑ 2026-07-09 |
-| 021 | `021_screenplay_analysis.sql` | Screenplay analysis proposal columns | ☑ 2026-07-09 |
+| 021 | `021_screenplay_analysis.sql` | Analysis columns on `screenplays` (`analysis_status`, `analysis_proposal`, `analysis_fail_reason`) — **no separate table** | ☑ 2026-07-09 |
 | 022 | `022_captioning.sql` | Captioning jobs/cues/translations + bucket | ☑ 2026-07-09 |
 | 023 | `023_captioning_burn_in.sql` | Burn-in columns on captioning_jobs | ☑ 2026-07-09 |
 

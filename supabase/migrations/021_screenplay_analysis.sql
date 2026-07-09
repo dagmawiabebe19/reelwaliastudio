@@ -1,5 +1,6 @@
--- Screenplay LLM analysis proposal storage.
--- FLAG: apply manually in Supabase SQL Editor — do not auto-run.
+-- Screenplay LLM analysis proposal storage (columns on public.screenplays).
+-- There is NO separate screenplay_analysis table — analysis state lives on screenplays.
+-- FLAG: apply manually in the STUDIO Supabase SQL Editor — do not auto-run.
 
 BEGIN;
 

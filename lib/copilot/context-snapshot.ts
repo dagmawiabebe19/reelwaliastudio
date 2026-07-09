@@ -44,10 +44,18 @@ export async function buildCopilotContextSnapshot(input: {
   if (screenplayRow?.status === "parsed") {
     const screenplayScenes = await listScreenplayScenes(screenplayRow.id);
     if (screenplayScenes.length > 0) {
-      screenplayId = screenplayRow.id;
-      screenplayDigest = formatScreenplayDigestForCopilot(
-        buildScreenplayDigest({ screenplay: screenplayRow, scenes: screenplayScenes }),
-      );
+      try {
+        screenplayId = screenplayRow.id;
+        screenplayDigest = formatScreenplayDigestForCopilot(
+          buildScreenplayDigest({ screenplay: screenplayRow, scenes: screenplayScenes }),
+        );
+      } catch (error) {
+        console.error("[copilot-context] screenplay digest build failed", {
+          seriesId: input.seriesId,
+          screenplayId: screenplayRow.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 
