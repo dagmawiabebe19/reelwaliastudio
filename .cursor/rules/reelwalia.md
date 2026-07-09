@@ -4,7 +4,12 @@
 ## Environment
 - This project uses **npm**, NOT pnpm. Never create or commit pnpm-lock.yaml. Use package-lock.json.
 - Restart dev with `npm run dev:clean`.
-- Every task ends with: `npm run build` must pass, then `git add / commit / push`.
+
+## Git (ReelWalia Studio default)
+- After **any** task where `npm run build` passes, **always** commit and push to `origin/main` automatically — do **not** wait for the user to say "commit."
+- Workflow: `git add -A` → commit with a clear message describing the change → `git push origin main`.
+- Never commit files that likely contain secrets (`.env`, credentials, etc.).
+- Only skip commit/push when the user explicitly says not to, or when there are no changes to commit.
 
 ## Database & migrations
 - Supabase migrations: WRITE the migration file, then PRINT the SQL under "RUN THIS MANUALLY IN THE SUPABASE SQL EDITOR". NEVER assume a migration is applied; never auto-apply. Flag it for manual apply.
