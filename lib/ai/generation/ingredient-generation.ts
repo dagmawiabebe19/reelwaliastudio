@@ -19,6 +19,7 @@ async function runIngredientImageCore(input: {
   onProgress?: GenerationProgressCallback;
   abortSignal?: AbortSignal;
   onBillableWorkStarted?: () => void;
+  ownerId?: string;
 }): Promise<{ status: "ready" }> {
   input.onProgress?.("Rendering image…", 1, 1);
 
@@ -32,6 +33,7 @@ async function runIngredientImageCore(input: {
     sceneId: input.ingredientId,
     abortSignal: input.abortSignal,
     onBillableWorkStarted: input.onBillableWorkStarted,
+    ownerId: input.ownerId,
   });
 
   if (result.error || !result.persistedAssets?.[0]) {
@@ -49,7 +51,7 @@ async function runIngredientImageCore(input: {
     source: "generated",
     model: "openai-image",
     prompt: input.prompt,
-  });
+  }, { ownerId: input.ownerId });
 
   await updateIngredient(input.ingredientId, {
     primary_asset_id: asset.id,
@@ -67,8 +69,10 @@ export async function executeIngredientImageGeneration(input: {
   onProgress?: GenerationProgressCallback;
   abortSignal?: AbortSignal;
   onBillableWorkStarted?: () => void;
+  userId?: string;
 }): Promise<{ status: "ready" | "failed"; error?: string }> {
-  const userId = await getActiveUserId();
+  const userId = input.userId ?? (await getActiveUserId());
+  const ownerId = input.userId;
   const estimate = estimateImageCredits(1);
   const reference = `openai-image:ingredient:${input.ingredientId}`;
 
@@ -81,6 +85,7 @@ export async function executeIngredientImageGeneration(input: {
         async (ctx) => {
           const result = await runIngredientImageCore({
             ...input,
+            ownerId,
             onBillableWorkStarted: () => {
               ctx.markBillableWorkStarted();
               input.onBillableWorkStarted?.();
@@ -93,7 +98,7 @@ export async function executeIngredientImageGeneration(input: {
     }
 
     return await withCredits(userId, estimate, reference, async () => {
-      const result = await runIngredientImageCore(input);
+      const result = await runIngredientImageCore({ ...input, ownerId });
       return { result, actualCredits: estimate };
     });
   } catch (error) {

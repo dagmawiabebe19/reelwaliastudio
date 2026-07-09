@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import { ImageUp } from "lucide-react";
 import { RefTag } from "@/components/ui/RefTag";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { SkeletonThumbnail } from "@/components/ui/Skeleton";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
-import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
+import { Lightbox, useLightbox } from "@/components/ui/Lightbox";
 import { MediaPlayer } from "@/components/ui/MediaPlayer";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { IngredientKind } from "@/lib/db/types";
@@ -18,6 +17,7 @@ import {
 import type { IngredientCardData } from "@/lib/production/types";
 import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
 import { useFailedIngredientActions } from "@/components/series/ingredients/useFailedIngredientActions";
+import { IngredientImagePanel } from "@/components/series/ingredients/IngredientImagePanel";
 import {
   CharactersSection,
 } from "@/components/series/ingredients/CharactersSection";
@@ -51,22 +51,13 @@ export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
           <div className="flex h-full items-center p-4">
             <MediaPlayer src={ingredient.assetUrl} />
           </div>
-        ) : ingredient.assetUrl ? (
-          ingredient.mediaType === "video" ? (
-            <video src={ingredient.assetUrl} className="h-full w-full object-cover" controls />
-          ) : (
-            <LightboxImageButton
-              src={ingredient.assetUrl}
-              alt={ingredient.name}
-              caption={ingredient.name}
-              onOpenGallery={lightbox.openGallery}
-              className="h-full w-full"
-            />
-          )
         ) : (
-          <div className="flex h-full items-center justify-center">
-            <SkeletonThumbnail className="h-full w-full opacity-30" />
-          </div>
+          <IngredientImagePanel
+            ingredient={ingredient}
+            seriesId={seriesId}
+            aspectClassName="h-full w-full"
+            onOpenGallery={lightbox.openGallery}
+          />
         )}
       </div>
       <div className="space-y-2 p-4">
@@ -87,6 +78,7 @@ export function IngredientCard({ ingredient, seriesId }: IngredientCardProps) {
         <GenerationStatusLine
           status={ingredient.generationStatus}
           error={ingredient.generationError}
+          hasAsset={Boolean(ingredient.assetUrl)}
         />
       </div>
       <Lightbox state={lightbox.state} onClose={lightbox.close} />

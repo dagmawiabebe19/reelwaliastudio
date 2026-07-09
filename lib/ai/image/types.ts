@@ -11,6 +11,8 @@ export interface GenerateImageInput {
   sceneId: string;
   abortSignal?: AbortSignal;
   onBillableWorkStarted?: () => void;
+  /** Ops/script backfill: persist under this owner without session cookies. */
+  ownerId?: string;
 }
 
 export type { GenerationResult };

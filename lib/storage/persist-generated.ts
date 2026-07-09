@@ -38,18 +38,20 @@ export async function persistGeneratedBuffer(input: {
   contentType: string;
   width?: number | null;
   height?: number | null;
+  /** Ops/script backfill: explicit owner + service-role storage (no cookies). */
+  ownerId?: string;
 }): Promise<{
   bucket: string;
   storagePath: string;
   mediaType: ReturnType<typeof detectMediaType>;
   signedUrl: string;
 }> {
-  const ownerId = await getActiveUserId();
+  const ownerId = input.ownerId ?? (await getActiveUserId());
   const ext = extensionFromContentType(input.contentType, "png");
   const storagePath = buildGeneratedAssetPath(ownerId, input.sceneId, ext, randomUUID());
   const mediaType = detectMediaType(input.contentType);
 
-  const supabase = await getStorageClient();
+  const supabase = input.ownerId ? createAdminClient() : await getStorageClient();
   const { error } = await supabase.storage.from(GENERATED_BUCKET).upload(storagePath, input.buffer, {
     contentType: input.contentType,
     upsert: false,

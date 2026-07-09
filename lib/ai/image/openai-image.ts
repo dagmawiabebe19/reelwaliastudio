@@ -63,6 +63,7 @@ export const generateImage: ImageAdapter = async (input) => {
         contentType: "image/png",
         width,
         height,
+        ownerId: input.ownerId,
       });
       assetUrls.push(stored.signedUrl);
       persistedAssets.push({

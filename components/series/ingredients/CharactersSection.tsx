@@ -25,7 +25,7 @@ import { FailedGenerationControls } from "@/components/series/ingredients/Failed
 import { estimateImageCredits, estimateSheetCredits } from "@/lib/credits/pricing";
 import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { GeneratingPulse, SkeletonThumbnail } from "@/components/ui/Skeleton";
+import { IngredientImagePanel } from "@/components/series/ingredients/IngredientImagePanel";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
@@ -219,25 +219,13 @@ export function CharactersSection({
                 className="scroll-mt-24 overflow-hidden rounded-lg border border-border bg-surface-elevated"
               >
                 <div className="grid gap-4 p-4 md:grid-cols-[10rem_1fr]">
-                  <div className="aspect-[3/4] overflow-hidden rounded-md bg-background">
-                    {character.assetUrl ? (
-                      <LightboxImageButton
-                        src={character.assetUrl}
-                        alt={character.name}
-                        caption={character.name}
-                        onOpenGallery={lightbox.openGallery}
-                        className="h-full w-full"
-                      />
-                    ) : character.generationStatus === "pending" ? (
-                      <div className="relative flex h-full items-center justify-center">
-                        <SkeletonThumbnail className="absolute inset-0" />
-                        <GeneratingPulse label="Generating…" />
-                      </div>
-                    ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <SkeletonThumbnail className="h-full w-full opacity-30" />
-                      </div>
-                    )}
+                  <div className="aspect-[3/4] overflow-hidden rounded-md">
+                    <IngredientImagePanel
+                      ingredient={character}
+                      seriesId={seriesId}
+                      aspectClassName="h-full w-full"
+                      onOpenGallery={lightbox.openGallery}
+                    />
                   </div>
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -272,6 +260,7 @@ export function CharactersSection({
                     <GenerationStatusLine
                       status={character.generationStatus}
                       error={character.generationError}
+                      hasAsset={Boolean(character.assetUrl)}
                     />
 
                     <div className="space-y-2 border-t border-border pt-3">

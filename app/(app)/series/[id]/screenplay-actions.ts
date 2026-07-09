@@ -8,9 +8,13 @@ import {
   getScreenplayById,
   setScreenplayAnalysisApproved,
 } from "@/lib/db/screenplays";
-import { verifySeriesOwnership, createIngredient } from "@/lib/db/ingredients";
+import { verifySeriesOwnership } from "@/lib/db/ingredients";
 import { createEpisode } from "@/lib/db/episodes";
 import { appendSeriesMemoryMarkdown } from "@/lib/db/series-memory";
+import {
+  createBreakdownCharacterIngredient,
+  createBreakdownLocationIngredient,
+} from "@/lib/screenplay/breakdown-ingredients";
 import type { ScreenplayFormat } from "@/lib/screenplay/types";
 
 const MAX_SCREENPLAY_BYTES = 52_428_800;
@@ -192,23 +196,19 @@ export async function approveScreenplayBreakdownAction(
     };
 
     for (const character of selectedCharacters) {
-      await createIngredient({
+      await createBreakdownCharacterIngredient({
         seriesId,
-        kind: "character",
         name: character.name,
         description: character.appearance,
-        generationStatus: "ready",
       });
       created.characters += 1;
     }
 
     for (const location of selectedLocations) {
-      await createIngredient({
+      await createBreakdownLocationIngredient({
         seriesId,
-        kind: "location",
         name: location.name,
         description: location.description,
-        generationStatus: "ready",
       });
       created.locations += 1;
     }
@@ -249,6 +249,25 @@ export async function approveScreenplayBreakdownAction(
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "Failed to approve breakdown.",
+    };
+  }
+}
+
+export async function requeueMissingBreakdownIngredientImagesAction(seriesId: string) {
+  try {
+    await verifySeriesOwnership(seriesId);
+    const { requeueMissingIngredientImages } = await import(
+      "@/lib/screenplay/backfill-ingredient-images"
+    );
+    const result = await requeueMissingIngredientImages({
+      seriesId,
+      revalidatePath: `/series/${seriesId}`,
+    });
+    revalidatePath(`/series/${seriesId}`);
+    return { success: true as const, ...result };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Could not requeue ingredient images.",
     };
   }
 }

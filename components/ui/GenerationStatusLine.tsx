@@ -5,12 +5,15 @@ interface GenerationStatusLineProps {
   error?: string | null;
   /** When true, show a green "Done" line for ready state (generated assets). */
   showReady?: boolean;
+  /** When false and status is ready, show missing-image warning instead of Done. */
+  hasAsset?: boolean;
 }
 
 export function GenerationStatusLine({
   status,
   error,
   showReady = true,
+  hasAsset = true,
 }: GenerationStatusLineProps) {
   if (!status || status === "draft") return null;
 
@@ -28,6 +31,10 @@ export function GenerationStatusLine({
         Failed: {error?.trim() || "Generation failed"}
       </p>
     );
+  }
+
+  if (status === "ready" && !hasAsset) {
+    return <p className="text-xs text-amber-400">Image missing — regenerate</p>;
   }
 
   if (status === "ready" && showReady) {
