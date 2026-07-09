@@ -10,7 +10,8 @@ import { buildCopilotCharacterSheets } from "@/lib/production/library-data";
 import type { CopilotWorkspaceView } from "@/lib/copilot/workspace-types";
 import type { CopilotContext } from "@/lib/ai/copilot/tools";
 import { PRIOR_EPISODE_SUMMARY_LIMIT } from "@/lib/ai/copilot/episode-summary";
-import { getScreenplayBySeries, listScreenplayScenes } from "@/lib/db/screenplays";
+import { listScreenplayScenes, queryScreenplayBySeries } from "@/lib/db/screenplays";
+import { verifySeriesOwnership } from "@/lib/db/ingredients";
 import { buildScreenplayDigest, formatScreenplayDigestForCopilot } from "@/lib/screenplay/digest";
 
 export async function buildCopilotContextSnapshot(input: {
@@ -22,12 +23,18 @@ export async function buildCopilotContextSnapshot(input: {
   const series = await getSeries(input.seriesId);
   if (!series) throw new Error("Series not found.");
 
+  try {
+    await verifySeriesOwnership(input.seriesId);
+  } catch {
+    throw new Error("Series not found.");
+  }
+
   const [ingredientsRaw, sheetsRaw, episode, scenes, screenplayRow] = await Promise.all([
     listIngredientsBySeries(input.seriesId),
     listCharacterSheetsBySeries(input.seriesId),
     input.episodeId ? getEpisode(input.episodeId) : Promise.resolve(null),
     input.episodeId ? listScenesByEpisode(input.episodeId) : Promise.resolve([]),
-    getScreenplayBySeries(input.seriesId).catch(() => null),
+    queryScreenplayBySeries(input.seriesId).catch(() => null),
   ]);
 
   const characterSheets = await buildCopilotCharacterSheets(sheetsRaw);

@@ -48,7 +48,11 @@ const MIGRATION_PROBES = [
   { file: "016_episode_summary.sql", probes: [{ table: "episodes", column: "summary_markdown" }] },
   { file: "017_take_provider_request.sql", probes: [{ table: "takes", column: "provider_request_id" }] },
   { file: "018_security_credit_rpc_grants.sql", probes: [], note: "GRANT/REVOKE only — verify via SQL Editor" },
-  { file: "019_profile_approval.sql", probes: [{ table: "profiles", column: "approval_status" }] },
+  { file: "019_profile_approval.sql", probes: [{ table: "profiles", column: "approval_status" }, { table: "profiles", column: "approved_at" }, { table: "profiles", column: "approved_by" }] },
+  { file: "020_screenplays.sql", probes: [{ table: "screenplays", column: "id" }, { table: "screenplay_scenes", column: "id" }] },
+  { file: "021_screenplay_analysis.sql", probes: [{ table: "screenplays", column: "analysis_status" }, { table: "screenplays", column: "analysis_proposal" }, { table: "screenplays", column: "analysis_fail_reason" }] },
+  { file: "022_captioning.sql", probes: [{ table: "captioning_jobs", column: "id" }, { table: "caption_cues", column: "id" }, { table: "caption_translations", column: "id" }] },
+  { file: "023_captioning_burn_in.sql", probes: [{ table: "captioning_jobs", column: "burn_status" }, { table: "captioning_jobs", column: "burned_video_path" }, { table: "captioning_jobs", column: "burn_request_id" }] },
 ];
 
 async function probeColumn(supabase, table, column) {
@@ -109,6 +113,10 @@ async function main() {
     const status = applied ? "applied" : statuses.join(", ");
     console.log(`| ${migration.file} | ${status} | ${migration.probes.map((p) => `${p.table}.${p.column}`).join(", ")} |`);
   }
+
+  const { data: buckets } = await supabase.storage.listBuckets();
+  const captioningBucket = buckets?.some((b) => b.id === "captioning") ? "exists" : "missing";
+  console.log(`\ncaptioning storage bucket: ${captioningBucket}`);
 
   const grants = tryPsqlGrants(projectRef, process.env.SUPABASE_DB_PASSWORD);
   if (grants) {

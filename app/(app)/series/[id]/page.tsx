@@ -3,7 +3,7 @@ import { SeriesWorkspace } from "@/components/series/SeriesWorkspace";
 import { getActiveUserId } from "@/lib/auth/getUser";
 import { getOrCreateChatSession, listChatMessages } from "@/lib/db/chat";
 import { listCharacterSheetsBySeries } from "@/lib/db/character-sheets";
-import { getIngredientCounts, listIngredientsBySeries } from "@/lib/db/ingredients";
+import { getIngredientCounts, listIngredientsBySeries, verifySeriesOwnership } from "@/lib/db/ingredients";
 import { listEpisodesBySeries } from "@/lib/db/episodes";
 import { getSeries, getSeriesStats } from "@/lib/db/series";
 import {
@@ -13,19 +13,35 @@ import {
 import { resolveSeriesKeyArtUrl } from "@/lib/dashboard/home-data";
 import { resolveAssetUrls } from "@/lib/storage/resolve-urls";
 import { shouldShowOnboarding } from "@/lib/onboarding/status";
-import { getScreenplayBySeries, listScreenplayScenes } from "@/lib/db/screenplays";
+import { listScreenplayScenes, queryScreenplayBySeries } from "@/lib/db/screenplays";
 import { buildScreenplayDigest, formatScreenplayDigestForCopilot } from "@/lib/screenplay/digest";
 
 interface SeriesPageProps {
   params: Promise<{ id: string }>;
 }
 
+function logSeriesLoadWarning(label: string, error: unknown, context?: Record<string, unknown>): void {
+  console.error(`[series-page] ${label}`, {
+    ...context,
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  });
+}
+
 export default async function SeriesPage({ params }: SeriesPageProps) {
   const { id } = await params;
   const userId = await getActiveUserId();
 
+  const series = await getSeries(id);
+  if (!series) notFound();
+
+  try {
+    await verifySeriesOwnership(id);
+  } catch {
+    notFound();
+  }
+
   const [
-    series,
     stats,
     ingredientsRaw,
     counts,
@@ -35,7 +51,6 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     sheetsRaw,
     screenplayRow,
   ] = await Promise.all([
-    getSeries(id),
     getSeriesStats(id),
     listIngredientsBySeries(id),
     getIngredientCounts(id),
@@ -43,14 +58,21 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     listEpisodesBySeries(id, "archived"),
     getOrCreateChatSession("series", id),
     listCharacterSheetsBySeries(id),
-    getScreenplayBySeries(id),
+    queryScreenplayBySeries(id).catch((error) => {
+      logSeriesLoadWarning("screenplay load failed", error, { seriesId: id });
+      return null;
+    }),
   ]);
 
-  if (!series) notFound();
-
   const [chatMessages, keyArtUrl] = await Promise.all([
-    listChatMessages(chatSession.id),
-    resolveSeriesKeyArtUrl(series.thumbnail_asset_id),
+    listChatMessages(chatSession.id).catch((error) => {
+      logSeriesLoadWarning("chat history load failed", error, { seriesId: id });
+      return [];
+    }),
+    resolveSeriesKeyArtUrl(series.thumbnail_asset_id).catch((error) => {
+      logSeriesLoadWarning("key art resolve failed", error, { seriesId: id });
+      return null;
+    }),
   ]);
 
   const ingredientsWithUrls = await resolveAssetUrls(
@@ -58,7 +80,10 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       ...i,
       assets: i.assets,
     })),
-  );
+  ).catch((error) => {
+    logSeriesLoadWarning("ingredient URL resolve failed", error, { seriesId: id });
+    return ingredientsRaw.map((i) => ({ ...i, assetUrl: null as string | null }));
+  });
 
   const { costumesByCharacter, sheetsByCharacter } = await buildProductionLibraryData({
     ingredients: ingredientsWithUrls,
@@ -99,10 +124,16 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         i.kind === "prop"),
   );
 
-  const screenplayScenes =
-    screenplayRow?.status === "parsed"
-      ? await listScreenplayScenes(screenplayRow.id)
-      : [];
+  let screenplayScenes: Awaited<ReturnType<typeof listScreenplayScenes>> = [];
+  if (screenplayRow?.status === "parsed") {
+    screenplayScenes = await listScreenplayScenes(screenplayRow.id).catch((error) => {
+      logSeriesLoadWarning("screenplay scenes load failed", error, {
+        seriesId: id,
+        screenplayId: screenplayRow.id,
+      });
+      return [];
+    });
+  }
   const screenplayDigest =
     screenplayRow?.status === "parsed" && screenplayScenes.length > 0
       ? formatScreenplayDigestForCopilot(

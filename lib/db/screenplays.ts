@@ -47,8 +47,10 @@ export type ScreenplaySummary = ScreenplayRow & {
   locationCount: number;
 };
 
-export async function getScreenplayBySeries(seriesId: string): Promise<ScreenplaySummary | null> {
-  await verifySeriesOwnership(seriesId);
+/** Load screenplay for a series (caller must verify ownership first). */
+export async function queryScreenplayBySeries(
+  seriesId: string,
+): Promise<ScreenplaySummary | null> {
   const supabase = await getDbClient();
   const { data, error } = await supabase
     .from("screenplays")
@@ -62,6 +64,11 @@ export async function getScreenplayBySeries(seriesId: string): Promise<Screenpla
   if (!data) return null;
 
   return enrichScreenplaySummary(data as ScreenplayRow, supabase);
+}
+
+export async function getScreenplayBySeries(seriesId: string): Promise<ScreenplaySummary | null> {
+  await verifySeriesOwnership(seriesId);
+  return queryScreenplayBySeries(seriesId);
 }
 
 export async function getScreenplayById(screenplayId: string): Promise<ScreenplayRow | null> {
