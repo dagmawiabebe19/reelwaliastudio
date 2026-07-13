@@ -43,7 +43,15 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
                 description:
                   "Suggested quality tier: standard for hero/emotional beats, fast for coverage. Director overrides via Draft/Final at generation.",
               },
-              scene_id: { type: "string", description: "If set, update existing scene" },
+              scene_id: {
+                type: "string",
+                description:
+                  "Prefer scene_number (1-based) or exact scene title. UUID accepted only if exact; a mangled UUID errors out (does not create a duplicate).",
+              },
+              scene_number: {
+                type: "number",
+                description: "1-based ordinal within the open episode. Preferred over scene_id UUID.",
+              },
             },
             required: ["title", "prompt"],
           },
@@ -55,18 +63,21 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "add_ingredient",
     description:
-      "Add an ingredient to the series library. Set generate=true to create character headshots, location establishing shots, or costume previews from description (OpenAI image). Costumes require character_id.",
+      "Add an ingredient to the series library. Set generate=true to create character headshots, location establishing shots, or costume previews from description (OpenAI image). Costumes require character_id or character @ref_tag/name.",
     input_schema: {
       type: "object",
       properties: {
-        series_id: { type: "string" },
+        series_id: { type: "string", description: "Series UUID from context (server may override)." },
         kind: {
           type: "string",
           enum: ["character", "voice", "outfit", "location", "reference", "prop"],
         },
         name: { type: "string" },
         description: { type: "string" },
-        character_id: { type: "string", description: "Required for outfit; optional for voice" },
+        character_id: {
+          type: "string",
+          description: "For outfit/voice: prefer @ref_tag or character name over UUID.",
+        },
         generate: { type: "boolean", description: "Generate image from description (character, location, outfit)" },
       },
       required: ["series_id", "kind", "name"],
@@ -75,18 +86,24 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "create_character_sheet",
     description:
-      "Create and generate a character turnaround sheet (5 angles). Links to episodes via character_sheet_episodes. Requires character headshot; optional costume.",
+      "Create and generate a character turnaround sheet (5 angles). Links to episodes via character_sheet_episodes. Requires character headshot; optional costume. Prefer @ref_tag / name for character_id and costume_id.",
     input_schema: {
       type: "object",
       properties: {
         series_id: { type: "string" },
-        character_id: { type: "string" },
+        character_id: {
+          type: "string",
+          description: "Character @ref_tag, name, or UUID.",
+        },
         name: { type: "string", description: "Sheet label, e.g. 'Ep 1 default'" },
-        costume_id: { type: "string", description: "Optional costume ingredient id" },
+        costume_id: {
+          type: "string",
+          description: "Optional costume @ref_tag, name, or UUID.",
+        },
         episode_ids: {
           type: "array",
           items: { type: "string" },
-          description: "Episodes this sheet applies to",
+          description: "Episodes this sheet applies to (episode UUID or title).",
         },
       },
       required: ["series_id", "character_id", "name"],
@@ -95,19 +112,30 @@ export const COPILOT_TOOLS: Anthropic.Tool[] = [
   {
     name: "bind_identity",
     description:
-      "Re-bind references only (metadata — FREE, no video cost). Bind character SHEETS (identity lock) to a scene. Only pass sheets/ingredients with status=ready and usable assets; server rejects pending/failed/missing. Prefer character_sheet_ids over raw ingredient_ids.",
+      "Re-bind references only (metadata — FREE, no video cost). Bind character SHEETS (identity lock) to a scene. Only pass sheets/ingredients with status=ready and usable assets; server rejects pending/failed/missing. Prefer scene_number / title and sheet/character names or @ref_tags — never paste raw UUIDs.",
     input_schema: {
       type: "object",
       properties: {
-        scene_id: { type: "string" },
-        character_sheet_ids: { type: "array", items: { type: "string" } },
+        scene_id: {
+          type: "string",
+          description: "Prefer scene_number (e.g. '3') or exact title. UUID only if exact.",
+        },
+        scene_number: {
+          type: "number",
+          description: "1-based ordinal within the open episode.",
+        },
+        character_sheet_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Sheet name, character name, or UUID.",
+        },
         ingredient_ids: {
           type: "array",
           items: { type: "string" },
-          description: "Fallback: bind location/reference ingredients only",
+          description: "Fallback: location/reference @ref_tag, name, or UUID.",
         },
       },
-      required: ["scene_id"],
+      required: [],
     },
   },
   {
@@ -397,27 +425,33 @@ Series brief:
 ${context.briefMarkdown || "(empty)"}
 
 Characters:
-${characters.map((i) => `- ${i.ref_tag} ${i.name} [${i.id}] status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
+${characters.map((i) => `- ${i.ref_tag} ${i.name} status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
 
 Costumes:
-${costumes.map((i) => `- ${i.ref_tag} ${i.name} (character ${i.character_id ?? "?"}) [${i.id}] status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
+${costumes.map((i) => `- ${i.ref_tag} ${i.name} (character ${i.character_id ? "linked" : "?"}) status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
 
 Character sheets:
-${(context.characterSheets ?? []).map((s) => `- [${s.id}] ${s.character_name}${s.costume_name ? ` · ${s.costume_name}` : ""} — ${s.name} (${s.status}) episodes: ${s.episode_ids.join(", ") || "all"}`).join("\n") || "(none)"}
+${(context.characterSheets ?? []).map((s) => `- ${s.character_name}${s.costume_name ? ` · ${s.costume_name}` : ""} — ${s.name} (${s.status}) episodes: ${s.episode_ids.length || "all"}`).join("\n") || "(none)"}
 
 Locations:
-${locations.map((i) => `- ${i.ref_tag} ${i.name} [${i.id}] status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
+${locations.map((i) => `- ${i.ref_tag} ${i.name} status=${i.generation_status ?? "ready"}`).join("\n") || "(none)"}
 
 Voices:
-${voices.map((i) => `- ${i.ref_tag} ${i.name} [${i.id}]`).join("\n") || "(none)"}
+${voices.map((i) => `- ${i.ref_tag} ${i.name}`).join("\n") || "(none)"}
 
 Other ingredients:
-${(context.ingredients ?? []).filter((i) => !["character", "outfit", "location", "voice"].includes(i.kind)).map((i) => `- ${i.ref_tag} ${i.name} (${i.kind}) [${i.id}]`).join("\n") || "(none)"}
+${(context.ingredients ?? []).filter((i) => !["character", "outfit", "location", "voice"].includes(i.kind)).map((i) => `- ${i.ref_tag} ${i.name} (${i.kind})`).join("\n") || "(none)"}
 
 Current scenes:
-${(context.scenes ?? []).map((s) => `- [${s.id}] ${s.act_label ?? "Storyboard-only"}: ${s.title}`).join("\n") || "(none)"}`;
+${(context.scenes ?? []).map((s, idx) => `- scene ${idx + 1}: ${s.act_label ?? "Storyboard-only"}: ${s.title}`).join("\n") || "(none)"}
 
-  const volatile = `${workspaceSection}${context.episodeId ? `Active episode id (use this for draft_storyboard): ${context.episodeId}${workspace?.episodeTitle ? ` — ${workspace.episodeTitle}` : ""}\n` : "No active episode — open an episode studio before building segments.\n"}${context.sceneId ? `Active scene id: ${context.sceneId}\n` : ""}`.trim();
+## ID addressing (mandatory)
+- Always address scenes, sheets, characters, locations, and costumes by @ref_tag, exact name, or scene_number (1-based).
+- NEVER type or paste raw UUIDs into tool calls — they get truncated and break bindings / create duplicate empty scenes.
+- Tool results return short refs (scene_number, @ref_tag, names). Echo those, not any UUID you may see in older context.
+- If a key is ambiguous or unknown, the tool returns valid_options — pick one; do not invent a new scene.`;
+
+  const volatile = `${workspaceSection}${context.episodeId ? `Active episode: ${workspace?.episodeTitle ?? "open"} (use for draft_storyboard; server binds to the open episode)\n` : "No active episode — open an episode studio before building segments.\n"}${context.sceneId && workspace?.sceneTitle ? `Active scene: ${workspace.sceneTitle}\n` : ""}`.trim();
 
   return { stable, volatile };
 }

@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 const CHARACTER_HEADSHOT_PREFIX =
-  "Clean neutral studio headshot. Plain seamless gray studio background, even soft lighting, neutral expression, front-facing, shoulders visible. No props, no cinematic styling, no dramatic mood, no text, no watermark. Character: ";
+  "Clean neutral studio headshot of a fictional person, not resembling any real individual. Plain seamless gray studio background, even soft lighting, neutral expression, front-facing, shoulders visible. No props, no cinematic styling, no dramatic mood, no text, no watermark. Character: ";
 
 const LOCATION_ESTABLISHING_PREFIX =
   "Clean establishing shot of a location. Neutral daylight, clear composition, no people, no cinematic color grading, no text. Location: ";

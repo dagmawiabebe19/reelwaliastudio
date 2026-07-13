@@ -259,3 +259,98 @@ export async function resolveSceneReferencesAction(
     return { error: error instanceof Error ? error.message : "Failed to resolve references." };
   }
 }
+
+/**
+ * One-click mitigation for Seedance real-person likeness rejections:
+ * regenerate matching character headshots (and sheets) with likeness-safe prompts.
+ */
+export async function regenerateLikenessSafeReferencesAction(
+  seriesId: string,
+  referenceLabels: string[],
+) {
+  try {
+    await verifySeriesOwnership(seriesId);
+    const userId = await getActiveUserId();
+    const labels = referenceLabels.map((label) => label.trim()).filter(Boolean);
+    if (!labels.length) {
+      return { error: "No reference labels to regenerate." };
+    }
+
+    const { listIngredientsBySeries } = await import("@/lib/db/ingredients");
+    const { listCharacterSheetsBySeries } = await import("@/lib/db/character-sheets");
+    const { normalizeRefKey } = await import("@/lib/ai/copilot/resolve-entity");
+
+    const ingredients = await listIngredientsBySeries(seriesId);
+    const sheets = await listCharacterSheetsBySeries(seriesId);
+
+    const matchedCharacterIds = new Set<string>();
+    const queued: string[] = [];
+    const errors: string[] = [];
+
+    for (const label of labels) {
+      const primary = label.replace(/\(headshot.*?\)/gi, "").split("·")[0] ?? label;
+      const norm = normalizeRefKey(primary);
+      for (const ing of ingredients) {
+        if (ing.kind !== "character") continue;
+        const nameNorm = normalizeRefKey(ing.name);
+        if (nameNorm === norm || normalizeRefKey(ing.ref_tag) === norm || norm.includes(nameNorm)) {
+          matchedCharacterIds.add(ing.id);
+        }
+      }
+      for (const sheet of sheets) {
+        const charName = sheet.character?.name;
+        if (!charName) continue;
+        const charNorm = normalizeRefKey(charName);
+        if (norm.includes(charNorm) || charNorm === norm) {
+          matchedCharacterIds.add(sheet.character_id);
+        }
+      }
+    }
+
+    if (!matchedCharacterIds.size) {
+      return {
+        error: `No characters matched reference labels: ${labels.join("; ")}. Regenerate the flagged headshot/sheet from the Characters section.`,
+      };
+    }
+
+    await assertSufficientCredits(
+      userId,
+      estimateImageCredits(matchedCharacterIds.size) +
+        estimateSheetCredits() * Math.max(1, matchedCharacterIds.size),
+    );
+
+    for (const characterId of matchedCharacterIds) {
+      const character = ingredients.find((ing) => ing.id === characterId);
+      if (!character) continue;
+
+      if (character.generation_status !== "pending") {
+        const headshot = await retryIngredientImageGeneration(characterId, `/series/${seriesId}`);
+        if (headshot.status === "failed") {
+          errors.push(`${character.name} headshot: ${headshot.error ?? "failed"}`);
+        } else {
+          queued.push(`${character.name} headshot`);
+        }
+      }
+
+      const charSheets = sheets.filter((sheet) => sheet.character_id === characterId);
+      for (const sheet of charSheets) {
+        if (sheet.status === "pending") continue;
+        const sheetResult = await retrySheetGeneration(sheet.id, `/series/${seriesId}`);
+        if (sheetResult.status === "failed") {
+          errors.push(`${character.name} sheet (${sheet.name}): ${sheetResult.error ?? "failed"}`);
+        } else {
+          queued.push(`${character.name} sheet (${sheet.name})`);
+        }
+      }
+    }
+
+    revalidatePath(`/series/${seriesId}`);
+    return {
+      queued,
+      errors,
+      note: "References regenerated with likeness-safe prompts. Generate the take again after they finish.",
+    };
+  } catch (error) {
+    return formatActionError(error, "Failed to regenerate likeness-safe references.");
+  }
+}

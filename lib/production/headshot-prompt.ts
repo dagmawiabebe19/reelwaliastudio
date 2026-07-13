@@ -99,6 +99,7 @@ export function sanitizeCharacterHeadshotDescription(description: string): strin
 
   return (
     `${identityLine}. ` +
+    "Fictional person, not resembling any real individual. " +
     "Neutral everyday clothing (plain crew-neck shirt), shoulders visible, " +
     "no costumes, no props, no suggestive wardrobe."
   )

@@ -15,8 +15,10 @@ import {
   buildSeedancePromptWithImageRefs,
   falCredentialsConfigured,
   formatFalError,
+  isSeedanceLikenessRejection,
   submitSeedanceJobWithReferenceRetries,
 } from "@/lib/ai/video/seedance-api";
+import { formatSeedanceLikenessRejection } from "@/lib/ai/video/seedance-likeness";
 import { persistGeneratedBuffer } from "@/lib/storage/persist-generated";
 import type { GenerateVideoInput, VideoAdapter } from "./types";
 
@@ -127,13 +129,19 @@ export const generateVideo: VideoAdapter = async (input) => {
       videoDurationSeconds,
     });
   } catch (error) {
+    const refLabels = references.map((ref) => ref.label);
     logGenerationError("seedance-video", error, {
       sceneId: input.sceneId,
       seedanceTier: input.seedanceTier,
       durationSeconds: input.durationSeconds,
       resolution: input.resolution,
       configured: falCredentialsConfigured(),
+      likenessRejection: isSeedanceLikenessRejection(error),
+      referenceLabels: refLabels,
     });
+    if (isSeedanceLikenessRejection(error)) {
+      return errorResult(formatSeedanceLikenessRejection(refLabels));
+    }
     return errorResult(formatFalError(error) || formatGenerationError(error, "Seedance video generation failed."));
   }
 };

@@ -36,6 +36,11 @@ import { buildCharacterHeadshotPrompt } from "@/lib/production/headshot-prompt";
 import { executeSheetGeneration } from "@/lib/ai/generation/sheet-generation";
 import { executeDraftStoryboard, normalizeStoryboardSegments } from "@/lib/ai/copilot/draft-storyboard";
 import {
+  resolveIngredientKey,
+  resolveSceneKey,
+  resolveSheetKey,
+} from "@/lib/ai/copilot/resolve-tool-entities";
+import {
   generateAndStoreEpisodeSummary,
   PRIOR_EPISODE_SUMMARY_LIMIT,
   scheduleEpisodeSummaryRefresh,
@@ -196,12 +201,20 @@ async function executeTool(
     }
 
     case "add_ingredient": {
-      const seriesId = String(args.series_id);
+      const seriesId = context.seriesId || String(args.series_id);
       const kind = args.kind as Parameters<typeof createIngredient>[0]["kind"];
       const name = String(args.name ?? "").trim();
       const description = args.description ? String(args.description) : undefined;
-      const characterId = args.character_id ? String(args.character_id) : undefined;
+      let characterId = args.character_id ? String(args.character_id) : undefined;
       const generate = args.generate === true;
+
+      if (characterId) {
+        const resolvedChar = await resolveIngredientKey(characterId, seriesId, ["character"]);
+        if ("error" in resolvedChar) {
+          return resolvedChar;
+        }
+        characterId = resolvedChar.id;
+      }
 
       if (generate && !description) {
         return { error: "description is required when generate=true." };
@@ -313,21 +326,52 @@ async function executeTool(
     }
 
     case "bind_identity": {
-      const sceneId = String(args.scene_id);
-      const sheetIds = (args.character_sheet_ids as string[]) ?? [];
-      const ingredientIds = (args.ingredient_ids as string[]) ?? [];
+      const sceneKey =
+        (typeof args.scene_number === "number" ? String(args.scene_number) : null) ||
+        (args.scene_id ? String(args.scene_id) : null);
+      if (!sceneKey) {
+        return { error: "Pass scene_number or scene title/@ref — not an empty scene_id." };
+      }
+      const sceneResolved = await resolveSceneKey(sceneKey, context);
+      if ("error" in sceneResolved) return sceneResolved;
+      const sceneId = sceneResolved.sceneId;
+
+      const sheetKeys = (args.character_sheet_ids as string[]) ?? [];
+      const ingredientKeys = (args.ingredient_ids as string[]) ?? [];
+      const sheetIds: string[] = [];
+      const ingredientIds: string[] = [];
+      const sheetRefs: string[] = [];
+      const ingredientRefs: string[] = [];
+
+      for (const key of sheetKeys) {
+        const resolved = await resolveSheetKey(key, context.seriesId);
+        if ("error" in resolved) return resolved;
+        sheetIds.push(resolved.id);
+        sheetRefs.push(`${resolved.character_name} — ${resolved.name}`);
+      }
+      for (const key of ingredientKeys) {
+        const resolved = await resolveIngredientKey(key, context.seriesId);
+        if ("error" in resolved) return resolved;
+        ingredientIds.push(resolved.id);
+        ingredientRefs.push(`${resolved.ref_tag} ${resolved.name}`);
+      }
+
       const total = sheetIds.length + ingredientIds.length;
 
       for (const sheetId of sheetIds) {
         const block = await assertSheetReadyForBinding(sheetId);
         if (block) {
-          return { error: block, sheet_id: sheetId, bound: false };
+          return { error: block, sheet_ref: sheetRefs[sheetIds.indexOf(sheetId)], bound: false };
         }
       }
       for (const ingredientId of ingredientIds) {
         const block = await assertIngredientReadyForBinding(ingredientId);
         if (block) {
-          return { error: block, ingredient_id: ingredientId, bound: false };
+          return {
+            error: block,
+            ingredient_ref: ingredientRefs[ingredientIds.indexOf(ingredientId)],
+            bound: false,
+          };
         }
       }
 
@@ -367,17 +411,35 @@ async function executeTool(
         });
       }
 
-      return { bound_sheets: sheetIds.length, bound_ingredients: ingredientIds.length };
+      return {
+        scene: `scene ${sceneResolved.scene_number}: ${sceneResolved.title}`,
+        bound_sheets: sheetRefs,
+        bound_ingredients: ingredientRefs,
+      };
     }
 
     case "create_character_sheet": {
-      const seriesId = String(args.series_id);
-      const characterId = String(args.character_id);
+      const seriesId = context.seriesId || String(args.series_id);
+      const characterKey = String(args.character_id ?? "").trim();
       const name = String(args.name ?? "").trim();
-      const costumeId = args.costume_id ? String(args.costume_id) : null;
+      const costumeKey = args.costume_id ? String(args.costume_id) : null;
       const episodeIds = (args.episode_ids as string[]) ?? [];
 
       if (!name) return { error: "name is required." };
+      if (!characterKey) return { error: "character_id (@ref_tag or name) is required." };
+
+      const characterResolved = await resolveIngredientKey(characterKey, seriesId, ["character"]);
+      if ("error" in characterResolved) return characterResolved;
+      const characterId = characterResolved.id;
+
+      let costumeId: string | null = null;
+      let costumeName: string | null = null;
+      if (costumeKey) {
+        const costumeResolved = await resolveIngredientKey(costumeKey, seriesId, ["outfit"]);
+        if ("error" in costumeResolved) return costumeResolved;
+        costumeId = costumeResolved.id;
+        costumeName = costumeResolved.name;
+      }
 
       try {
         const userId = await getActiveUserId();
@@ -410,8 +472,8 @@ async function executeTool(
         toolId: "",
         sheetId: sheet.id,
         name: sheet.name,
-        characterName: character?.name ?? null,
-        costumeName: costume?.name ?? null,
+        characterName: character?.name ?? characterResolved.name,
+        costumeName: costume?.name ?? costumeName,
         status: "pending",
       });
 
@@ -450,7 +512,7 @@ async function executeTool(
           return {
             error: `Not enough credits (need ${error.needed}, have ${error.available}).`,
             insufficientCredits: toInsufficientCreditsPayload(error),
-            sheet_id: sheet.id,
+            sheet: `${characterResolved.name} — ${name}`,
           };
         }
         throw error;
@@ -464,10 +526,8 @@ async function executeTool(
       });
 
       return {
-        sheet_id: sheet.id,
-        name: sheet.name,
-        character_name: character?.name ?? null,
-        costume_name: costume?.name ?? null,
+        sheet: `${characterResolved.name}${costume?.name || costumeName ? ` · ${costume?.name ?? costumeName}` : ""} — ${name}`,
+        character: `${characterResolved.ref_tag} ${characterResolved.name}`,
         status: genResult.status,
         error: genResult.error,
       };

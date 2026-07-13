@@ -21,6 +21,8 @@ import { ICON_MD, ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 import { Lightbox, LightboxImageButton, useLightbox, type LightboxImage } from "@/components/ui/Lightbox";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
 import type { Orientation } from "@/lib/db/types";
+import { getLikenessRejectionDisplay } from "@/lib/ai/video/seedance-likeness";
+import { regenerateLikenessSafeReferencesAction } from "@/app/(app)/series/[id]/production-actions";
 import {
   orientationAspectClass,
   takeStatusRingClass,
@@ -400,7 +402,9 @@ export function TakesStrip({
                 </>
               ) : activeTake.status === "failed" ? (
                 <span className="max-w-md truncate text-xs text-muted" title={activeTake.error_message ?? undefined}>
-                  {activeTake.error_message ?? "Failed"}
+                  {getLikenessRejectionDisplay(activeTake.error_message).isLikeness
+                    ? "Rejected: reference flagged as real-person likeness"
+                    : (activeTake.error_message ?? "Failed")}
                 </span>
               ) : null}
             </div>
@@ -468,13 +472,44 @@ export function TakesStrip({
                 <GeneratingPulse label="Generating…" />
               </div>
             ) : activeTake.status === "failed" ? (
-              <div className="flex h-full min-h-[12rem] flex-col items-center justify-center gap-2 bg-background px-6 text-center">
-                <p className="text-sm font-medium text-foreground">Generation failed</p>
-                <p className="text-xs leading-relaxed text-muted">
-                  {activeTake.error_message?.trim() ||
-                    "Something went wrong. Try generating again or check status."}
-                </p>
-              </div>
+              (() => {
+                const likeness = getLikenessRejectionDisplay(activeTake.error_message);
+                return (
+                  <div className="flex h-full min-h-[12rem] flex-col items-center justify-center gap-3 bg-background px-6 text-center">
+                    <p className="text-sm font-medium text-foreground">{likeness.headline}</p>
+                    {likeness.detail ? (
+                      <p className="text-xs leading-relaxed text-muted">{likeness.detail}</p>
+                    ) : (
+                      <p className="text-xs leading-relaxed text-muted">
+                        Something went wrong. Try generating again or check status.
+                      </p>
+                    )}
+                    {likeness.isLikeness ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-auto px-3 py-1.5 text-[11px]"
+                        disabled={pending}
+                        onClick={() => {
+                          startTransition(async () => {
+                            const result = await regenerateLikenessSafeReferencesAction(
+                              seriesId,
+                              likeness.references,
+                            );
+                            if ("error" in result && result.error) {
+                              alert(result.error);
+                              return;
+                            }
+                            router.refresh();
+                          });
+                        }}
+                      >
+                        Regenerate flagged refs (likeness-safe)
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+              })()
             ) : (
               <EmptyState
                 variant="preview"

@@ -11,7 +11,13 @@ import {
   normalizeSeedanceAudioMode,
 } from "@/lib/ai/video/seedance-constants";
 import { normalizeShotIntent } from "@/lib/production/prompts";
-import { createScenesBatch, getScene, reorderScenes, updateScene } from "@/lib/db/scenes";
+import {
+  createScenesBatch,
+  listScenesByEpisode,
+  reorderScenes,
+  updateScene,
+} from "@/lib/db/scenes";
+import { looksLikeUuid, normalizeRefKey, resolveAmong } from "@/lib/ai/copilot/resolve-entity";
 import { assessSegmentLock } from "@/lib/production/reference-readiness";
 import { resolveSceneReferences } from "@/lib/production/resolve-references";
 import { resolveActLabelForEpisode } from "@/lib/storyboard/episode-buckets";
@@ -19,6 +25,8 @@ import { resolveActLabelForEpisode } from "@/lib/storyboard/episode-buckets";
 type SegmentRecord = Record<string, unknown>;
 
 type ParsedSegment = {
+  sceneKey: string | null;
+  sceneNumber: number | null;
   sceneId: string | null;
   title: string;
   prompt: string;
@@ -54,8 +62,23 @@ function parseSegment(episode: Episode, segment: SegmentRecord): ParsedSegment |
       ? Math.min(15, Math.max(4, Math.round(segment.duration_seconds)))
       : undefined;
 
+  const sceneKeyRaw =
+    segment.scene_id ??
+    segment.scene_ref ??
+    segment.scene_key ??
+    segment.scene ??
+    null;
+  const sceneNumber =
+    typeof segment.scene_number === "number"
+      ? segment.scene_number
+      : typeof segment.scene_number === "string" && /^\d+$/.test(segment.scene_number)
+        ? Number(segment.scene_number)
+        : null;
+
   return {
-    sceneId: segment.scene_id ? String(segment.scene_id) : null,
+    sceneKey: sceneKeyRaw ? String(sceneKeyRaw).trim() : null,
+    sceneNumber,
+    sceneId: null,
     title,
     prompt,
     actLabel,
@@ -73,8 +96,8 @@ function parseSegment(episode: Episode, segment: SegmentRecord): ParsedSegment |
 export type DraftStoryboardProgress = (detail: string, step?: number, total?: number) => void;
 
 /** Coerce tool args into a segments array (models sometimes nest or omit the array). */
-export function normalizeStoryboardSegments(args: Record<string, unknown>): SegmentRecord[] {
-  const raw = args.segments;
+export function normalizeStoryboardSegments(attrs: Record<string, unknown>): SegmentRecord[] {
+  const raw = attrs.segments;
   if (Array.isArray(raw)) {
     return raw as SegmentRecord[];
   }
@@ -91,19 +114,82 @@ export function normalizeStoryboardSegments(args: Record<string, unknown>): Segm
   return [];
 }
 
-async function resolveSegmentSceneIds(
+function sceneOptionLabel(scene: { sort_order: number; title: string }): string {
+  return `scene ${scene.sort_order + 1}: ${scene.title}`;
+}
+
+/**
+ * Resolve segment targeting without blind-create on bad UUID.
+ * - Explicit key that fails → error (lists valid options)
+ * - No key → upsert by exact title match, else create
+ */
+async function resolveSegmentTargets(
   segments: ParsedSegment[],
   episodeId: string,
-): Promise<void> {
-  await Promise.all(
-    segments.map(async (segment) => {
-      if (!segment.sceneId) return;
-      const scene = await getScene(segment.sceneId);
-      if (!scene || scene.episode_id !== episodeId) {
-        segment.sceneId = null;
+): Promise<{ error?: string; valid_options?: string[] }> {
+  const existing = await listScenesByEpisode(episodeId);
+  const claimed = new Set<string>();
+
+  for (const segment of segments) {
+    const key =
+      segment.sceneKey ||
+      (segment.sceneNumber != null ? String(segment.sceneNumber) : null);
+
+    if (key) {
+      const resolved = resolveAmong(
+        key,
+        existing,
+        {
+          id: (s) => s.id,
+          ordinal: (s) => s.sort_order,
+          title: (s) => s.title,
+          label: sceneOptionLabel,
+        },
+        "scene",
+      );
+
+      if ("error" in resolved) {
+        // Truncated/mangled UUID or unknown key — never create as a side effect.
+        if (looksLikeUuid(key) || segment.sceneKey) {
+          return {
+            error: resolved.error,
+            valid_options: resolved.valid_options,
+          };
+        }
+      } else {
+        if (claimed.has(resolved.entity.id)) {
+          return {
+            error: `Scene "${resolved.entity.title}" was targeted by multiple segments. Use unique scene_number / title per segment.`,
+            valid_options: existing.map(sceneOptionLabel),
+          };
+        }
+        segment.sceneId = resolved.entity.id;
+        claimed.add(resolved.entity.id);
+        continue;
       }
-    }),
-  );
+    }
+
+    // No usable key: upsert by exact title within episode.
+    const titleNorm = normalizeRefKey(segment.title);
+    const titleMatches = existing.filter(
+      (scene) => normalizeRefKey(scene.title) === titleNorm && !claimed.has(scene.id),
+    );
+    if (titleMatches.length === 1) {
+      segment.sceneId = titleMatches[0].id;
+      claimed.add(titleMatches[0].id);
+      continue;
+    }
+    if (titleMatches.length > 1) {
+      return {
+        error: `Ambiguous scene title "${segment.title}" — ${titleMatches.length} matches. Pass scene_number to disambiguate.`,
+        valid_options: titleMatches.map(sceneOptionLabel),
+      };
+    }
+
+    // Truly new segment — leave sceneId null for create.
+  }
+
+  return {};
 }
 
 function sceneBatchPayload(segment: ParsedSegment) {
@@ -145,7 +231,13 @@ export async function executeDraftStoryboard(input: {
   const total = parsed.length;
   input.emitProgress(`creating ${total} segments…`, 0, total);
 
-  await resolveSegmentSceneIds(parsed, input.episodeId);
+  const resolveResult = await resolveSegmentTargets(parsed, input.episodeId);
+  if (resolveResult.error) {
+    const options = resolveResult.valid_options?.length
+      ? ` Valid scenes: ${resolveResult.valid_options.join(" | ")}`
+      : "";
+    throw new Error(`${resolveResult.error}${options}`);
+  }
 
   const existingSceneIds = new Set(
     parsed.map((segment) => segment.sceneId).filter((id): id is string => Boolean(id)),
@@ -153,6 +245,7 @@ export async function executeDraftStoryboard(input: {
 
   const toCreate = parsed.filter((segment) => !segment.sceneId);
   const created: string[] = [];
+  const createdRefs: Array<{ scene_number: number; title: string; scene_id: string }> = [];
 
   if (toCreate.length > 0) {
     input.emitProgress(`inserting ${toCreate.length} segment rows…`, 0, total);
@@ -180,7 +273,6 @@ export async function executeDraftStoryboard(input: {
     .map((segment) => segment.sceneId)
     .filter((id): id is string => typeof id === "string" && existingSceneIds.has(id));
 
-  // Phase 1: persist metadata on existing rows (new rows already inserted with full payload).
   if (updated.length > 0) {
     input.emitProgress(`updating ${updated.length} existing segments…`, 0, total);
     const updateOutcomes = await runWithConcurrencySettled(
@@ -226,7 +318,21 @@ export async function executeDraftStoryboard(input: {
 
   await reorderScenes(input.episodeId, builtSceneIds);
 
-  // Phase 2: bind references after all rows are committed.
+  // Re-read sort_order after reorder for human-facing refs.
+  const afterReorder = await listScenesByEpisode(input.episodeId);
+  const sortById = new Map(afterReorder.map((scene) => [scene.id, scene.sort_order]));
+
+  for (const id of created) {
+    const scene = afterReorder.find((row) => row.id === id);
+    if (scene) {
+      createdRefs.push({
+        scene_number: (sortById.get(id) ?? 0) + 1,
+        title: scene.title,
+        scene_id: id,
+      });
+    }
+  }
+
   input.emitProgress(`binding references for ${total} segments…`, 0, total);
   let completed = 0;
   const bindOutcomes = await runWithConcurrencySettled(
@@ -243,7 +349,12 @@ export async function executeDraftStoryboard(input: {
     },
   );
 
-  const resolved: Array<{ scene_id: string; references: unknown[] }> = [];
+  const resolved: Array<{
+    scene_number: number;
+    title: string;
+    scene_id: string;
+    references: unknown[];
+  }> = [];
 
   for (let i = 0; i < bindOutcomes.length; i++) {
     const segment = parsed[i];
@@ -263,24 +374,62 @@ export async function executeDraftStoryboard(input: {
       );
     }
 
-    resolved.push({ scene_id: outcome.value.sceneId, references: outcome.value.references });
+    const sortOrder = sortById.get(outcome.value.sceneId) ?? i;
+    resolved.push({
+      scene_number: sortOrder + 1,
+      title: segment.title,
+      scene_id: outcome.value.sceneId,
+      references: outcome.value.references,
+    });
     input.emitProgress(`built segment ${completed}/${total}: ${segment.title}…`, completed, total);
   }
 
   const lockReport = await Promise.all(
-    builtSceneIds.map((sceneId) =>
-      assessSegmentLock({ sceneId, seriesId: input.seriesId, episodeId: input.episodeId }),
-    ),
+    builtSceneIds.map(async (sceneId) => {
+      const lock = await assessSegmentLock({
+        sceneId,
+        seriesId: input.seriesId,
+        episodeId: input.episodeId,
+      });
+      const sortOrder = sortById.get(sceneId) ?? 0;
+      return {
+        ...lock,
+        scene_number: sortOrder + 1,
+        // Prefer short refs for the model; keep scene_id for server clients.
+      };
+    }),
   );
 
   return {
     episode_id: input.episodeId,
-    created,
-    updated,
+    created: createdRefs.map((row) => ({
+      scene_number: row.scene_number,
+      title: row.title,
+      ref: `scene ${row.scene_number}`,
+    })),
+    updated: updated.map((id) => {
+      const scene = afterReorder.find((row) => row.id === id);
+      const n = (sortById.get(id) ?? 0) + 1;
+      return {
+        scene_number: n,
+        title: scene?.title ?? "",
+        ref: `scene ${n}`,
+      };
+    }),
     count: created.length + updated.length,
-    resolved,
-    lock_report: lockReport,
+    resolved: resolved.map(({ scene_number, title, references }) => ({
+      scene_number,
+      title,
+      ref: `scene ${scene_number}`,
+      references,
+    })),
+    lock_report: lockReport.map((row) => {
+      const { scene_id: _unused, ...rest } = row as typeof row & { scene_id?: string };
+      void _unused;
+      return rest;
+    }),
     fully_locked_count: lockReport.filter((row) => row.fully_locked).length,
     segment_count: lockReport.length,
+    note: "Address scenes as scene_number or title — never copy UUIDs.",
   };
 }

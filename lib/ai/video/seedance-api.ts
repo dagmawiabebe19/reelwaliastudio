@@ -6,6 +6,16 @@ import {
   DEFAULT_SEEDANCE_FAST_MODEL,
   DEFAULT_SEEDANCE_MODEL,
 } from "@/lib/ai/video/seedance-constants";
+import {
+  formatSeedanceLikenessRejection,
+  isSeedanceLikenessText,
+} from "@/lib/ai/video/seedance-likeness";
+
+export {
+  formatSeedanceLikenessRejection,
+  getLikenessRejectionDisplay,
+  parseLikenessRejectionMessage,
+} from "@/lib/ai/video/seedance-likeness";
 
 export {
   DEFAULT_SEEDANCE_FAST_MODEL,
@@ -243,6 +253,8 @@ export function isTransientSeedanceReferenceDownloadError(error: unknown): boole
     return false;
   }
   if (error.status !== 422) return false;
+  // Likeness/moderation 422s are deterministic — never treat as transient download failures.
+  if (isSeedanceLikenessRejection(error)) return false;
 
   const haystack = falErrorText(error).toLowerCase();
   return (
@@ -250,6 +262,19 @@ export function isTransientSeedanceReferenceDownloadError(error: unknown): boole
     haystack.includes("download the file") ||
     haystack.includes("url is accessible")
   );
+}
+
+/**
+ * Deterministic Seedance content moderation: reference flagged as a real-person likeness.
+ * Do NOT auto-retry — retries burn attempts and never succeed.
+ * Official fal Seedance reference-to-video schema has no consent/allow-likeness flag.
+ */
+export function isSeedanceLikenessRejection(error: unknown): boolean {
+  return isSeedanceLikenessText(falErrorText(error));
+}
+
+export function formatSeedanceLikenessRejectionMessage(referenceLabels: string[]): string {
+  return formatSeedanceLikenessRejection(referenceLabels);
 }
 
 export function formatFalError(error: unknown): string {

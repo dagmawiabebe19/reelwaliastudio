@@ -1,7 +1,7 @@
 import type { AspectRatio } from "@/lib/ai/registry";
 
 export const CHARACTER_HEADSHOT_PREFIX =
-  "Clean neutral studio headshot. Plain seamless gray studio background, even soft lighting, neutral expression, front-facing, shoulders visible. No props, no cinematic styling, no dramatic mood, no text, no watermark. Character: ";
+  "Clean neutral studio headshot of a fictional person, not resembling any real individual. Plain seamless gray studio background, even soft lighting, neutral expression, front-facing, shoulders visible. No props, no cinematic styling, no dramatic mood, no text, no watermark. Character: ";
 
 export const LOCATION_ESTABLISHING_PREFIX =
   "Clean establishing shot of a location. Neutral daylight, clear composition, no people, no cinematic color grading, no text. Location: ";
@@ -42,7 +42,7 @@ export function sheetAnglePrompt(angle: SheetAngle, characterName: string, costu
   };
 
   return (
-    `Character turnaround sheet — ${angleInstruction[angle]} of ${characterName}. ${costumeNote} ` +
+    `Character turnaround sheet — ${angleInstruction[angle]} of ${characterName} (fictional person, not resembling any real individual). ${costumeNote} ` +
     "Clean neutral seamless studio background, even lighting, consistent wardrobe and face identity across all angles. " +
     "Match the reference images exactly for face and costume. No props, no cinematic styling, no text."
   );
