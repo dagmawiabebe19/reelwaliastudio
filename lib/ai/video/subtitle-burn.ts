@@ -46,12 +46,14 @@ export function buildVeedInput(params: {
   videoUrl: string;
   srtFileUrl: string;
   style: BurnInStyle;
+  /** VEED BCP-47 locale matching the SRT language (default en-US). */
+  language?: string;
 }): VeedSubtitleInput {
   return {
     video_url: params.videoUrl,
     srt_file_url: params.srtFileUrl,
     preset: params.style.preset,
-    language: "en-US",
+    language: params.language ?? "en-US",
     customization: {
       position: params.style.position,
       shadow: params.style.shadow,

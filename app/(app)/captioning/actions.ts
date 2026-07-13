@@ -17,10 +17,21 @@ import { CAPTIONING_BUCKET } from "@/lib/captioning/export";
 import { TARGET_LANGUAGE_CODES } from "@/lib/captioning/languages";
 import {
   scheduleBurnIn,
+  scheduleLanguageBurnExports,
   scheduleTranscription,
   scheduleTranslation,
   scheduleTranslations,
 } from "@/lib/captioning/sweep";
+import { enqueueLanguageBurnExports } from "@/lib/captioning/lang-burn";
+import {
+  BURN_EXPORT_RESOLUTION,
+  burnedExportDownloadFilename,
+} from "@/lib/captioning/burn-export";
+import { listBurnedExportsForJob, getBurnedExport } from "@/lib/db/caption-burns";
+import { ALL_LANGUAGES, getLanguageLabel } from "@/lib/captioning/languages";
+import { assertSufficientCredits } from "@/lib/credits/meter";
+import { getEpisode } from "@/lib/db/episodes";
+import { getSeries } from "@/lib/db/series";
 import { uploadVttForLanguage } from "@/lib/captioning/export";
 import { buildVtt } from "@/lib/captioning/vtt";
 import { getBurnInStyle } from "@/lib/captioning/burn-style";
@@ -340,6 +351,150 @@ export async function getBurnedVideoUrlAction(jobId: string) {
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "Could not load the burned-in video.",
+    };
+  }
+}
+
+export async function estimateLanguageBurnExportsAction(jobId: string, langCount: number) {
+  try {
+    const job = await getCaptioningJob(jobId);
+    if (!job) return { error: "Job not found." };
+    const seconds = job.duration_seconds ?? 90;
+    const preset = getBurnInStyle().preset;
+    const perLang = estimateBurnInCredits(seconds, preset);
+    const count = Math.max(0, Math.min(ALL_LANGUAGES.length, Math.floor(langCount)));
+    return {
+      perLangCredits: perLang,
+      langCount: count,
+      totalCredits: perLang * count,
+      durationSeconds: seconds,
+      preset,
+      resolution: BURN_EXPORT_RESOLUTION,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Could not estimate cost.",
+    };
+  }
+}
+
+export async function renderLanguageBurnExportsAction(
+  jobId: string,
+  langs: string[],
+  options?: { force?: boolean },
+) {
+  try {
+    const job = await getCaptioningJob(jobId);
+    if (!job) return { error: "Job not found." };
+    if (!job.english_approved_at) {
+      return { error: "Approve English before rendering burned-in exports." };
+    }
+
+    const uniqueLangs = [...new Set(langs.map((l) => l.trim()).filter(Boolean))];
+    if (!uniqueLangs.length) return { error: "Select at least one language." };
+
+    const invalid = uniqueLangs.filter((lang) => !ALL_LANGUAGES.some((l) => l.code === lang));
+    if (invalid.length) {
+      return { error: `Unsupported languages: ${invalid.join(", ")}` };
+    }
+
+    const seconds = job.duration_seconds ?? 90;
+    const perLang = estimateBurnInCredits(seconds, getBurnInStyle().preset);
+    const userId = await getActiveUserId();
+    // Pre-check enough credits for the worst case (all selected langs render).
+    await assertSufficientCredits(userId, perLang * uniqueLangs.length);
+
+    const admin = createAdminClient();
+    const result = await enqueueLanguageBurnExports({
+      jobId,
+      langs: uniqueLangs,
+      force: options?.force === true,
+      db: admin,
+    });
+
+    const { getBurnedExportById } = await import("@/lib/db/caption-burns");
+    const queuedRows = await Promise.all(
+      result.exportIds.map((id) => getBurnedExportById(admin, id)),
+    );
+    const scheduleIds = queuedRows
+      .filter((row) => row?.status === "queued")
+      .map((row) => row!.id);
+
+    scheduleLanguageBurnExports(scheduleIds);
+    revalidatePath(`/captioning/${jobId}`);
+
+    return {
+      success: true as const,
+      queued: result.queued,
+      alreadyReady: result.ready,
+      skipped: result.skipped,
+      scheduled: scheduleIds.length,
+      perLangCredits: perLang,
+      estimatedCredits: perLang * result.queued.length,
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Failed to start language burns.",
+    };
+  }
+}
+
+export async function getLanguageBurnedVideoUrlAction(jobId: string, lang: string) {
+  try {
+    const job = await getCaptioningJob(jobId);
+    if (!job) return { error: "Job not found." };
+
+    const row = await getBurnedExport(jobId, lang, BURN_EXPORT_RESOLUTION);
+    if (!row || row.status !== "ready" || !row.storage_path) {
+      return { error: `${getLanguageLabel(lang)} burned video is not ready yet.` };
+    }
+
+    let seriesSlug: string | null = null;
+    let episodeSlug: string | null = null;
+    if (job.episode_id) {
+      try {
+        const episode = await getEpisode(job.episode_id);
+        if (episode) {
+          episodeSlug = episode.title;
+          const series = await getSeries(episode.series_id);
+          seriesSlug = series?.title ?? null;
+        }
+      } catch {
+        // fallback to job title
+      }
+    }
+
+    const filename = burnedExportDownloadFilename({
+      seriesSlug,
+      episodeSlug,
+      jobTitle: job.title,
+      lang,
+    });
+
+    const supabase = await createClient();
+    const { data, error } = await supabase.storage
+      .from(row.storage_bucket || job.video_bucket)
+      .createSignedUrl(row.storage_path, 3600, { download: filename });
+
+    if (error || !data?.signedUrl) {
+      return { error: "Could not load the burned-in video." };
+    }
+    return { url: data.signedUrl, filename };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Could not load the burned-in video.",
+    };
+  }
+}
+
+export async function listLanguageBurnExportsAction(jobId: string) {
+  try {
+    await getCaptioningJob(jobId);
+    const rows = await listBurnedExportsForJob(jobId);
+    return { exports: rows };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "Could not list exports.",
     };
   }
 }

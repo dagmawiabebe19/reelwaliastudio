@@ -156,8 +156,8 @@ export function BurnInPanel({
           {error ? <p className="mt-3 text-sm text-red-500">{error}</p> : null}
 
           <p className="mt-4 text-xs text-muted">
-            English-only for now. Burning the translated languages is a future addition —
-            the timed cues already exist per language.
+            Prefer multi-language 720p burns below when you need several languages. This
+            English social button remains for the one-click EN-only path.
           </p>
         </>
       )}
