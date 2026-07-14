@@ -61,6 +61,8 @@ export async function updateSeries(
       | "status"
       | "runtime_seconds"
       | "thumbnail_asset_id"
+      | "reference_style"
+      | "restyle_cascade"
     >
   >,
 ): Promise<Series> {

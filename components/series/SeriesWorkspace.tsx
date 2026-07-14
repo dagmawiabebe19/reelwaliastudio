@@ -23,6 +23,8 @@ import type { Orientation, SeriesStatus } from "@/lib/db/types";
 import type { ChatMessageData } from "@/components/series/copilot/CopilotPane";
 import type { CopilotOutputItem, LibraryHighlight } from "@/lib/copilot/output";
 import type { CharacterSheetCardData, EpisodeOption, IngredientCardData } from "@/lib/production/types";
+import { SeriesReferenceStylePanel } from "@/components/series/SeriesReferenceStylePanel";
+import type { Json } from "@/lib/db/database.types";
 
 type Tab = "ingredients" | "episodes" | "brief" | "memory";
 
@@ -48,6 +50,8 @@ interface SeriesWorkspaceProps {
     default_orientation: Orientation;
     brief_markdown: string;
     memory_markdown: string;
+    reference_style?: string | null;
+    restyle_cascade?: Json | null;
   };
   stats: {
     episodeCount: number;
@@ -276,16 +280,24 @@ export function SeriesWorkspace({
           </nav>
 
           {tab === "ingredients" ? (
-            <IngredientsSection
-              seriesId={series.id}
-              ingredients={ingredients}
-              counts={counts}
-              costumesByCharacter={costumesByCharacter}
-              sheetsByCharacter={sheetsByCharacter}
-              episodes={episodes}
-              highlightTarget={libraryHighlight}
-              onHighlightConsumed={() => setLibraryHighlight(null)}
-            />
+            <div className="space-y-6">
+              <SeriesReferenceStylePanel
+                seriesId={series.id}
+                initialReferenceStyle={series.reference_style ?? null}
+                restyleCascade={series.restyle_cascade ?? null}
+                characterCount={counts.characters}
+              />
+              <IngredientsSection
+                seriesId={series.id}
+                ingredients={ingredients}
+                counts={counts}
+                costumesByCharacter={costumesByCharacter}
+                sheetsByCharacter={sheetsByCharacter}
+                episodes={episodes}
+                highlightTarget={libraryHighlight}
+                onHighlightConsumed={() => setLibraryHighlight(null)}
+              />
+            </div>
           ) : null}
 
           {tab === "episodes" ? (

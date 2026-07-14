@@ -18,6 +18,7 @@ import {
   retryCharacterSheetAction,
   retryIngredientAction,
 } from "@/app/(app)/series/[id]/production-actions";
+import { FalSafeRestyleControls } from "@/components/series/ingredients/FalSafeRestyleControls";
 import { InsufficientCreditsWall } from "@/components/credits/InsufficientCreditsWall";
 import { CreditCostHint } from "@/components/credits/CreditCostHint";
 import { IngredientDeleteButton } from "@/components/series/ingredients/IngredientDeleteButton";
@@ -269,6 +270,12 @@ export function CharactersSection({
                       hasAsset={Boolean(character.assetUrl)}
                     />
 
+                    <FalSafeRestyleControls
+                      seriesId={seriesId}
+                      character={character}
+                      sheetCount={sheets.length}
+                    />
+
                     <div className="space-y-2 border-t border-border pt-3">
                       <p className="text-xs uppercase tracking-widest text-muted">Costumes</p>
                       <form
@@ -470,9 +477,16 @@ export function CharactersSection({
                                   }
                                   className="flex flex-1 items-center justify-between"
                                 >
-                                  <span>
-                                    {sheet.name}
-                                    {sheet.costume_name ? ` · ${sheet.costume_name}` : ""}
+                                  <span className="flex items-center gap-2">
+                                    <span>
+                                      {sheet.name}
+                                      {sheet.costume_name ? ` · ${sheet.costume_name}` : ""}
+                                    </span>
+                                    {sheet.falSafeStyled ? (
+                                      <span className="rounded bg-surface-elevated px-1.5 py-0.5 text-[10px] text-muted">
+                                        fal-safe
+                                      </span>
+                                    ) : null}
                                   </span>
                                   <GenerationBadge status={sheet.status} />
                                 </button>

@@ -52,6 +52,7 @@ export async function buildProductionLibraryData(input: {
       costume_name: sheet.costume?.name ?? null,
       episode_ids: sheet.episode_ids,
       angleUrls,
+      falSafeStyled: Boolean(sheet.fal_safe_styled),
     };
 
     if (!sheetsByCharacter[sheet.character_id]) sheetsByCharacter[sheet.character_id] = [];

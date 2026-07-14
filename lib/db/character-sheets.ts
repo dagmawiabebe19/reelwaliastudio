@@ -137,6 +137,28 @@ export async function updateCharacterSheetStatus(
   if (error) throw new Error(error.message);
 }
 
+export async function updateCharacterSheetFalSafe(
+  id: string,
+  falSafeStyled: boolean,
+): Promise<void> {
+  const supabase = await getDbClient();
+  const { error } = await supabase
+    .from("character_sheets")
+    .update({ fal_safe_styled: falSafeStyled })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Remove all angles so a full sheet can be regenerated in place (bindings keep the same sheet id). */
+export async function clearSheetAngles(sheetId: string): Promise<void> {
+  const supabase = await getDbClient();
+  const { error } = await supabase
+    .from("character_sheet_angles")
+    .delete()
+    .eq("sheet_id", sheetId);
+  if (error) throw new Error(error.message);
+}
+
 export async function addSheetAngle(input: {
   sheetId: string;
   assetId: string;

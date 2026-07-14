@@ -262,7 +262,13 @@ async function executeTool(
         }
 
         if (kind === "character") {
-          prompt = buildCharacterHeadshotPrompt(description);
+          const series = await import("@/lib/db/series").then((m) =>
+            m.getSeries(ingredient.series_id),
+          );
+          const { normalizeReferenceStyle } = await import("@/lib/production/reference-style");
+          prompt = buildCharacterHeadshotPrompt(description, {
+            referenceStyle: normalizeReferenceStyle(series?.reference_style),
+          });
           emitProgress("generating headshot…", 2, 2);
         } else if (kind === "location") {
           prompt = `${LOCATION_ESTABLISHING_PREFIX}${description}`;

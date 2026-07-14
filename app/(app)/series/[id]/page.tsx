@@ -154,6 +154,15 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       createdAt: i.created_at,
       generationStatus: i.generation_status,
       generationError: i.generation_error,
+      falSafeStyled: Boolean(i.fal_safe_styled),
+      restylePhase:
+        typeof i.metadata === "object" &&
+        i.metadata &&
+        !Array.isArray(i.metadata) &&
+        typeof (i.metadata as { fal_safe_restyle?: { phase?: string } }).fal_safe_restyle
+          ?.phase === "string"
+          ? (i.metadata as { fal_safe_restyle: { phase: string } }).fal_safe_restyle.phase
+          : null,
     }));
 
     const episodes = [...activeEpisodes, ...archivedEpisodes].map((ep) => ({
@@ -212,6 +221,8 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
           default_orientation: series.default_orientation,
           brief_markdown: series.brief_markdown ?? "",
           memory_markdown: series.memory_markdown ?? "",
+          reference_style: series.reference_style ?? null,
+          restyle_cascade: series.restyle_cascade ?? null,
         }}
         stats={{ episodeCount: stats.episodeCount }}
         counts={counts}

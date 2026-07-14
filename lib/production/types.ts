@@ -15,20 +15,6 @@ export type MentionSheet = {
   status: string;
 };
 
-export type CharacterSheetCardData = {
-  id: string;
-  name: string;
-  status: string;
-  generation_error: string | null;
-  character_id: string;
-  costume_id: string | null;
-  costume_name: string | null;
-  episode_ids: string[];
-  angleUrls: Record<string, string | null>;
-};
-
-export type EpisodeOption = { id: string; title: string };
-
 export type IngredientCardData = {
   id: string;
   kind: import("@/lib/db/types").IngredientKind;
@@ -41,4 +27,21 @@ export type IngredientCardData = {
   createdAt?: string;
   generationStatus?: string | null;
   generationError?: string | null;
+  falSafeStyled?: boolean;
+  restylePhase?: string | null;
 };
+
+export type CharacterSheetCardData = {
+  id: string;
+  name: string;
+  status: string;
+  generation_error: string | null;
+  character_id: string;
+  costume_id: string | null;
+  costume_name: string | null;
+  episode_ids: string[];
+  angleUrls: Record<string, string | null>;
+  falSafeStyled?: boolean;
+};
+
+export type EpisodeOption = { id: string; title: string };

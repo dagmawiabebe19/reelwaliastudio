@@ -131,7 +131,14 @@ export async function updateIngredient(
   patch: Partial<
     Pick<
       Ingredient,
-      "name" | "description" | "primary_asset_id" | "character_id" | "generation_status" | "generation_error"
+      | "name"
+      | "description"
+      | "primary_asset_id"
+      | "character_id"
+      | "generation_status"
+      | "generation_error"
+      | "metadata"
+      | "fal_safe_styled"
     >
   >,
 ): Promise<Ingredient> {

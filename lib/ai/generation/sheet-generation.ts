@@ -27,12 +27,16 @@ import {
 import { createAsset } from "@/lib/db/assets";
 import {
   addSheetAngle,
+  clearSheetAngles,
   getCharacterSheet,
+  updateCharacterSheetFalSafe,
   updateCharacterSheetStatus,
 } from "@/lib/db/character-sheets";
 import { getIngredientRefUrl } from "@/lib/ai/generation/ingredient-generation";
 import type { GenerationProgressCallback } from "@/lib/generation/progress";
 import type { GenerateImageInput } from "@/lib/ai/image/types";
+import { getSeries } from "@/lib/db/series";
+import { normalizeReferenceStyle } from "@/lib/production/reference-style";
 
 const SHEET_ANGLES: SheetAngle[] = [
   "front",
@@ -140,10 +144,19 @@ async function generateSheetAngle(input: {
   });
 }
 
+type SheetGenerationOptions = {
+  abortSignal?: AbortSignal;
+  onBillableWorkStarted?: () => void;
+  /** Clear existing angles and regenerate all 5 (needed for restyle of ready sheets). */
+  forceAllAngles?: boolean;
+  /** Mark sheet fal_safe_styled=true after successful regen. */
+  markFalSafeStyled?: boolean;
+};
+
 async function runSheetGenerationCore(
   sheetId: string,
   onProgress?: GenerationProgressCallback,
-  options?: { abortSignal?: AbortSignal; onBillableWorkStarted?: () => void },
+  options?: SheetGenerationOptions,
 ): Promise<{ status: "ready" }> {
   const sheet = await getCharacterSheet(sheetId);
   if (!sheet) throw new Error("Character sheet not found.");
@@ -152,6 +165,9 @@ async function runSheetGenerationCore(
   const costumeNote = sheet.costume
     ? `Wearing costume: ${sheet.costume.name}.`
     : "Base wardrobe from character reference.";
+
+  const series = await getSeries(sheet.series_id);
+  const referenceStyle = normalizeReferenceStyle(series?.reference_style);
 
   const refUrls: string[] = [];
   const headshotUrl = await getIngredientRefUrl(sheet.character_id);
@@ -165,13 +181,22 @@ async function runSheetGenerationCore(
     throw new Error("Character headshot is required before generating a sheet.");
   }
 
+  if (options?.forceAllAngles) {
+    await clearSheetAngles(sheetId);
+  }
+
   const existingAngles = new Set(
-    sheet.angles.map((angle) => angle.angle_label as SheetAngle),
+    options?.forceAllAngles
+      ? []
+      : sheet.angles.map((angle) => angle.angle_label as SheetAngle),
   );
   const anglesToGenerate = SHEET_ANGLES.filter((angle) => !existingAngles.has(angle));
 
   if (anglesToGenerate.length === 0) {
     await updateCharacterSheetStatus(sheetId, "ready", null);
+    if (options?.markFalSafeStyled) {
+      await updateCharacterSheetFalSafe(sheetId, true);
+    }
     return { status: "ready" };
   }
 
@@ -185,7 +210,9 @@ async function runSheetGenerationCore(
     SHEET_ANGLE_CONCURRENCY,
     async (angle) => {
       throwIfAborted(options?.abortSignal);
-      const prompt = sheetAnglePrompt(angle, characterName, costumeNote);
+      const prompt = sheetAnglePrompt(angle, characterName, costumeNote, {
+        referenceStyle,
+      });
       await generateSheetAngle({
         sheetId,
         angle,
@@ -227,13 +254,16 @@ async function runSheetGenerationCore(
   }
 
   await updateCharacterSheetStatus(sheetId, "ready", null);
+  if (options?.markFalSafeStyled) {
+    await updateCharacterSheetFalSafe(sheetId, true);
+  }
   return { status: "ready" };
 }
 
 export async function executeSheetGeneration(
   sheetId: string,
   onProgress?: GenerationProgressCallback,
-  options?: { abortSignal?: AbortSignal; onBillableWorkStarted?: () => void },
+  options?: SheetGenerationOptions,
 ): Promise<{ status: "ready" | "failed"; error?: string }> {
   const userId = await getActiveUserId();
   const estimate = estimateSheetCredits();
@@ -247,6 +277,7 @@ export async function executeSheetGeneration(
         reference,
         async (ctx) => {
           const result = await runSheetGenerationCore(sheetId, onProgress, {
+            ...options,
             abortSignal: options.abortSignal,
             onBillableWorkStarted: () => {
               ctx.markBillableWorkStarted();
@@ -260,7 +291,7 @@ export async function executeSheetGeneration(
     }
 
     return await withCredits(userId, estimate, reference, async () => {
-      const result = await runSheetGenerationCore(sheetId, onProgress);
+      const result = await runSheetGenerationCore(sheetId, onProgress, options);
       return { result, actualCredits: estimate };
     });
   } catch (error) {
@@ -277,9 +308,13 @@ export async function executeSheetGeneration(
   }
 }
 
-async function runQueuedSheetGeneration(sheetId: string, revalidatePath?: string): Promise<void> {
+async function runQueuedSheetGeneration(
+  sheetId: string,
+  revalidatePath?: string,
+  options?: Pick<SheetGenerationOptions, "forceAllAngles" | "markFalSafeStyled">,
+): Promise<void> {
   try {
-    await executeSheetGeneration(sheetId);
+    await executeSheetGeneration(sheetId, undefined, options);
   } catch (error) {
     if (isInsufficientCreditsError(error)) {
       await updateCharacterSheetStatus(
@@ -299,12 +334,16 @@ async function runQueuedSheetGeneration(sheetId: string, revalidatePath?: string
   }
 }
 
-export async function queueSheetGeneration(sheetId: string, revalidatePath?: string): Promise<void> {
+export async function queueSheetGeneration(
+  sheetId: string,
+  revalidatePath?: string,
+  options?: Pick<SheetGenerationOptions, "forceAllAngles" | "markFalSafeStyled">,
+): Promise<void> {
   await updateCharacterSheetStatus(sheetId, "pending", null);
 
   after(async () => {
     try {
-      await runQueuedSheetGeneration(sheetId, revalidatePath);
+      await runQueuedSheetGeneration(sheetId, revalidatePath, options);
     } catch (error) {
       console.error("[sheet-generation] queued generation failed", {
         sheetId,
@@ -317,6 +356,7 @@ export async function queueSheetGeneration(sheetId: string, revalidatePath?: str
 export async function retrySheetGeneration(
   sheetId: string,
   revalidatePath?: string,
+  options?: Pick<SheetGenerationOptions, "forceAllAngles" | "markFalSafeStyled">,
 ): Promise<{ status: "ready" | "failed"; error?: string }> {
   const sheet = await getCharacterSheet(sheetId);
   if (!sheet) return { status: "failed", error: "Character sheet not found." };
@@ -325,10 +365,22 @@ export async function retrySheetGeneration(
   }
 
   await updateCharacterSheetStatus(sheetId, "pending", null);
-  const result = await executeSheetGeneration(sheetId);
+  const result = await executeSheetGeneration(sheetId, undefined, options);
   if (revalidatePath) {
     const { revalidatePath: revalidate } = await import("next/cache");
     revalidate(revalidatePath);
   }
   return result;
+}
+
+/** Force-regenerate all angles in place (same sheet id — preserves episode/scene bindings). */
+export async function regenerateSheetInPlace(
+  sheetId: string,
+  revalidatePath?: string,
+  options?: { markFalSafeStyled?: boolean },
+): Promise<{ status: "ready" | "failed"; error?: string }> {
+  return retrySheetGeneration(sheetId, revalidatePath, {
+    forceAllAngles: true,
+    markFalSafeStyled: options?.markFalSafeStyled,
+  });
 }

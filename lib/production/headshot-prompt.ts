@@ -1,4 +1,5 @@
 import { CHARACTER_HEADSHOT_PREFIX } from "@/lib/production/prompts";
+import { appendReferenceStyle } from "@/lib/production/reference-style";
 
 /**
  * Deterministic sanitization for character headshot prompts.
@@ -107,6 +108,10 @@ export function sanitizeCharacterHeadshotDescription(description: string): strin
     .trim();
 }
 
-export function buildCharacterHeadshotPrompt(description: string): string {
-  return `${CHARACTER_HEADSHOT_PREFIX}${sanitizeCharacterHeadshotDescription(description)}`;
+export function buildCharacterHeadshotPrompt(
+  description: string,
+  options?: { referenceStyle?: string | null },
+): string {
+  const base = `${CHARACTER_HEADSHOT_PREFIX}${sanitizeCharacterHeadshotDescription(description)}`;
+  return appendReferenceStyle(base, options?.referenceStyle);
 }

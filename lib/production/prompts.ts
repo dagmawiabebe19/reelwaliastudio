@@ -32,7 +32,12 @@ export const SHEET_ANGLE_LABELS: Record<SheetAngle, string> = {
   back: "Back",
 };
 
-export function sheetAnglePrompt(angle: SheetAngle, characterName: string, costumeNote: string): string {
+export function sheetAnglePrompt(
+  angle: SheetAngle,
+  characterName: string,
+  costumeNote: string,
+  options?: { referenceStyle?: string | null },
+): string {
   const angleInstruction: Record<SheetAngle, string> = {
     front: "front-facing turnaround view",
     left_profile: "left profile view (subject facing frame left)",
@@ -41,11 +46,14 @@ export function sheetAnglePrompt(angle: SheetAngle, characterName: string, costu
     back: "back view facing away from camera",
   };
 
-  return (
+  const base =
     `Character turnaround sheet — ${angleInstruction[angle]} of ${characterName} (fictional person, not resembling any real individual). ${costumeNote} ` +
     "Clean neutral seamless studio background, even lighting, consistent wardrobe and face identity across all angles. " +
-    "Match the reference images exactly for face and costume. No props, no cinematic styling, no text."
-  );
+    "Match the reference images exactly for face and costume. No props, no text.";
+
+  const style = options?.referenceStyle?.trim();
+  if (!style) return base;
+  return `${base} Style: ${style}.`;
 }
 
 export function defaultAspectRatioForIngredients(): AspectRatio {

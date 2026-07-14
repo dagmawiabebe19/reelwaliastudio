@@ -16,7 +16,11 @@ import { buildCharacterHeadshotPrompt } from "@/lib/production/headshot-prompt";
 import { createIngredient, getIngredient, verifySeriesOwnership } from "@/lib/db/ingredients";
 import { queueIngredientImageGeneration, getIngredientRefUrl } from "@/lib/ai/generation/ingredient-generation";
 import { createCharacterSheet, getCharacterSheet } from "@/lib/db/character-sheets";
-import { queueSheetGeneration, retrySheetGeneration } from "@/lib/ai/generation/sheet-generation";
+import {
+  queueSheetGeneration,
+  regenerateSheetInPlace,
+  retrySheetGeneration,
+} from "@/lib/ai/generation/sheet-generation";
 import {
   retryIngredientImageGeneration,
 } from "@/lib/ai/generation/ingredient-generation";
@@ -43,7 +47,11 @@ export async function generateCharacterAction(seriesId: string, formData: FormDa
       generationStatus: "pending",
     });
 
-    const prompt = buildCharacterHeadshotPrompt(description);
+    const series = await import("@/lib/db/series").then((m) => m.getSeries(seriesId));
+    const { normalizeReferenceStyle } = await import("@/lib/production/reference-style");
+    const prompt = buildCharacterHeadshotPrompt(description, {
+      referenceStyle: normalizeReferenceStyle(series?.reference_style),
+    });
     await queueIngredientImageGeneration({
       ingredientId: ingredient.id,
       prompt,
@@ -324,7 +332,9 @@ export async function regenerateLikenessSafeReferencesAction(
       if (!character) continue;
 
       if (character.generation_status !== "pending") {
-        const headshot = await retryIngredientImageGeneration(characterId, `/series/${seriesId}`);
+        const headshot = await retryIngredientImageGeneration(characterId, `/series/${seriesId}`, {
+          markFalSafeStyled: true,
+        });
         if (headshot.status === "failed") {
           errors.push(`${character.name} headshot: ${headshot.error ?? "failed"}`);
         } else {
@@ -335,7 +345,9 @@ export async function regenerateLikenessSafeReferencesAction(
       const charSheets = sheets.filter((sheet) => sheet.character_id === characterId);
       for (const sheet of charSheets) {
         if (sheet.status === "pending") continue;
-        const sheetResult = await retrySheetGeneration(sheet.id, `/series/${seriesId}`);
+        const sheetResult = await regenerateSheetInPlace(sheet.id, `/series/${seriesId}`, {
+          markFalSafeStyled: true,
+        });
         if (sheetResult.status === "failed") {
           errors.push(`${character.name} sheet (${sheet.name}): ${sheetResult.error ?? "failed"}`);
         } else {

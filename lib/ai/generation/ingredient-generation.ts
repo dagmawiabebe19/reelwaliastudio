@@ -26,6 +26,7 @@ async function runIngredientImageCore(input: {
   abortSignal?: AbortSignal;
   onBillableWorkStarted?: () => void;
   ownerId?: string;
+  markFalSafeStyled?: boolean;
 }): Promise<{ status: "ready" }> {
   input.onProgress?.("Rendering image…", 1, 1);
 
@@ -74,6 +75,7 @@ async function runIngredientImageCore(input: {
     primary_asset_id: asset.id,
     generation_status: "ready",
     generation_error: null,
+    ...(input.markFalSafeStyled ? { fal_safe_styled: true } : {}),
   });
 
   return { status: "ready" };
@@ -95,6 +97,7 @@ export async function executeIngredientImageGeneration(input: {
   abortSignal?: AbortSignal;
   onBillableWorkStarted?: () => void;
   userId?: string;
+  markFalSafeStyled?: boolean;
 }): Promise<{ status: "ready" | "failed"; error?: string }> {
   const userId = input.userId ?? (await getActiveUserId());
   const ownerId = input.userId;
@@ -148,6 +151,7 @@ export async function queueIngredientImageGeneration(input: {
   prompt: string;
   refImageUrls?: string[];
   revalidatePath?: string;
+  markFalSafeStyled?: boolean;
 }): Promise<void> {
   await updateIngredient(input.ingredientId, {
     generation_status: "pending",
@@ -160,6 +164,7 @@ export async function queueIngredientImageGeneration(input: {
         ingredientId: input.ingredientId,
         prompt: input.prompt,
         refImageUrls: input.refImageUrls,
+        markFalSafeStyled: input.markFalSafeStyled,
       });
     } catch (error) {
       if (isInsufficientCreditsError(error)) {
@@ -203,11 +208,18 @@ export async function buildIngredientImageRetryInput(
   const { LOCATION_ESTABLISHING_PREFIX, costumePreviewPrompt } = await import(
     "@/lib/production/prompts"
   );
+  const { getSeries } = await import("@/lib/db/series");
+  const { normalizeReferenceStyle } = await import("@/lib/production/reference-style");
 
   switch (ingredient.kind) {
-    case "character":
-      // Always use sanitized identity-only headshot prompt (incl. safety-retry).
-      return { prompt: buildCharacterHeadshotPrompt(description) };
+    case "character": {
+      const series = await getSeries(ingredient.series_id);
+      return {
+        prompt: buildCharacterHeadshotPrompt(description, {
+          referenceStyle: normalizeReferenceStyle(series?.reference_style),
+        }),
+      };
+    }
     case "location":
       return { prompt: `${LOCATION_ESTABLISHING_PREFIX}${description}` };
     case "outfit": {
@@ -235,6 +247,7 @@ export async function buildIngredientImageRetryInput(
 export async function retryIngredientImageGeneration(
   ingredientId: string,
   revalidatePath?: string,
+  options?: { markFalSafeStyled?: boolean },
 ): Promise<{ status: "ready" | "failed"; error?: string }> {
   const built = await buildIngredientImageRetryInput(ingredientId);
   if ("error" in built) {
@@ -250,6 +263,7 @@ export async function retryIngredientImageGeneration(
     ingredientId,
     prompt: built.prompt,
     refImageUrls: built.refImageUrls,
+    markFalSafeStyled: options?.markFalSafeStyled,
   });
 
   if (revalidatePath) {

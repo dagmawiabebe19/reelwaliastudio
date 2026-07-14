@@ -40,7 +40,10 @@ export function parseLikenessRejectionMessage(message: string | null | undefined
   return { isLikeness: true, references };
 }
 
-export function getLikenessRejectionDisplay(errorMessage: string | null | undefined): {
+export function getLikenessRejectionDisplay(
+  errorMessage: string | null | undefined,
+  options?: { refsFalSafeStyled?: boolean | null },
+): {
   isLikeness: boolean;
   references: string[];
   headline: string;
@@ -56,12 +59,19 @@ export function getLikenessRejectionDisplay(errorMessage: string | null | undefi
     };
   }
 
+  const restyleHint =
+    options?.refsFalSafeStyled === true
+      ? " These references were already fal-safe restyled — try a stronger series reference style, or restyle again."
+      : options?.refsFalSafeStyled === false
+        ? " These references are still pre-restyle photoreal. Use Restyle references (fal-safe) on the character, then re-run."
+        : " If these are still photoreal, restyle character references to the series fal-safe style, then re-run.";
+
   return {
     isLikeness: true,
     references: parsed.references,
     headline: "Rejected: reference flagged as real-person likeness",
     detail: parsed.references.length
-      ? `References sent: ${parsed.references.join("; ")}`
-      : errorMessage?.trim() || null,
+      ? `References sent: ${parsed.references.join("; ")}.${restyleHint}`
+      : `${errorMessage?.trim() || ""}${restyleHint}`.trim() || null,
   };
 }

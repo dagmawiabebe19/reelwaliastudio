@@ -19,9 +19,13 @@ export async function createBreakdownCharacterIngredient(input: {
     generationStatus: "pending",
   });
 
+  const series = await import("@/lib/db/series").then((m) => m.getSeries(input.seriesId));
+  const { normalizeReferenceStyle } = await import("@/lib/production/reference-style");
   await queueIngredientImageGeneration({
     ingredientId: ingredient.id,
-    prompt: buildCharacterHeadshotPrompt(input.description),
+    prompt: buildCharacterHeadshotPrompt(input.description, {
+      referenceStyle: normalizeReferenceStyle(series?.reference_style),
+    }),
     revalidatePath: `/series/${input.seriesId}`,
   });
 

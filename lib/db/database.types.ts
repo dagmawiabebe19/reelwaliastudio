@@ -122,6 +122,7 @@ export type Database = {
           name: string;
           status: Database["public"]["Enums"]["character_sheet_status"];
           generation_error: string | null;
+          fal_safe_styled: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -133,6 +134,7 @@ export type Database = {
           name: string;
           status?: Database["public"]["Enums"]["character_sheet_status"];
           generation_error?: string | null;
+          fal_safe_styled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -144,6 +146,7 @@ export type Database = {
           name?: string;
           status?: Database["public"]["Enums"]["character_sheet_status"];
           generation_error?: string | null;
+          fal_safe_styled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -440,6 +443,7 @@ export type Database = {
           character_id: string | null;
           generation_status: string;
           generation_error: string | null;
+          fal_safe_styled: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -456,6 +460,7 @@ export type Database = {
           character_id?: string | null;
           generation_status?: string;
           generation_error?: string | null;
+          fal_safe_styled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -472,6 +477,7 @@ export type Database = {
           character_id?: string | null;
           generation_status?: string;
           generation_error?: string | null;
+          fal_safe_styled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -682,6 +688,8 @@ export type Database = {
           status: Database["public"]["Enums"]["series_status"];
           thumbnail_asset_id: string | null;
           runtime_seconds: number | null;
+          reference_style: string | null;
+          restyle_cascade: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -696,6 +704,8 @@ export type Database = {
           status?: Database["public"]["Enums"]["series_status"];
           thumbnail_asset_id?: string | null;
           runtime_seconds?: number | null;
+          reference_style?: string | null;
+          restyle_cascade?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -710,6 +720,8 @@ export type Database = {
           status?: Database["public"]["Enums"]["series_status"];
           thumbnail_asset_id?: string | null;
           runtime_seconds?: number | null;
+          reference_style?: string | null;
+          restyle_cascade?: Json | null;
           created_at?: string;
           updated_at?: string;
         };

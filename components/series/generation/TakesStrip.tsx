@@ -485,27 +485,39 @@ export function TakesStrip({
                       </p>
                     )}
                     {likeness.isLikeness ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="h-auto px-3 py-1.5 text-[11px]"
-                        disabled={pending}
-                        onClick={() => {
-                          startTransition(async () => {
-                            const result = await regenerateLikenessSafeReferencesAction(
-                              seriesId,
-                              likeness.references,
-                            );
-                            if ("error" in result && result.error) {
-                              alert(result.error);
-                              return;
-                            }
-                            router.refresh();
-                          });
-                        }}
-                      >
-                        Regenerate flagged refs (likeness-safe)
-                      </Button>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-auto px-3 py-1.5 text-[11px]"
+                          disabled={pending}
+                          onClick={() => {
+                            startTransition(async () => {
+                              const result = await regenerateLikenessSafeReferencesAction(
+                                seriesId,
+                                likeness.references,
+                              );
+                              if ("error" in result && result.error) {
+                                alert(result.error);
+                                return;
+                              }
+                              router.refresh();
+                            });
+                          }}
+                        >
+                          Regenerate flagged refs (fal-safe)
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-auto px-3 py-1.5 text-[11px]"
+                          onClick={() => {
+                            window.open(`/series/${seriesId}`, "_blank", "noopener,noreferrer");
+                          }}
+                        >
+                          Open series restyle
+                        </Button>
+                      </div>
                     ) : null}
                   </div>
                 );
