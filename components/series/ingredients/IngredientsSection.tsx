@@ -9,6 +9,7 @@ import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { Lightbox, useLightbox } from "@/components/ui/Lightbox";
 import { MediaPlayer } from "@/components/ui/MediaPlayer";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
+import { isInFlightGenerationStatus } from "@/lib/generation/in-flight-status";
 import type { IngredientKind } from "@/lib/db/types";
 import {
   uploadIngredientFromClient,
@@ -135,8 +136,8 @@ export function IngredientsSection({
   const [refFilter, setRefFilter] = useState<RefFilter>("all");
   const [dragOver, setDragOver] = useState(false);
 
-  const hasPending = ingredients.some((i) => i.generationStatus === "pending");
-  usePollWhilePending(hasPending);
+  const hasPending = ingredients.some((i) => isInFlightGenerationStatus(i.generationStatus));
+  usePollWhilePending(hasPending, 3000, { maxStagnantTicks: 20 });
 
   useEffect(() => {
     if (!highlightTarget) return;

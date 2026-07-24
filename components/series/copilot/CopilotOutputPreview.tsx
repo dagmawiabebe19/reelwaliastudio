@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Sparkles } from "lucide-react";
 import { pollCopilotOutputAction } from "@/app/(app)/series/[id]/copilot-output-actions";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -187,58 +187,112 @@ export function CopilotOutputPreview({
   onItemsUpdate,
 }: CopilotOutputPreviewProps) {
   const lightbox = useLightbox();
-  const hasPending = items.some(
-    (item) => item.status === "pending" || item.status === "draft",
-  );
+  // Only true in-flight statuses — sheet "draft" is pre-generation, not generating.
+  const hasPending = items.some((item) => item.status === "pending");
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const refresh = useCallback(async () => {
-    if (!items.length) return;
+    const currentItems = itemsRef.current;
+    if (!currentItems.length) return "stop" as const;
 
-    const ingredientIds = items
+    const ingredientIds = currentItems
       .filter((i): i is Extract<CopilotOutputItem, { type: "ingredient" }> => i.type === "ingredient")
       .map((i) => i.id);
-    const sheetIds = items
+    const sheetIds = currentItems
       .filter((i): i is Extract<CopilotOutputItem, { type: "sheet" }> => i.type === "sheet")
       .map((i) => i.id);
 
     const result = await pollCopilotOutputAction({ seriesId, ingredientIds, sheetIds });
-    if ("error" in result && result.error) return;
+    if ("error" in result && result.error) return "continue" as const;
 
-    onItemsUpdate((prev) =>
-      prev.map((item) => {
-        if (item.type === "ingredient") {
-          const fresh = result.ingredients?.find((i) => i?.id === item.id);
-          if (!fresh) return item;
-          return {
-            ...item,
-            name: fresh.name,
-            refTag: fresh.refTag,
-            status: fresh.status,
-            generationError: fresh.generationError,
-            assetUrl: fresh.assetUrl,
-          };
-        }
-        const fresh = result.sheets?.find((s) => s?.id === item.id);
-        if (!fresh) return item;
-        return {
+    const updates = new Map<string, CopilotOutputItem>();
+    let changed = false;
+    let stillPending = false;
+
+    for (const item of currentItems) {
+      if (item.type === "ingredient") {
+        const fresh = result.ingredients?.find((i) => i?.id === item.id);
+        if (!fresh) continue;
+        if (fresh.status === "pending") stillPending = true;
+        const statusChanged =
+          fresh.status !== item.status || fresh.generationError !== item.generationError;
+        const assetArrived = !item.assetUrl && Boolean(fresh.assetUrl);
+        if (!statusChanged && !assetArrived) continue;
+        changed = true;
+        updates.set(item.id, {
           ...item,
           name: fresh.name,
-          characterName: fresh.characterName,
-          costumeName: fresh.costumeName,
+          refTag: fresh.refTag,
           status: fresh.status,
           generationError: fresh.generationError,
-          angleUrls: fresh.angleUrls,
-          angleProgress: fresh.angleCount,
-        };
-      }),
-    );
-  }, [items, onItemsUpdate, seriesId]);
+          assetUrl: fresh.assetUrl ?? item.assetUrl,
+        });
+        continue;
+      }
+
+      const fresh = result.sheets?.find((s) => s?.id === item.id);
+      if (!fresh) continue;
+      if (fresh.status === "pending") stillPending = true;
+      const statusChanged =
+        fresh.status !== item.status ||
+        fresh.generationError !== item.generationError ||
+        fresh.angleCount !== item.angleProgress;
+      if (!statusChanged) continue;
+      changed = true;
+      updates.set(item.id, {
+        ...item,
+        name: fresh.name,
+        characterName: fresh.characterName,
+        costumeName: fresh.costumeName,
+        status: fresh.status,
+        generationError: fresh.generationError,
+        angleUrls: fresh.angleUrls,
+        angleProgress: fresh.angleCount,
+      });
+    }
+
+    if (changed) {
+      onItemsUpdate((prev) => prev.map((item) => updates.get(item.id) ?? item));
+      return "transition" as const;
+    }
+    return stillPending ? ("continue" as const) : ("stop" as const);
+  }, [onItemsUpdate, seriesId]);
 
   useEffect(() => {
     if (!hasPending) return;
-    void refresh();
-    const interval = setInterval(() => void refresh(), 2500);
-    return () => clearInterval(interval);
+
+    let cancelled = false;
+    let stagnant = 0;
+    const maxStagnant = 40;
+
+    const run = async () => {
+      if (cancelled) return;
+      const result = await refresh();
+      if (result === "stop") {
+        stagnant = maxStagnant;
+        return;
+      }
+      if (result === "transition") {
+        stagnant = 0;
+        return;
+      }
+      stagnant += 1;
+    };
+
+    void run();
+    const interval = window.setInterval(() => {
+      if (stagnant >= maxStagnant) {
+        window.clearInterval(interval);
+        return;
+      }
+      void run();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [hasPending, refresh]);
 
   return (

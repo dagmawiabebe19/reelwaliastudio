@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMemo, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Clapperboard, ImageOff, MapPin, Mic, Shirt, User, Users, X } from "lucide-react";
 import {
@@ -9,13 +9,18 @@ import {
   getCharacterSheetDeletePreviewAction,
 } from "@/app/(app)/series/[id]/delete-actions";
 import { retryCharacterSheetAction } from "@/app/(app)/series/[id]/production-actions";
+import { pollSeriesLibraryStatusAction } from "@/app/(app)/series/[id]/episodes/[episodeId]/studio-poll-actions";
 import { FailedGenerationControls } from "@/components/series/ingredients/FailedGenerationControls";
 import { useFailedIngredientActions } from "@/components/series/ingredients/useFailedIngredientActions";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonThumbnail } from "@/components/ui/Skeleton";
 import { Lightbox, LightboxImageButton, useLightbox } from "@/components/ui/Lightbox";
 import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
-import { usePollWhilePending } from "@/hooks/usePollWhilePending";
+import { useStatusPoll } from "@/hooks/useStatusPoll";
+import {
+  isInFlightGenerationStatus,
+  statusFingerprint,
+} from "@/lib/generation/in-flight-status";
 import type {
   CharacterSheetCardData,
   IngredientCardData,
@@ -24,7 +29,7 @@ import type {
 import type { MentionIngredient } from "@/components/series/storyboard/ScenePromptEditor";
 
 function ItemStatusBadge({ status }: { status?: string | null }) {
-  if (status === "pending") {
+  if (isInFlightGenerationStatus(status)) {
     return <span className="shrink-0 text-[10px] text-amber-400">Generating…</span>;
   }
   if (status === "failed") {
@@ -120,9 +125,9 @@ interface StudioIngredientsPanelProps {
 
 export function StudioIngredientsPanel({
   seriesId,
-  ingredients,
-  costumesByCharacter,
-  sheetsByCharacter,
+  ingredients: ingredientsProp,
+  costumesByCharacter: costumesByCharacterProp,
+  sheetsByCharacter: sheetsByCharacterProp,
   mentionSheets,
   prompt,
   boundIngredientIds,
@@ -135,6 +140,17 @@ export function StudioIngredientsPanel({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const { renderFailedControls } = useFailedIngredientActions(seriesId);
+  const [ingredients, setIngredients] = useState(ingredientsProp);
+  const [costumesByCharacter, setCostumesByCharacter] = useState(costumesByCharacterProp);
+  const [sheetsByCharacter, setSheetsByCharacter] = useState(sheetsByCharacterProp);
+  const fingerprintRef = useRef("");
+
+  useEffect(() => {
+    setIngredients(ingredientsProp);
+    setCostumesByCharacter(costumesByCharacterProp);
+    setSheetsByCharacter(sheetsByCharacterProp);
+  }, [ingredientsProp, costumesByCharacterProp, sheetsByCharacterProp]);
+
   const characters = ingredients.filter((item) => item.kind === "character");
   const locations = ingredients.filter((item) => item.kind === "location");
   const voices = ingredients.filter((item) => item.kind === "voice");
@@ -147,11 +163,99 @@ export function StudioIngredientsPanel({
   );
 
   const hasPending =
-    ingredients.some((item) => item.generationStatus === "pending") ||
-    costumes.some((item) => item.generationStatus === "pending") ||
-    sheets.some((item) => item.status === "pending");
+    ingredients.some((item) => isInFlightGenerationStatus(item.generationStatus)) ||
+    costumes.some((item) => isInFlightGenerationStatus(item.generationStatus)) ||
+    sheets.some((item) => isInFlightGenerationStatus(item.status));
 
-  usePollWhilePending(hasPending);
+  const libraryFingerprint = useMemo(() => {
+    const rows = [
+      ...ingredients.map((i) => ({ id: i.id, status: i.generationStatus })),
+      ...costumes.map((i) => ({ id: i.id, status: i.generationStatus })),
+      ...sheets.map((s) => ({ id: s.id, status: s.status })),
+    ];
+    return statusFingerprint(rows);
+  }, [ingredients, costumes, sheets]);
+
+  useEffect(() => {
+    fingerprintRef.current = libraryFingerprint;
+  }, [libraryFingerprint]);
+
+  const pollLibrary = useCallback(async () => {
+    const result = await pollSeriesLibraryStatusAction(seriesId);
+    if ("error" in result) return "continue" as const;
+    if (!("ingredients" in result)) return "continue" as const;
+
+    const nextIngredients = ingredientsProp.map((ing) => {
+      const fresh = result.ingredients.find((row) => row.id === ing.id);
+      if (!fresh) return ing;
+      return {
+        ...ing,
+        generationStatus: fresh.generationStatus,
+        generationError: fresh.generationError,
+        assetUrl: fresh.assetUrl ?? ing.assetUrl,
+        mediaType: fresh.mediaType ?? ing.mediaType,
+      };
+    });
+
+    const nextCostumes: Record<string, IngredientCardData[]> = {};
+    for (const [characterId, list] of Object.entries(costumesByCharacterProp)) {
+      nextCostumes[characterId] = list.map((ing) => {
+        const fresh = result.ingredients.find((row) => row.id === ing.id);
+        if (!fresh) return ing;
+        return {
+          ...ing,
+          generationStatus: fresh.generationStatus,
+          generationError: fresh.generationError,
+          assetUrl: fresh.assetUrl ?? ing.assetUrl,
+          mediaType: fresh.mediaType ?? ing.mediaType,
+        };
+      });
+    }
+
+    const nextSheets: Record<string, CharacterSheetCardData[]> = {};
+    for (const [characterId, list] of Object.entries(sheetsByCharacterProp)) {
+      nextSheets[characterId] = list.map((sheet) => {
+        const fresh = result.sheets.find((row) => row.id === sheet.id);
+        if (!fresh) return sheet;
+        return {
+          ...sheet,
+          status: fresh.status,
+          generation_error: fresh.generationError,
+          angleUrls: { ...sheet.angleUrls, ...fresh.angleUrls },
+        };
+      });
+    }
+
+    const rows = [
+      ...nextIngredients.map((i) => ({ id: i.id, status: i.generationStatus })),
+      ...Object.values(nextCostumes)
+        .flat()
+        .map((i) => ({ id: i.id, status: i.generationStatus })),
+      ...Object.values(nextSheets)
+        .flat()
+        .map((s) => ({ id: s.id, status: s.status })),
+    ];
+    const nextFp = statusFingerprint(rows);
+    const stillInFlight = rows.some((row) => isInFlightGenerationStatus(row.status));
+
+    if (nextFp === fingerprintRef.current) {
+      return stillInFlight ? ("continue" as const) : ("stop" as const);
+    }
+
+    fingerprintRef.current = nextFp;
+    setIngredients(nextIngredients);
+    setCostumesByCharacter(nextCostumes);
+    setSheetsByCharacter(nextSheets);
+    return "transition" as const;
+  }, [seriesId, ingredientsProp, costumesByCharacterProp, sheetsByCharacterProp]);
+
+  useStatusPoll({
+    active: hasPending,
+    intervalMs: 3000,
+    onPoll: pollLibrary,
+    refreshOnTransition: true,
+    maxStagnantTicks: 20,
+  });
 
   function isIngredientReferenced(ingredient: IngredientCardData): boolean {
     if (boundIngredientIds.includes(ingredient.id)) return true;

@@ -20,6 +20,7 @@ import { DeleteConfirmButton } from "@/components/ui/DeleteConfirmButton";
 import { ICON_MD, ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 import { Lightbox, LightboxImageButton, useLightbox, type LightboxImage } from "@/components/ui/Lightbox";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
+import { isInFlightGenerationStatus } from "@/lib/generation/in-flight-status";
 import type { Orientation } from "@/lib/db/types";
 import { getLikenessRejectionDisplay } from "@/lib/ai/video/seedance-likeness";
 import { regenerateLikenessSafeReferencesAction } from "@/app/(app)/series/[id]/production-actions";
@@ -52,6 +53,8 @@ interface TakesStripProps {
   layout?: TakesStripLayout;
   activeIndex?: number;
   onActiveIndexChange?: (index: number) => void;
+  /** When false, parent owns status polling (episode studio). Default true for standalone use. */
+  enableStatusPoll?: boolean;
 }
 
 function StarToggleButton({
@@ -203,6 +206,7 @@ export function TakesStrip({
   layout = "combined",
   activeIndex: controlledIndex,
   onActiveIndexChange,
+  enableStatusPoll = true,
 }: TakesStripProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -235,9 +239,9 @@ export function TakesStrip({
 
   const activeTake = takes[activeIndex] ?? null;
   const isPortrait = orientation === "portrait";
-  const hasPending = takes.some((t) => t.status === "pending");
+  const hasPending = takes.some((t) => isInFlightGenerationStatus(t.status));
   const failedCount = takes.filter((t) => t.status === "failed").length;
-  usePollWhilePending(hasPending);
+  usePollWhilePending(enableStatusPoll && hasPending, 3000, { maxStagnantTicks: 40 });
 
   useEffect(() => {
     if (controlledIndex === undefined) {

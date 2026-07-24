@@ -32,6 +32,7 @@ import { RefTag } from "@/components/ui/RefTag";
 import { GenerationStatusLine } from "@/components/ui/GenerationStatusLine";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { usePollWhilePending } from "@/hooks/usePollWhilePending";
+import { isInFlightGenerationStatus } from "@/lib/generation/in-flight-status";
 import { SHEET_ANGLE_LABELS } from "@/lib/production/prompts";
 import {
   buildSheetLightboxGallery,
@@ -79,15 +80,15 @@ export function CharactersSection({
   }, [highlightSheetId]);
 
   const hasPending =
-    characters.some((c) => c.generationStatus === "pending") ||
+    characters.some((c) => isInFlightGenerationStatus(c.generationStatus)) ||
     Object.values(costumesByCharacter)
       .flat()
-      .some((c) => c.generationStatus === "pending") ||
+      .some((c) => isInFlightGenerationStatus(c.generationStatus)) ||
     Object.values(sheetsByCharacter)
       .flat()
-      .some((s) => s.status === "pending");
+      .some((s) => isInFlightGenerationStatus(s.status));
 
-  usePollWhilePending(hasPending);
+  usePollWhilePending(hasPending, 3000, { maxStagnantTicks: 20 });
 
   function runAction(action: () => Promise<Record<string, unknown>>) {
     setError(null);

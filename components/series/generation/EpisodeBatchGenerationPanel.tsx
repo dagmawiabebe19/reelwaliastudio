@@ -19,6 +19,7 @@ import {
   type GenerationQualityMode,
 } from "@/lib/ai/video/seedance-constants";
 import type { SceneWithBindings } from "@/lib/storyboard/constants";
+import { isInFlightGenerationStatus } from "@/lib/generation/in-flight-status";
 
 type SegmentRowStatus = "idle" | "queued" | "generating" | "done" | "failed" | "skipped";
 
@@ -41,13 +42,16 @@ interface EpisodeBatchGenerationPanelProps {
   scenes: SceneWithBindings[];
   takesByScene: Record<string, TakeCardData[]>;
   seedanceConfigured: boolean;
+  /** When false, parent owns take status polling. Default true. */
+  enableStatusPoll?: boolean;
 }
 
 function segmentStatusForTake(take: TakeCardData | undefined): SegmentRowStatus {
   if (!take) return "idle";
-  if (take.status === "pending") return "generating";
+  if (isInFlightGenerationStatus(take.status)) return "generating";
   if (take.status === "ready") return "done";
   if (take.status === "failed") return "failed";
+  // draft, archived, rejected, cancelled, blocked, null → terminal / idle for polling
   return "idle";
 }
 
@@ -66,6 +70,7 @@ export function EpisodeBatchGenerationPanel({
   scenes,
   takesByScene,
   seedanceConfigured,
+  enableStatusPoll = true,
 }: EpisodeBatchGenerationPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -131,7 +136,7 @@ export function EpisodeBatchGenerationPanel({
   }, [scenes, skippedByScene, jobByScene, takesByScene, estimate?.readySceneIds]);
 
   const hasPendingBatch = segmentRows.some((row) => row.status === "generating" || row.status === "queued");
-  usePollWhilePending(hasPendingBatch);
+  usePollWhilePending(enableStatusPoll && hasPendingBatch);
 
   useEffect(() => {
     if (!seedanceConfigured || scenes.length === 0) {
