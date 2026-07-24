@@ -116,6 +116,16 @@ export function readHighlightSegments(): HighlightSegmentsPayload | null {
   }
 }
 
+/**
+ * Read-and-clear so a router.refresh remount cannot re-apply the same
+ * highlight payload (that loop cancels the clear timer and storms setState).
+ */
+export function consumeHighlightSegments(): HighlightSegmentsPayload | null {
+  const payload = readHighlightSegments();
+  if (payload) clearHighlightSegments();
+  return payload;
+}
+
 export function writeHighlightSegments(payload: HighlightSegmentsPayload): void {
   if (typeof window === "undefined") return;
   sessionStorage.setItem(HIGHLIGHT_SEGMENTS_STORAGE_KEY, JSON.stringify(payload));

@@ -16,6 +16,7 @@ import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvid
 import { CanonMemoryPrompt } from "@/components/copilot/CanonMemoryPrompt";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LoadingPlaceholder } from "@/components/ui/Skeleton";
+import { noteStudioRender } from "@/lib/debug/studio-render-count";
 import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 
 function PanelChrome({
@@ -90,6 +91,7 @@ function PanelChrome({
 }
 
 export function DockableCopilotPanel() {
+  noteStudioRender("DockableCopilotPanel");
   const {
     active,
     scopeType,

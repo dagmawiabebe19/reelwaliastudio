@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Archive, ChevronRight, Clapperboard, GripVertical, MoreHorizontal, RotateCcw } from "lucide-react";
 import {
@@ -40,6 +40,7 @@ import {
   type SegmentBucket,
 } from "@/lib/storyboard/episode-buckets";
 import { effectiveOrientation } from "@/lib/storyboard/orientation";
+import { noteStudioRender } from "@/lib/debug/studio-render-count";
 import { ICON_SM, ICON_STROKE } from "@/components/ui/icon";
 
 const ARCHIVE_DROP_ID = "__archive_drop__";
@@ -282,7 +283,7 @@ function SegmentCard({
   );
 }
 
-export function SceneRail({
+export const SceneRail = memo(function SceneRail({
   seriesId,
   episodeId,
   episodes,
@@ -292,6 +293,7 @@ export function SceneRail({
   onSelectScene,
   takesByScene = {},
 }: SceneRailProps) {
+  noteStudioRender("SceneRail");
   const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -306,6 +308,64 @@ export function SceneRail({
   const [addToStoryboardOnly, setAddToStoryboardOnly] = useState(false);
 
   const episodeBuckets = useMemo(() => buildEpisodeBuckets(episodes), [episodes]);
+  // Depend on sceneIdsKey (primitive), NOT `scenes` array identity — every
+  // router.refresh() after draft_storyboard creates a new scenes array and would
+  // re-enter the highlight effect, cancel the clear timer, and storm the main thread.
+  const sceneIdsKey = useMemo(() => scenes.map((s) => s.id).join(","), [scenes]);
+  const scenesRef = useRef(scenes);
+  scenesRef.current = scenes;
+  // Apply co-pilot "new segments" highlight once; clear storage after apply so
+  // remounts from coalesced router.refresh cannot re-enter and cancel the timer.
+  useEffect(() => {
+    const payload = readHighlightSegments();
+    if (!payload?.sceneIds.length) return;
+
+    const currentScenes = scenesRef.current;
+    const overlap = payload.sceneIds.some((id) =>
+      currentScenes.some((scene) => scene.id === id),
+    );
+    // Keep payload until the new segment rows have arrived via router.refresh.
+    if (!overlap) return;
+
+    clearHighlightSegments();
+
+    const targetEpisodeId = payload.episodeId ?? episodeId;
+    const firstScene = currentScenes.find((scene) => payload.sceneIds.includes(scene.id));
+
+    if (firstScene) {
+      if (firstScene.status === "archived") {
+        setShowArchive(true);
+      } else if (
+        (firstScene.act_label ?? STORYBOARD_ONLY_LABEL) === STORYBOARD_ONLY_LABEL
+      ) {
+        setShowArchive(false);
+        setActiveBucketId(STORYBOARD_ONLY_BUCKET_ID);
+      } else {
+        setShowArchive(false);
+        setActiveBucketId(firstScene.episode_id);
+      }
+    } else {
+      setShowArchive(false);
+      setActiveBucketId(targetEpisodeId);
+    }
+
+    setHighlightSceneIds(payload.sceneIds);
+    const selectId = payload.sceneIds[payload.sceneIds.length - 1];
+    if (selectId) onSelectScene(selectId);
+
+    const lastSceneId = payload.sceneIds[payload.sceneIds.length - 1];
+    window.setTimeout(() => {
+      if (lastSceneId) scrollToScene(lastSceneId);
+      else scrollToEnd();
+    }, 80);
+
+    const clearTimer = window.setTimeout(() => {
+      setHighlightSceneIds([]);
+    }, 2800);
+
+    return () => window.clearTimeout(clearTimer);
+  }, [episodeId, onSelectScene, sceneIdsKey]);
+
   const storyboardBucket: SegmentBucket = {
     id: STORYBOARD_ONLY_BUCKET_ID,
     type: "storyboard-only",
@@ -380,47 +440,6 @@ export function SceneRail({
     if (!container) return;
     container.scrollTo({ left: container.scrollWidth, behavior: "smooth" });
   }
-
-  useEffect(() => {
-    const payload = readHighlightSegments();
-    if (!payload?.sceneIds.length) return;
-
-    const targetEpisodeId = payload.episodeId ?? episodeId;
-    const firstScene = scenes.find((scene) => payload.sceneIds.includes(scene.id));
-
-    if (firstScene) {
-      if (firstScene.status === "archived") {
-        setShowArchive(true);
-      } else if (
-        (firstScene.act_label ?? STORYBOARD_ONLY_LABEL) === STORYBOARD_ONLY_LABEL
-      ) {
-        setShowArchive(false);
-        setActiveBucketId(STORYBOARD_ONLY_BUCKET_ID);
-      } else {
-        setShowArchive(false);
-        setActiveBucketId(firstScene.episode_id);
-      }
-    } else {
-      setShowArchive(false);
-      setActiveBucketId(targetEpisodeId);
-    }
-
-    setHighlightSceneIds(payload.sceneIds);
-    onSelectScene(payload.sceneIds[payload.sceneIds.length - 1] ?? selectedSceneId ?? "");
-
-    const lastSceneId = payload.sceneIds[payload.sceneIds.length - 1];
-    window.setTimeout(() => {
-      if (lastSceneId) scrollToScene(lastSceneId);
-      else scrollToEnd();
-    }, 80);
-
-    const clearTimer = window.setTimeout(() => {
-      setHighlightSceneIds([]);
-      clearHighlightSegments();
-    }, 2800);
-
-    return () => window.clearTimeout(clearTimer);
-  }, [scenes, episodeId, onSelectScene, selectedSceneId]);
 
   useEffect(() => {
     if (!highlightSceneIds.length) return;
@@ -800,4 +819,4 @@ export function SceneRail({
       </section>
     </div>
   );
-}
+});

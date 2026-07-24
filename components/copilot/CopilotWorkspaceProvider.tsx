@@ -48,7 +48,24 @@ type CopilotWorkspaceContextValue = {
   bumpMessages: () => void;
 };
 
+type CopilotRegisterContextValue = {
+  register: (registration: CopilotRegistration | null) => void;
+};
+
+const EMPTY_INGREDIENTS: MentionIngredient[] = [];
+const EMPTY_SUGGESTIONS: CopilotSuggestion[] = [];
+
+const CopilotRegisterContext = createContext<CopilotRegisterContextValue | null>(null);
 const CopilotWorkspaceContext = createContext<CopilotWorkspaceContextValue | null>(null);
+
+/** Register-only — does not re-render when panel prefs/messages/context change. */
+export function useCopilotRegister(): CopilotRegisterContextValue {
+  const value = useContext(CopilotRegisterContext);
+  if (!value) {
+    throw new Error("useCopilotRegister must be used within CopilotWorkspaceProvider");
+  }
+  return value;
+}
 
 export function useCopilotWorkspace(): CopilotWorkspaceContextValue {
   const value = useContext(CopilotWorkspaceContext);
@@ -59,39 +76,11 @@ export function useCopilotWorkspace(): CopilotWorkspaceContextValue {
 }
 
 export function useRegisterCopilotContext(registration: CopilotRegistration | null): void {
-  const { register } = useCopilotWorkspace();
+  const { register } = useCopilotRegister();
   const registrationRef = useRef(registration);
   registrationRef.current = registration;
 
-  const ingredientIds = registration?.ingredients.map((i) => i.id).join(",") ?? "";
-  const suggestionIds = registration?.suggestions?.map((s) => s.id).join(",") ?? "";
-  const sceneIds = registration?.context.scenes?.map((s) => s.id).join(",") ?? "";
-
-  const signature = useMemo(
-    () => registrationSignature(registration),
-    [
-      registration?.scopeType,
-      registration?.scopeId,
-      registration?.context.seriesId,
-      registration?.context.episodeId,
-      registration?.context.sceneId,
-      registration?.context.briefMarkdown,
-      registration?.context.seriesMemoryMarkdown,
-      registration?.context.workspace?.view,
-      registration?.context.workspace?.viewLabel,
-      registration?.context.workspace?.episodeTitle,
-      registration?.context.workspace?.sceneTitle,
-      registration?.context.workspace?.scenePrompt,
-      registration?.context.workspace?.sceneActLabel,
-      registration?.context.workspace?.activeTakeSummary,
-      registration?.context.workspace?.selectedCharacterName,
-      registration?.context.workspace?.selectedIngredientName,
-      ingredientIds,
-      suggestionIds,
-      sceneIds,
-      Boolean(registration?.onOutputEvent),
-    ],
-  );
+  const signature = registrationSignature(registration);
 
   useEffect(() => {
     register(registrationRef.current);
@@ -141,8 +130,12 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
   const scopeId: string | null = reg?.scopeId ?? route.episodeId ?? route.seriesId;
 
   const context = reg?.context ?? null;
-  const ingredients = reg?.ingredients ?? [];
-  const suggestions = (reg?.suggestions ?? []).filter((s) => !dismissedSuggestionIds.has(s.id));
+  const ingredients = reg?.ingredients ?? EMPTY_INGREDIENTS;
+  const suggestions = useMemo(() => {
+    const list = reg?.suggestions ?? EMPTY_SUGGESTIONS;
+    if (!list.length || dismissedSuggestionIds.size === 0) return list;
+    return list.filter((s) => !dismissedSuggestionIds.has(s.id));
+  }, [reg?.suggestions, dismissedSuggestionIds]);
 
   const updatePrefs = useCallback((patch: Partial<CopilotPanelPrefs>) => {
     setPrefs((prev) => {
@@ -174,6 +167,11 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
 
   const getLiveContext = useCallback(() => contextRef.current, []);
   const bumpMessages = useCallback(() => setMessagesVersion((v) => v + 1), []);
+
+  const registerValue = useMemo<CopilotRegisterContextValue>(
+    () => ({ register }),
+    [register],
+  );
 
   const value = useMemo<CopilotWorkspaceContextValue>(
     () => ({
@@ -216,7 +214,6 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
       setFloatPosition,
       dismissSuggestion,
       copilotDraft,
-      setCopilotDraft,
       getLiveContext,
       register,
       bumpMessages,
@@ -224,6 +221,8 @@ export function CopilotWorkspaceProvider({ children }: { children: ReactNode }) 
   );
 
   return (
-    <CopilotWorkspaceContext.Provider value={value}>{children}</CopilotWorkspaceContext.Provider>
+    <CopilotRegisterContext.Provider value={registerValue}>
+      <CopilotWorkspaceContext.Provider value={value}>{children}</CopilotWorkspaceContext.Provider>
+    </CopilotRegisterContext.Provider>
   );
 }

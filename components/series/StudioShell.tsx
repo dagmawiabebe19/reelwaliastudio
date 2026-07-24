@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, MonitorPlay } from "lucide-react";
-import { useRegisterCopilotContext } from "@/components/copilot/CopilotWorkspaceProvider";
+import { CopilotContextRegistrar } from "@/components/copilot/CopilotContextRegistrar";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { OnboardingGuide } from "@/components/onboarding/OnboardingGuide";
 import { GenerationPanel } from "@/components/series/generation/GenerationPanel";
@@ -28,6 +28,7 @@ import {
   isInFlightGenerationStatus,
   statusFingerprint,
 } from "@/lib/generation/in-flight-status";
+import { noteStudioRender } from "@/lib/debug/studio-render-count";
 
 interface StudioShellProps {
   seriesId: string;
@@ -100,6 +101,7 @@ export function StudioShell({
   sheetsByCharacter,
   showOnboardingSegments = false,
 }: StudioShellProps) {
+  noteStudioRender("StudioShell");
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(scenes[0]?.id ?? null);
   const [activeTakeIndex, setActiveTakeIndex] = useState(0);
   const [promptDraft, setPromptDraft] = useState("");
@@ -244,10 +246,10 @@ export function StudioShell({
     ],
   );
 
-  useRegisterCopilotContext(copilotRegistration);
-
   return (
-    <div className="studio-editing-bay flex min-h-0 flex-1 flex-col overflow-hidden">
+    <>
+      <CopilotContextRegistrar registration={copilotRegistration} />
+      <div className="studio-editing-bay flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="grid h-full min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,7fr)_minmax(240px,5fr)]">
         <main className="flex min-h-0 min-w-0 flex-col overflow-hidden border-b border-border xl:border-b-0">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:flex-row">
@@ -410,5 +412,6 @@ export function StudioShell({
         </aside>
       </div>
     </div>
+    </>
   );
 }

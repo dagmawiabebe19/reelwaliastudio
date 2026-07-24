@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Send, Square } from "lucide-react";
 import { useCopilotWorkspace } from "@/components/copilot/CopilotWorkspaceProvider";
@@ -13,7 +13,14 @@ import {
 import type { CopilotOutputEvent } from "@/lib/copilot/output";
 import { CopilotMessageContent } from "@/components/series/copilot/CopilotMessageContent";
 import { CopilotToolActivity } from "@/components/series/copilot/CopilotToolActivity";
+import { noteStudioRender } from "@/lib/debug/studio-render-count";
 import { ICON_MD, ICON_STROKE } from "@/components/ui/icon";
+
+/** Cap rendered transcript rows — older history stays in state but is not markdown-rendered. */
+const MAX_RENDERED_MESSAGES = 60;
+/** Treat a hung SSE turn as terminal so the UI stops streaming UI work. */
+const STREAM_STALL_MS = 12 * 60 * 1000;
+const REFRESH_COALESCE_MS = 500;
 
 export type ChatMessageData = {
   id: string;
@@ -26,6 +33,31 @@ export type ChatMessageData = {
   step?: number;
   total?: number;
 };
+
+const MemoizedChatRow = memo(function MemoizedChatRow({
+  message,
+}: {
+  message: ChatMessageData;
+}) {
+  return (
+    <div
+      data-copilot-message-id={message.id}
+      className={`rounded-lg border px-3 py-2 text-sm ${
+        message.role === "user"
+          ? "border-border bg-surface-elevated"
+          : message.role === "system"
+            ? "border-border/60 bg-surface/60 text-xs text-muted"
+            : "border-border bg-background"
+      }`}
+    >
+      {message.role === "assistant" ? (
+        <CopilotMessageContent content={message.content} />
+      ) : (
+        <p className="whitespace-pre-wrap">{message.content}</p>
+      )}
+    </div>
+  );
+});
 
 export type MentionIngredient = {
   id: string;
@@ -121,6 +153,7 @@ export function CopilotPane({
   messageBanner,
   className,
 }: CopilotPaneProps) {
+  noteStudioRender("CopilotPane");
   const router = useRouter();
   const { copilotDraft, setCopilotDraft } = useCopilotWorkspace();
   const [internalMessages, setInternalMessages] = useState<ChatMessageData[]>(initialMessages);
@@ -145,8 +178,34 @@ export function CopilotPane({
   const messageLogRef = useRef<HTMLDivElement>(null);
   const pinnedToBottomRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
+  const refreshTimerRef = useRef<number | null>(null);
+  const stallTimerRef = useRef<number | null>(null);
+
+  const scheduleStudioRefresh = useCallback(() => {
+    if (refreshTimerRef.current != null) {
+      window.clearTimeout(refreshTimerRef.current);
+    }
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      router.refresh();
+    }, REFRESH_COALESCE_MS);
+  }, [router]);
+
+  const clearStallTimer = useCallback(() => {
+    if (stallTimerRef.current != null) {
+      window.clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  }, []);
 
   const { displayMessages } = useMemo(() => partitionMessages(messages), [messages]);
+  const renderedMessages = useMemo(
+    () =>
+      displayMessages.length > MAX_RENDERED_MESSAGES
+        ? displayMessages.slice(-MAX_RENDERED_MESSAGES)
+        : displayMessages,
+    [displayMessages],
+  );
 
   const statusContext = useMemo(
     () => ({ ingredients: ingredients.map((item) => ({ id: item.id, name: item.name })) }),
@@ -155,8 +214,16 @@ export function CopilotPane({
 
   function handleStop() {
     abortRef.current?.abort();
+    clearStallTimer();
     setStreaming(false);
   }
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current != null) window.clearTimeout(refreshTimerRef.current);
+      clearStallTimer();
+    };
+  }, [clearStallTimer]);
 
   useEffect(() => {
     if (!copilotDraft?.trim()) return;
@@ -193,17 +260,26 @@ export function CopilotPane({
     requestAnimationFrame(() => pinChatToBottomIfFollowing());
   }, [displayMessages, streaming, pinChatToBottomIfFollowing]);
 
-  // Catch layout height changes during streaming (markdown reflow) without new message rows.
+  // Only observe resizes while streaming — observing always turns markdown reflow into scroll thrash.
   useEffect(() => {
+    if (!streaming) return;
     const log = messageLogRef.current;
     if (!log || typeof ResizeObserver === "undefined") return;
 
+    let raf = 0;
     const observer = new ResizeObserver(() => {
-      pinChatToBottomIfFollowing();
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        pinChatToBottomIfFollowing();
+      });
     });
     observer.observe(log);
-    return () => observer.disconnect();
-  }, [pinChatToBottomIfFollowing]);
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
+  }, [streaming, pinChatToBottomIfFollowing]);
 
   async function handleSend() {
     const text = input.trim();
@@ -215,6 +291,14 @@ export function CopilotPane({
     setLiveTurnTools([]);
     pinnedToBottomRef.current = true;
     abortRef.current = new AbortController();
+    clearStallTimer();
+    stallTimerRef.current = window.setTimeout(() => {
+      abortRef.current?.abort();
+      setStreaming(false);
+      setLiveTurnTools([]);
+      setAbortNote("Co-pilot turn stalled — stopped waiting for the stream.");
+      scheduleStudioRefresh();
+    }, STREAM_STALL_MS);
     setMessages((prev) => [
       ...prev,
       { id: `local-${Date.now()}`, role: "user", content: text },
@@ -385,7 +469,7 @@ export function CopilotPane({
                       : undefined,
                 });
               }
-              router.refresh();
+              scheduleStudioRefresh();
             }
           }
 
@@ -394,7 +478,7 @@ export function CopilotPane({
           }
 
           if (event.type === "turn_complete" && event.summary) {
-            router.refresh();
+            scheduleStudioRefresh();
           }
 
           if (event.type === "aborted") {
@@ -410,7 +494,7 @@ export function CopilotPane({
             if (event.inFlightNote) {
               setAbortNote(event.inFlightNote);
             }
-            router.refresh();
+            scheduleStudioRefresh();
           }
 
           if (event.type === "error" && event.message) {
@@ -419,12 +503,12 @@ export function CopilotPane({
               { id: `err-${Date.now()}`, role: "assistant", content: event.message! },
             ]);
             if ("insufficientCredits" in event && event.insufficientCredits) {
-              router.refresh();
+              scheduleStudioRefresh();
             }
           }
 
           if (event.type === "done") {
-            router.refresh();
+            scheduleStudioRefresh();
           }
         }
       }
@@ -443,6 +527,7 @@ export function CopilotPane({
       ]);
     } finally {
       abortRef.current = null;
+      clearStallTimer();
       setStreaming(false);
     }
   }
@@ -459,34 +544,14 @@ export function CopilotPane({
         className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1"
       >
         {messageBanner ? <div className="space-y-3">{messageBanner}</div> : null}
-        {displayMessages.length === 0 ? (
+        {renderedMessages.length === 0 ? (
           <p className="text-sm text-muted">
             Your production partner — ask anything about this series, rewrite scenes, generate storyboards,
             or say &ldquo;generate it&rdquo;. Context updates live as you work.
           </p>
         ) : (
-          displayMessages.map((message) => (
-            <div
-              key={message.id}
-              data-copilot-message-id={message.id}
-              className={`rounded-lg border px-3 py-2 text-sm ${
-                message.role === "user"
-                  ? "border-border bg-surface-elevated"
-                  : message.role === "system"
-                    ? "border-border/60 bg-surface/60 text-xs text-muted"
-                    : "border-border bg-background"
-              }`}
-            >
-              {message.role === "assistant" || message.role === "system" ? (
-                message.role === "system" ? (
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                ) : (
-                  <CopilotMessageContent content={message.content} />
-                )
-              ) : (
-                <p className="whitespace-pre-wrap">{message.content}</p>
-              )}
-            </div>
+          renderedMessages.map((message) => (
+            <MemoizedChatRow key={message.id} message={message} />
           ))
         )}
       </div>

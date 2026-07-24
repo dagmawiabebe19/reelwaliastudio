@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 
 interface CopilotMessageContentProps {
@@ -7,9 +8,12 @@ interface CopilotMessageContentProps {
 }
 
 /**
- * Renders co-pilot assistant/system markdown. react-markdown omits raw HTML by default (safe).
+ * Renders co-pilot assistant markdown. Memoized by content so parent re-renders
+ * (stream ticks, tool rows) do not re-parse every historical message.
  */
-export function CopilotMessageContent({ content }: CopilotMessageContentProps) {
+export const CopilotMessageContent = memo(function CopilotMessageContent({
+  content,
+}: CopilotMessageContentProps) {
   const markdown = typeof content === "string" ? content : String(content ?? "");
   if (!markdown.trim()) return null;
 
@@ -28,4 +32,4 @@ export function CopilotMessageContent({ content }: CopilotMessageContentProps) {
       </ReactMarkdown>
     </div>
   );
-}
+});
